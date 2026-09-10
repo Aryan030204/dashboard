@@ -16,6 +16,7 @@ function defaultRangeYesterdayToday() {
 
 const UTM_KEY = 'pts_utm_filters_v1';
 const DISCOUNT_KEY = 'pts_discount_filter_v1';
+export const MAX_DISCOUNT_CODES = 3;
 
 function loadInitialRange() {
   try {
@@ -48,12 +49,27 @@ function loadInitialUtm() {
   return { source: [], medium: [], campaign: [], term: [], content: [] };
 }
 
-function loadInitialDiscountCode() {
+function normalizeDiscountCodes(value) {
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of list) {
+    const code = (entry ?? '').toString().trim();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  return out.slice(0, MAX_DISCOUNT_CODES);
+}
+
+function loadInitialDiscountCodes() {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(DISCOUNT_KEY) : null;
-    return raw ? JSON.parse(raw) || '' : '';
+    if (!raw) return [];
+    // Back-compat: previously stored a single string.
+    return normalizeDiscountCodes(JSON.parse(raw));
   } catch {
-    return '';
+    return [];
   }
 }
 
@@ -88,7 +104,7 @@ const filterSlice = createSlice({
     activeMetric: DEFAULT_TREND_METRIC,
     productSelection: [DEFAULT_PRODUCT_OPTION],
     utm: loadInitialUtm(),
-    discountCode: loadInitialDiscountCode(),
+    discountCodes: loadInitialDiscountCodes(),
     salesChannel: [],
     deviceType: [],
     city: [],
@@ -188,8 +204,8 @@ const filterSlice = createSlice({
         state.deviceType = [];
       }
     },
-    setDiscountCode(state, action) {
-      state.discountCode = (action.payload || '').toString();
+    setDiscountCodes(state, action) {
+      state.discountCodes = normalizeDiscountCodes(action.payload);
     },
     setCity(state, action) {
       const payload = action.payload;
@@ -214,5 +230,5 @@ const filterSlice = createSlice({
   },
 });
 
-export const { setRange, setCompareMode, setCompareDateRange, setTrendMetricSelection, setProductSelection, setUtm, setSalesChannel, setDeviceType, setDiscountCode, setCity, setProductType } = filterSlice.actions;
+export const { setRange, setCompareMode, setCompareDateRange, setTrendMetricSelection, setProductSelection, setUtm, setSalesChannel, setDeviceType, setDiscountCodes, setCity, setProductType } = filterSlice.actions;
 export default filterSlice.reducer;

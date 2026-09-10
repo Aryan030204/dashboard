@@ -78,6 +78,10 @@ function getTenantConnection(route) {
     key: route.brandId,
     dbName: route.dbName,
     sequelize: {
+      // Brand identity, so downstream services can namespace per-brand caches
+      // from the bare connection object they are handed.
+      dbName: route.dbName,
+      brandId: route.brandId,
       query: (sql, options = {}) => runQuery(pool, route, sql, options),
       authenticate: async () => {
         await runQuery(pool, route, 'SELECT 1');

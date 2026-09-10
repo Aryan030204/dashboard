@@ -40,6 +40,7 @@ import {
   normalizeDataRestrictionConfig,
   isRangeOverDataRestrictionPeriod,
 } from "../lib/dateRange.js";
+import { MAX_DISCOUNT_CODES } from "../state/slices/filterSlice.js";
 
 export default function MobileFilterDrawer({
   open,
@@ -76,8 +77,8 @@ export default function MobileFilterDrawer({
   onDeviceTypeChange,
   deviceTypeDisabled = false,
   showDeviceType = true,
-  discountCode = "",
-  onDiscountCodeChange,
+  discountCodes = [],
+  onDiscountCodesChange,
   discountDisabled = false,
   showDiscountFilter = true,
 
@@ -100,7 +101,9 @@ export default function MobileFilterDrawer({
   const [tempSalesChannel, setTempSalesChannel] = useState(salesChannel);
   const [tempCity, setTempCity] = useState(city);
   const [tempDeviceType, setTempDeviceType] = useState(deviceType);
-  const [tempDiscountCode, setTempDiscountCode] = useState(discountCode);
+  const [tempDiscountCodes, setTempDiscountCodes] = useState(
+    Array.isArray(discountCodes) ? discountCodes : [],
+  );
   const [tempDivisionProductType, setTempDivisionProductType] = useState(divisionProductType);
   const [drawerProductOptions, setDrawerProductOptions] = useState(productOptions);
 
@@ -139,12 +142,12 @@ export default function MobileFilterDrawer({
       setTempSalesChannel(salesChannel);
       setTempCity(city);
       setTempDeviceType(deviceType);
-      setTempDiscountCode(discountCode);
+      setTempDiscountCodes(Array.isArray(discountCodes) ? discountCodes : []);
       setTempProductTypes(productTypes || []);
       setTempDivisionProductType(divisionProductType || []);
       setView("ROOT");
     }
-  }, [open, brandKey, productValue, utm, salesChannel, city, deviceType, discountCode, divisionProductType]); // Removed productTypes to prevent reset loop
+  }, [open, brandKey, productValue, utm, salesChannel, city, deviceType, discountCodes, divisionProductType]); // Removed productTypes to prevent reset loop
 
   useEffect(() => {
     setDrawerProductOptions(productOptions);
@@ -424,6 +427,8 @@ export default function MobileFilterDrawer({
   const isDeviceTypeBlocked = deviceTypeDisabled;
   const isCityBlocked = cityDisabled;
   const isDiscountBlocked = discountDisabled;
+  const committedDiscountCodes = Array.isArray(discountCodes) ? discountCodes : [];
+  const hasCommittedDiscount = committedDiscountCodes.length > 0;
   const isDivisionProductTypeBlocked = divisionProductTypeDisabled;
 
   const handleClearAll = () => {
@@ -433,7 +438,7 @@ export default function MobileFilterDrawer({
     if (onSalesChannelChange) onSalesChannelChange("");
     if (onCityChange) onCityChange([]);
     if (onDeviceTypeChange) onDeviceTypeChange([]);
-    if (onDiscountCodeChange) onDiscountCodeChange("");
+    if (onDiscountCodesChange) onDiscountCodesChange([]);
     if (onDivisionProductTypeChange) onDivisionProductTypeChange([]);
     onClose();
   };
@@ -445,7 +450,7 @@ export default function MobileFilterDrawer({
     if (onSalesChannelChange) onSalesChannelChange(tempSalesChannel);
     if (onCityChange) onCityChange(tempCity);
     if (onDeviceTypeChange) onDeviceTypeChange(tempDeviceType);
-    if (onDiscountCodeChange) onDiscountCodeChange(tempDiscountCode);
+    if (onDiscountCodesChange) onDiscountCodesChange(tempDiscountCodes);
     if (onProductTypeChange) onProductTypeChange(tempProductTypes);
     if (onDivisionProductTypeChange) onDivisionProductTypeChange(tempDivisionProductType);
     onClose();
@@ -521,7 +526,7 @@ export default function MobileFilterDrawer({
           : salesChannel) ||
         (Array.isArray(city) ? city.length > 0 : city) ||
         (Array.isArray(deviceType) ? deviceType.length > 0 : deviceType) ||
-        discountCode) && (
+        hasCommittedDiscount) && (
         <Fade in={true} timeout={500}>
           <Box
             sx={{
@@ -668,15 +673,18 @@ export default function MobileFilterDrawer({
                   </div>
                 </Grow>
               )}
-              {/* Discount Chip */}
-              {discountCode && (
-                <Grow in={true}>
+              {/* Discount Chips */}
+              {committedDiscountCodes.map((code) => (
+                <Grow in={true} key={code}>
                   <div>
                     <GlassChip
-                      label={`Discount: ${discountCode}`}
+                      label={`Discount: ${code}`}
                       onDelete={() => {
-                        if (onDiscountCodeChange) onDiscountCodeChange("");
-                        setTempDiscountCode("");
+                        const next = committedDiscountCodes.filter(
+                          (c) => c !== code,
+                        );
+                        if (onDiscountCodesChange) onDiscountCodesChange(next);
+                        setTempDiscountCodes(next);
                       }}
                       size="small"
                       isDark={isDark}
@@ -684,7 +692,7 @@ export default function MobileFilterDrawer({
                     />
                   </div>
                 </Grow>
-              )}
+              ))}
             </Box>
           </Box>
         </Fade>
@@ -863,7 +871,7 @@ export default function MobileFilterDrawer({
                       {isDateRangeOver30Days
                         ? dataRestrictionDescription
                         : isUtmBlocked
-                          ? discountCode
+                          ? hasCommittedDiscount
                             ? "Clear discount filter first"
                             : "Clear product filter first"
                           : activeUtmCount > 0
@@ -894,7 +902,9 @@ export default function MobileFilterDrawer({
                     <Typography variant="body1" fontSize={14} fontWeight={500}>
                       {isDiscountBlocked
                         ? "Clear other filters first"
-                        : tempDiscountCode || "All"}
+                        : tempDiscountCodes.length > 0
+                          ? `${tempDiscountCodes.length} selected`
+                          : "All"}
                     </Typography>
                   </Box>
                   <ChevronRightIcon color="action" />
@@ -1405,41 +1415,61 @@ export default function MobileFilterDrawer({
           {view === "DISCOUNT" && (
             <List disablePadding>
               <ListItemButton
-                onClick={() => {
-                  setTempDiscountCode("");
-                  handleBack();
-                }}
-                selected={!tempDiscountCode}
+                onClick={() => setTempDiscountCodes([])}
+                selected={tempDiscountCodes.length === 0}
                 sx={{ py: 1.5 }}
               >
                 <ListItemText primary="All" />
-                {!tempDiscountCode && (
+                {tempDiscountCodes.length === 0 && (
                   <CheckIcon fontSize="small" color="primary" />
                 )}
               </ListItemButton>
-              {(utmOptions?.discount_codes || []).map((code) => (
-                <ListItemButton
-                  key={code}
-                  onClick={() => {
-                    setTempDiscountCode(code);
-                    setTempProduct({ id: "", label: "All products", detail: "Whole store" });
-                    setTempUtm({ source: [], medium: [], campaign: [], term: [], content: [] });
-                    setTempSalesChannel("");
-                    setTempDeviceType([]);
-                    handleBack();
-                  }}
-                  selected={tempDiscountCode === code}
-                  sx={{ py: 1.5 }}
-                >
-                  <ListItemText
-                    primary={code}
-                    primaryTypographyProps={{ noWrap: true }}
-                  />
-                  {tempDiscountCode === code && (
-                    <CheckIcon fontSize="small" color="primary" />
-                  )}
-                </ListItemButton>
-              ))}
+              <Box sx={{ px: 2, py: 1 }}>
+                <Typography variant="caption" color="text.secondary">
+                  {tempDiscountCodes.length >= MAX_DISCOUNT_CODES
+                    ? `Max ${MAX_DISCOUNT_CODES} codes selected — data is aggregated`
+                    : `Select up to ${MAX_DISCOUNT_CODES} codes — data is aggregated`}
+                </Typography>
+              </Box>
+              {(utmOptions?.discount_codes || []).map((code) => {
+                const isSelected = tempDiscountCodes.includes(code);
+                const atLimit =
+                  !isSelected && tempDiscountCodes.length >= MAX_DISCOUNT_CODES;
+                return (
+                  <ListItemButton
+                    key={code}
+                    disabled={atLimit}
+                    onClick={() => {
+                      if (isSelected) {
+                        setTempDiscountCodes(
+                          tempDiscountCodes.filter((c) => c !== code),
+                        );
+                        return;
+                      }
+                      // First discount selection is mutually exclusive with the
+                      // other filter groups — clear them.
+                      if (tempDiscountCodes.length === 0) {
+                        setTempProduct({ id: "", label: "All products", detail: "Whole store" });
+                        setTempUtm({ source: [], medium: [], campaign: [], term: [], content: [] });
+                        setTempSalesChannel("");
+                        setTempDeviceType([]);
+                        setTempCity([]);
+                      }
+                      setTempDiscountCodes([...tempDiscountCodes, code]);
+                    }}
+                    selected={isSelected}
+                    sx={{ py: 1.5 }}
+                  >
+                    <ListItemText
+                      primary={code}
+                      primaryTypographyProps={{ noWrap: true }}
+                    />
+                    {isSelected && (
+                      <CheckIcon fontSize="small" color="primary" />
+                    )}
+                  </ListItemButton>
+                );
+              })}
               {(!utmOptions?.discount_codes ||
                 utmOptions.discount_codes.length === 0) && (
                 <Box sx={{ p: 2, textAlign: "center" }}>

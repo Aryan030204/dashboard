@@ -44,6 +44,7 @@ import {
   normalizeDataRestrictionConfig,
   isRangeOverDataRestrictionPeriod,
 } from "../lib/dateRange.js";
+import { MAX_DISCOUNT_CODES } from "../state/slices/filterSlice.js";
 
 // Date Presets (Same as MobileTopBar for consistency)
 const DATE_PRESETS = [
@@ -134,8 +135,8 @@ export default function UnifiedFilterBar({
   city = [],
   onCityChange,
   cityDisabled = false,
-  discountCode = "",
-  onDiscountCodeChange,
+  discountCodes = [],
+  onDiscountCodesChange,
   discountDisabled = false,
   productType,
   onProductTypeChange,
@@ -295,7 +296,7 @@ export default function UnifiedFilterBar({
     ...(Array.isArray(salesChannel) ? salesChannel : [salesChannel]),
     ...(Array.isArray(deviceType) ? deviceType : []),
     ...(Array.isArray(city) ? city : [city]),
-    discountCode,
+    ...(Array.isArray(discountCodes) ? discountCodes : [discountCodes]),
     ...(Array.isArray(productType) ? productType : []),
     ...(Array.isArray(productValue) ? productValue : [productValue])?.map(
       (p) => p?.id,
@@ -479,6 +480,8 @@ export default function UnifiedFilterBar({
   const hasDeviceTypeValue = Array.isArray(deviceType) && deviceType.length > 0;
   const hasCityValue = Array.isArray(city) && city.length > 0;
   const hasProductTypeValue = Array.isArray(productType) && productType.length > 0;
+  const selectedDiscountCodes = Array.isArray(discountCodes) ? discountCodes : [];
+  const hasDiscountValue = selectedDiscountCodes.length > 0;
   const exclusiveGroupReason = hasChannelValue
     ? "Channel"
     : hasDeviceTypeValue
@@ -490,17 +493,17 @@ export default function UnifiedFilterBar({
           : "";
   const disabledUtmTooltip = exclusiveGroupReason
     ? `Clear ${exclusiveGroupReason} filter to use UTM filters`
-    : discountCode
+    : hasDiscountValue
       ? "Clear discount filter to use UTM filters"
       : "Clear product filter to use UTM filters";
-  const disabledUtmNestedTooltip = exclusiveGroupReason || discountCode
+  const disabledUtmNestedTooltip = exclusiveGroupReason || hasDiscountValue
     ? disabledUtmTooltip
     : disableUtmMediumCampaign
       ? "Clear product filter to use Medium/Campaign"
       : "";
   const disabledProductTooltip = exclusiveGroupReason
     ? `Clear ${exclusiveGroupReason} filter to use product filter`
-    : discountCode
+    : hasDiscountValue
       ? "Clear discount filter to use product filter"
       : allowProductUtmSync
         ? "Clear UTM medium/campaign filters to use product filter"
@@ -1831,33 +1834,55 @@ export default function UnifiedFilterBar({
                       : "rgba(0,0,0,0.05)",
                   }}
                 >
-                  {discountCode && (
-                    <ListItemButton
-                      dense
-                      onClick={() => onDiscountCodeChange?.("")}
-                      sx={{ px: 2, py: 0.5 }}
-                    >
-                      <ListItemText
-                        primary="Clear discount"
-                        primaryTypographyProps={{
-                          fontSize: "0.85rem",
-                          color: "error.main",
-                          fontWeight: 600,
-                        }}
-                      />
-                    </ListItemButton>
+                  {hasDiscountValue && (
+                    <>
+                      <ListItemButton
+                        dense
+                        onClick={() => onDiscountCodesChange?.([])}
+                        sx={{ px: 2, py: 0.5 }}
+                      >
+                        <ListItemText
+                          primary={`Clear ${selectedDiscountCodes.length} selected`}
+                          primaryTypographyProps={{
+                            fontSize: "0.85rem",
+                            color: "error.main",
+                            fontWeight: 600,
+                          }}
+                        />
+                      </ListItemButton>
+                      <Box sx={{ px: 2, pb: 0.5 }}>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ fontSize: "0.7rem" }}
+                        >
+                          {selectedDiscountCodes.length >= MAX_DISCOUNT_CODES
+                            ? `Max ${MAX_DISCOUNT_CODES} codes — data is aggregated`
+                            : `Select up to ${MAX_DISCOUNT_CODES} codes — data is aggregated`}
+                        </Typography>
+                      </Box>
+                    </>
                   )}
                   {(utmOptions?.discount_codes || [])
                     .filter((code) =>
                       code.toLowerCase().includes(discountSearch.toLowerCase()),
                     )
                     .map((code) => {
-                      const isSelected = discountCode === code;
+                      const isSelected = selectedDiscountCodes.includes(code);
+                      const atLimit =
+                        !isSelected &&
+                        selectedDiscountCodes.length >= MAX_DISCOUNT_CODES;
                       return (
                         <ListItemButton
                           key={code}
                           dense
-                          onClick={() => onDiscountCodeChange?.(isSelected ? "" : code)}
+                          disabled={atLimit}
+                          onClick={() => {
+                            const next = isSelected
+                              ? selectedDiscountCodes.filter((c) => c !== code)
+                              : [...selectedDiscountCodes, code];
+                            onDiscountCodesChange?.(next);
+                          }}
                           sx={{
                             px: 2,
                             py: 0.5,
@@ -2206,7 +2231,7 @@ export default function UnifiedFilterBar({
               onDeviceTypeChange([]);
               onCityChange?.([]);
               onProductChange(null);
-              onDiscountCodeChange?.("");
+              onDiscountCodesChange?.([]);
               onProductTypeChange?.([]);
               handleFilterClose();
             }}

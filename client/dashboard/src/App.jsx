@@ -160,7 +160,7 @@ import {
   setUtm,
   setSalesChannel,
   setDeviceType,
-  setDiscountCode,
+  setDiscountCodes,
   setCity,
   setProductType,
 } from "./state/slices/filterSlice.js";
@@ -240,7 +240,7 @@ export default function App() {
     activeMetric,
     productSelection,
     utm,
-    discountCode,
+    discountCodes,
     salesChannel,
     deviceType,
     city,
@@ -860,7 +860,7 @@ export default function App() {
     () => Array.isArray(city) && city.length > 0,
     [city],
   );
-  const hasActiveDiscountFilter = !!discountCode;
+  const hasActiveDiscountFilter = Array.isArray(discountCodes) && discountCodes.length > 0;
   const hasActiveProductTypeFilter = useMemo(
     () => Array.isArray(productType) && productType.length > 0,
     [productType],
@@ -940,7 +940,9 @@ export default function App() {
     if (utm?.campaign) base.utm_campaign = utm.campaign;
     if (utm?.term) base.utm_term = utm.term;
     if (utm?.content) base.utm_content = utm.content;
-    if (discountCode) base.discount_code = discountCode;
+    if (Array.isArray(discountCodes) && discountCodes.length > 0) {
+      base.discount_code = discountCodes;
+    }
 
     // Arrays allowed here
     if (salesChannel) base.sales_channel = salesChannel;
@@ -979,7 +981,7 @@ export default function App() {
     productSelection,
     hasPermission,
     utm,
-    discountCode,
+    discountCodes,
     salesChannel,
     deviceType,
     city,
@@ -1446,7 +1448,7 @@ export default function App() {
           (entry) => !CI_TREND_METRICS.has(entry),
         );
       }
-      if (discountCode) {
+      if (hasActiveDiscountFilter) {
         allowedMetrics = allowedMetrics.filter((entry) =>
           DISCOUNT_ALLOWED_TREND_METRICS.has(entry),
         );
@@ -1454,7 +1456,7 @@ export default function App() {
 
       const fallbackMetric =
         nextSelection.activeMetric &&
-        (!discountCode ||
+        (!hasActiveDiscountFilter ||
           DISCOUNT_ALLOWED_TREND_METRICS.has(nextSelection.activeMetric)) &&
         (hasPermission("ci_events") ||
           !CI_TREND_METRICS.has(nextSelection.activeMetric))
@@ -1474,7 +1476,7 @@ export default function App() {
       activeMetric,
       canMultiSelectableKpiCards,
       dispatch,
-      discountCode,
+      hasActiveDiscountFilter,
       hasPermission,
       selectedMetrics,
     ],
@@ -1483,9 +1485,22 @@ export default function App() {
   const handleRangeChange = useCallback(
     (nextRange) => {
       if (!Array.isArray(nextRange)) return;
+      // Discount partials are cached per date range on the backend; a range
+      // change invalidates the current selection, so clear it and let the user
+      // re-add codes against the new range.
+      const sameDay = (a, b) => {
+        const da = dayjs(a);
+        const db = dayjs(b);
+        return da.isValid() && db.isValid() && da.isSame(db, "day");
+      };
+      const rangeChanged =
+        !sameDay(nextRange[0], range?.[0]) || !sameDay(nextRange[1], range?.[1]);
+      if (rangeChanged && discountCodes.length > 0) {
+        dispatch(setDiscountCodes([]));
+      }
       dispatch(setRange(nextRange));
     },
-    [dispatch],
+    [dispatch, range, discountCodes],
   );
 
   const handleProductChange = useCallback(
@@ -1502,7 +1517,7 @@ export default function App() {
         );
       }
       dispatch(setProductSelection(value || DEFAULT_PRODUCT_OPTION));
-      dispatch(setDiscountCode(""));
+      dispatch(setDiscountCodes([]));
     },
     [canSyncProductUtmFilters, dispatch, hasActiveUtmFilter],
   );
@@ -1513,7 +1528,7 @@ export default function App() {
         dispatch(setProductSelection(DEFAULT_PRODUCT_OPTION));
       }
       dispatch(setUtm(val));
-      dispatch(setDiscountCode(""));
+      dispatch(setDiscountCodes([]));
     },
     [canSyncProductUtmFilters, dispatch, hasActiveProductFilter],
   );
@@ -1521,7 +1536,7 @@ export default function App() {
   const handleSalesChannelChange = useCallback(
     (val) => {
       dispatch(setSalesChannel(val));
-      dispatch(setDiscountCode(""));
+      dispatch(setDiscountCodes([]));
     },
     [dispatch],
   );
@@ -1529,7 +1544,7 @@ export default function App() {
   const handleDeviceTypeChange = useCallback(
     (val) => {
       dispatch(setDeviceType(val));
-      dispatch(setDiscountCode(""));
+      dispatch(setDiscountCodes([]));
     },
     [dispatch],
   );
@@ -1544,16 +1559,16 @@ export default function App() {
   const handleProductTypeChange = useCallback(
     (val) => {
       dispatch(setProductType(val));
-      dispatch(setDiscountCode(""));
+      dispatch(setDiscountCodes([]));
     },
     [dispatch],
   );
 
-  const handleDiscountCodeChange = useCallback(
+  const handleDiscountCodesChange = useCallback(
     (val) => {
-      const next = val || "";
-      dispatch(setDiscountCode(next));
-      if (next) {
+      const next = Array.isArray(val) ? val : val ? [val] : [];
+      dispatch(setDiscountCodes(next));
+      if (next.length > 0) {
         dispatch(setProductSelection(DEFAULT_PRODUCT_OPTION));
         dispatch(setUtm({ source: [], medium: [], campaign: [], term: [], content: [] }));
         dispatch(setSalesChannel([]));
@@ -1774,11 +1789,14 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("pts_discount_filter_v1", JSON.stringify(discountCode || ""));
+      localStorage.setItem(
+        "pts_discount_filter_v1",
+        JSON.stringify(Array.isArray(discountCodes) ? discountCodes : []),
+      );
     } catch {
       // Ignore
     }
-  }, [discountCode]);
+  }, [discountCodes]);
 
   useEffect(() => {
     if (!canMultiSelectableKpiCards && selectedMetrics.length > 0) {
@@ -1849,7 +1867,7 @@ export default function App() {
 
   useEffect(() => {
     if (
-      discountCode &&
+      hasActiveDiscountFilter &&
       selectedMetrics.some((metric) => !DISCOUNT_ALLOWED_TREND_METRICS.has(metric))
     ) {
       const nextSelection = sanitizeTrendMetricSelection(
@@ -1873,13 +1891,13 @@ export default function App() {
         ),
       );
     }
-  }, [activeMetric, discountCode, dispatch, selectedMetrics]);
+  }, [activeMetric, hasActiveDiscountFilter, dispatch, selectedMetrics]);
 
   useEffect(() => {
-    if (!isAuthor && !hasPermission("discount_filter") && discountCode) {
-      dispatch(setDiscountCode(""));
+    if (!isAuthor && !hasPermission("discount_filter") && hasActiveDiscountFilter) {
+      dispatch(setDiscountCodes([]));
     }
-  }, [isAuthor, hasPermission, discountCode, dispatch]);
+  }, [isAuthor, hasPermission, hasActiveDiscountFilter, dispatch]);
 
   // Centralized UTM clearing for > 30 days
   useEffect(() => {
@@ -2535,8 +2553,8 @@ export default function App() {
                         city={city}
                         onCityChange={handleCityChange}
                         cityDisabled={cityDisabled}
-                        discountCode={discountCode}
-                        onDiscountCodeChange={handleDiscountCodeChange}
+                        discountCodes={discountCodes}
+                        onDiscountCodesChange={handleDiscountCodesChange}
                         discountDisabled={discountDisabled}
                         productType={productType}
                         onProductTypeChange={handleProductTypeChange}
@@ -2669,8 +2687,8 @@ export default function App() {
                       city={city}
                       onCityChange={handleCityChange}
                         cityDisabled={cityDisabled}
-                      discountCode={discountCode}
-                      onDiscountCodeChange={handleDiscountCodeChange}
+                      discountCodes={discountCodes}
+                      onDiscountCodesChange={handleDiscountCodesChange}
                         discountDisabled={discountDisabled}
                       showUtmFilter={hasPermission("utm_filter")}
                       showSalesChannel={hasPermission("sales_channel_filter")}
@@ -2715,8 +2733,8 @@ export default function App() {
                   city={city}
                   onCityChange={handleCityChange}
                         cityDisabled={cityDisabled}
-                  discountCode={discountCode}
-                  onDiscountCodeChange={handleDiscountCodeChange}
+                  discountCodes={discountCodes}
+                  onDiscountCodesChange={handleDiscountCodesChange}
                         discountDisabled={discountDisabled}
                   showDiscountFilter={hasPermission("discount_filter")}
                   divisionProductType={productType}

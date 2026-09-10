@@ -1509,7 +1509,16 @@ function KPIs({
   const utmCampaign = query?.utm_campaign;
   const salesChannel = query?.sales_channel;
   const deviceType = query?.device_type;
-  const discountCode = query?.discount_code;
+  const rawDiscountCode = query?.discount_code;
+  const discountCodes = useMemo(
+    () =>
+      Array.isArray(rawDiscountCode)
+        ? rawDiscountCode
+        : rawDiscountCode
+          ? [rawDiscountCode]
+          : [],
+    [rawDiscountCode],
+  );
   const city = query?.city;
   const { convertAmount, formatConvertedAmount } = useInrCurrency(brandKey, end);
   const { loading, deltaLoading, data, webVitalsData } = useDashboardKpiData({
@@ -1550,9 +1559,11 @@ function KPIs({
         Array.isArray(utmCampaign) && utmCampaign.length > 0
           ? { key: "campaign", label: `campaign: ${utmCampaign}` }
           : null,
-        discountCode ? { key: "discount", label: `discount: ${discountCode}` } : null,
+        discountCodes.length > 0
+          ? { key: "discount", label: `discount: ${discountCodes.join(", ")}` }
+          : null,
       ].filter(Boolean),
-    [utmSource, utmMedium, utmCampaign, discountCode],
+    [utmSource, utmMedium, utmCampaign, discountCodes],
   );
 
   const desktopCardsById = useMemo(

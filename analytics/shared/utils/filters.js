@@ -37,6 +37,25 @@ function extractSingleParam(val) {
   return values.length > 0 ? values[0] : null;
 }
 
+// Discount codes support multi-select (comma-separated or repeated query params).
+// Returns an array of up to `max` codes, or null when none are provided so that
+// downstream truthiness checks (`filters.discount_code || ...`) keep working.
+const MAX_DISCOUNT_CODES = 3;
+
+function extractDiscountCodes(val, max = MAX_DISCOUNT_CODES) {
+  const values = normalizeFilterValues(val);
+  if (values.length === 0) return null;
+  // De-dupe while preserving order, then cap.
+  const seen = new Set();
+  const unique = [];
+  for (const v of values) {
+    if (seen.has(v)) continue;
+    seen.add(v);
+    unique.push(v);
+  }
+  return unique.slice(0, max);
+}
+
 function canSyncProductUtmFilters(req) {
   if (req?.user?.isAuthor) return true;
   const permissions = Array.isArray(req?.user?.permissions) ? req.user.permissions : [];
@@ -196,7 +215,7 @@ function extractFilters(req) {
     sales_channel: extractUtmParam(sales_channel),
     device_type: extractUtmParam(device_type),
     product_id: rawProductId,
-    discount_code: extractSingleParam(discount_code),
+    discount_code: extractDiscountCodes(discount_code),
     city: extractUtmParam(city),
     product_type: extractUtmParam(product_type),
   };
@@ -209,5 +228,7 @@ module.exports = {
   hasUtmFilters,
   extractUtmParam,
   extractSingleParam,
+  extractDiscountCodes,
   extractFilters,
+  MAX_DISCOUNT_CODES,
 };

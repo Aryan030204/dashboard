@@ -3,6 +3,66 @@ const {
   appendUtmWhere,
 } = require("../shared/utils/filters");
 const { ciEventsSqlExpr } = require("./metricsFoundation");
+const {
+  aggregateAcrossCodes,
+  cacheNamespace,
+} = require("./discountPartialCache");
+
+// Compute a discount-filtered aggregate for the selected code set.
+//
+// With a brand namespace available each code is queried and cached on its own,
+// so growing / shrinking the selection only touches the DB for codes not seen
+// yet. Without one (unit tests, unknown connections) it falls back to a single
+// `discount_code IN (...)` query. Either way `aggregate` receives a list of
+// per-code partial results and folds them together.
+function runDiscountAggregate({ conn, source, shape, buildAndRun, aggregate }) {
+  const namespace = cacheNamespace(conn);
+  if (!namespace) {
+    return Promise.resolve(buildAndRun(source.filters)).then((res) =>
+      aggregate([res]),
+    );
+  }
+  return aggregateAcrossCodes({
+    namespace,
+    shape,
+    codes: normalizeDiscountCodes(source.filters),
+    computeSingle: (code) => buildAndRun({ discount_code: [code] }),
+    aggregate,
+  });
+}
+
+function sumField(parts, field) {
+  return parts.reduce((total, part) => total + Number(part?.[field] || 0), 0);
+}
+
+// Fold per-code daily/hourly rows into one series, summing sales + orders per
+// bucket. Discount rollups carry no session data, so those stay zero.
+function mergeDiscountRows(perCodeRows, granularity) {
+  const includeHour = granularity === "hourly";
+  const byBucket = new Map();
+  for (const rows of perCodeRows) {
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const key = includeHour ? `${row.date} ${row.hour}` : String(row.date);
+      const acc =
+        byBucket.get(key) ||
+        {
+          date: row.date,
+          ...(includeHour ? { hour: row.hour } : {}),
+          sales: 0,
+          orders: 0,
+          sessions: 0,
+          atc: 0,
+        };
+      acc.sales += Number(row.sales || 0);
+      acc.orders += Number(row.orders || 0);
+      byBucket.set(key, acc);
+    }
+  }
+  return Array.from(byBucket.values()).sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return includeHour ? Number(a.hour) - Number(b.hour) : 0;
+  });
+}
 
 function pickSupportedUtmFilters(filters = {}) {
   return {
@@ -17,12 +77,22 @@ function hasValue(value) {
   return !!value;
 }
 
-function hasDiscountFilter(filters = {}) {
-  return !!(filters.discount_code || "").toString().trim();
+function normalizeDiscountCodes(filters = {}) {
+  const value = filters.discount_code;
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of list) {
+    const code = String(entry || "").trim();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  return out.slice(0, 3);
 }
 
-function normalizeDiscountCode(filters = {}) {
-  return (filters.discount_code || "").toString().trim();
+function hasDiscountFilter(filters = {}) {
+  return normalizeDiscountCodes(filters).length > 0;
 }
 
 function isCombinedProductUtmSourceFilter(filters = {}) {
@@ -45,22 +115,26 @@ function resolveDiscountAggregateSource(filters = {}, granularity = "daily") {
   if (filters.city && (!Array.isArray(filters.city) || filters.city.length > 0)) {
     return null;
   }
-  const discountCode = normalizeDiscountCode(filters);
-  if (!discountCode) return null;
+  const discountCodes = normalizeDiscountCodes(filters);
+  if (discountCodes.length === 0) return null;
   return {
     table:
       granularity === "hourly"
         ? "dashboard_discount_hourly"
         : "dashboard_discount_daily",
-    filters: { discount_code: discountCode },
+    filters: { discount_code: discountCodes },
   };
 }
 
 function appendDiscountWhere(sql, replacements, filters = {}) {
-  const discountCode = normalizeDiscountCode(filters);
-  if (!discountCode) return sql;
-  replacements.push(discountCode);
-  return `${sql} AND discount_code = ?`;
+  const discountCodes = normalizeDiscountCodes(filters);
+  if (discountCodes.length === 0) return sql;
+  if (discountCodes.length === 1) {
+    replacements.push(discountCodes[0]);
+    return `${sql} AND discount_code = ?`;
+  }
+  replacements.push(...discountCodes);
+  return `${sql} AND discount_code IN (${discountCodes.map(() => "?").join(", ")})`;
 }
 
 function normalizeProductTypes(filters = {}) {
@@ -668,33 +742,49 @@ async function queryDiscountAggregateTotals(
   const source = resolveDiscountAggregateSource(filters, granularity);
   if (!source) return null;
 
-  let sql = `
-    SELECT
-      COALESCE(SUM(total_orders), 0) AS total_orders,
-      COALESCE(SUM(gross_revenue), 0) AS total_sales
-    FROM ${source.table}
-    WHERE date >= ? AND date <= ?
-  `;
-  const replacements = [start, end];
-  if (granularity === "hourly" && cutoffHour !== null && cutoffHour !== undefined) {
-    sql += ` AND hour <= ?`;
-    replacements.push(cutoffHour);
-  }
-  sql = appendDiscountWhere(sql, replacements, source.filters);
-
-  const rows = await conn.query(sql, {
-    type: QueryTypes.SELECT,
-    replacements,
-  });
-  const row = rows?.[0] || {};
-  return {
-    total_orders: Number(row.total_orders || 0),
-    total_sales: Number(row.total_sales || 0),
-    total_sessions: null,
-    total_atc_sessions: null,
-    cancelled_orders: null,
-    refunded_orders: null,
+  const buildAndRun = async (discountFilters) => {
+    let sql = `
+      SELECT
+        COALESCE(SUM(total_orders), 0) AS total_orders,
+        COALESCE(SUM(gross_revenue), 0) AS total_sales
+      FROM ${source.table}
+      WHERE date >= ? AND date <= ?
+    `;
+    const replacements = [start, end];
+    if (
+      granularity === "hourly" &&
+      cutoffHour !== null &&
+      cutoffHour !== undefined
+    ) {
+      sql += ` AND hour <= ?`;
+      replacements.push(cutoffHour);
+    }
+    sql = appendDiscountWhere(sql, replacements, discountFilters);
+    const rows = await conn.query(sql, {
+      type: QueryTypes.SELECT,
+      replacements,
+    });
+    const row = rows?.[0] || {};
+    return {
+      total_orders: Number(row.total_orders || 0),
+      total_sales: Number(row.total_sales || 0),
+    };
   };
+
+  return runDiscountAggregate({
+    conn,
+    source,
+    shape: ["totals", source.table, start, end, granularity, cutoffHour].join(" "),
+    buildAndRun,
+    aggregate: (parts) => ({
+      total_orders: sumField(parts, "total_orders"),
+      total_sales: sumField(parts, "total_sales"),
+      total_sessions: null,
+      total_atc_sessions: null,
+      cancelled_orders: null,
+      refunded_orders: null,
+    }),
+  });
 }
 
 async function queryDiscountAggregatePair(
@@ -724,52 +814,76 @@ async function queryDiscountAggregatePair(
   const includeHour = granularity === "hourly";
   const currentSelect = buildDiscountAggregateSelect("current", includeHour);
   const previousSelect = buildDiscountAggregateSelect("previous", includeHour);
-  let sql = `
-    SELECT
-      ${currentSelect.sql},
-      ${previousSelect.sql}
-    FROM ${source.table}
-    WHERE date >= ? AND date <= ?
-  `;
-  const replacements = [
-    ...currentSelect.replacementsForRange(
-      currentRange.start,
-      currentRange.end,
-      currentCutoffHour,
-    ),
-    ...previousSelect.replacementsForRange(
-      previousRange.start,
-      previousRange.end,
-      previousCutoffHour,
-    ),
-    combinedStart,
-    combinedEnd,
-  ];
-  sql = appendDiscountWhere(sql, replacements, source.filters);
 
-  const rows = await conn.query(sql, {
-    type: QueryTypes.SELECT,
-    replacements,
-  });
-  const row = rows?.[0] || {};
-  return {
-    current: {
-      total_orders: Number(row.current_total_orders || 0),
-      total_sales: Number(row.current_total_sales || 0),
-      total_sessions: null,
-      total_atc_sessions: null,
-      cancelled_orders: null,
-      refunded_orders: null,
-    },
-    previous: {
-      total_orders: Number(row.previous_total_orders || 0),
-      total_sales: Number(row.previous_total_sales || 0),
-      total_sessions: null,
-      total_atc_sessions: null,
-      cancelled_orders: null,
-      refunded_orders: null,
-    },
+  const buildAndRun = async (discountFilters) => {
+    let sql = `
+      SELECT
+        ${currentSelect.sql},
+        ${previousSelect.sql}
+      FROM ${source.table}
+      WHERE date >= ? AND date <= ?
+    `;
+    const replacements = [
+      ...currentSelect.replacementsForRange(
+        currentRange.start,
+        currentRange.end,
+        currentCutoffHour,
+      ),
+      ...previousSelect.replacementsForRange(
+        previousRange.start,
+        previousRange.end,
+        previousCutoffHour,
+      ),
+      combinedStart,
+      combinedEnd,
+    ];
+    sql = appendDiscountWhere(sql, replacements, discountFilters);
+    const rows = await conn.query(sql, {
+      type: QueryTypes.SELECT,
+      replacements,
+    });
+    const row = rows?.[0] || {};
+    return {
+      current_total_orders: Number(row.current_total_orders || 0),
+      current_total_sales: Number(row.current_total_sales || 0),
+      previous_total_orders: Number(row.previous_total_orders || 0),
+      previous_total_sales: Number(row.previous_total_sales || 0),
+    };
   };
+
+  const emptySide = {
+    total_sessions: null,
+    total_atc_sessions: null,
+    cancelled_orders: null,
+    refunded_orders: null,
+  };
+
+  return runDiscountAggregate({
+    conn,
+    source,
+    shape: [
+      "pair",
+      source.table,
+      `${currentRange.start}_${currentRange.end}`,
+      `${previousRange.start}_${previousRange.end}`,
+      granularity,
+      currentCutoffHour,
+      previousCutoffHour,
+    ].join(" "),
+    buildAndRun,
+    aggregate: (parts) => ({
+      current: {
+        total_orders: sumField(parts, "current_total_orders"),
+        total_sales: sumField(parts, "current_total_sales"),
+        ...emptySide,
+      },
+      previous: {
+        total_orders: sumField(parts, "previous_total_orders"),
+        total_sales: sumField(parts, "previous_total_sales"),
+        ...emptySide,
+      },
+    }),
+  });
 }
 
 async function queryDiscountAggregateRows(
@@ -783,45 +897,113 @@ async function queryDiscountAggregateRows(
   const source = resolveDiscountAggregateSource(filters, granularity);
   if (!source) return null;
 
-  const replacements = [start, end];
-  let sql;
-  if (granularity === "hourly") {
-    sql = `
-      SELECT
-        DATE_FORMAT(date, '%Y-%m-%d') AS date,
-        hour,
-        COALESCE(SUM(gross_revenue), 0) AS sales,
-        COALESCE(SUM(total_orders), 0) AS orders,
-        0 AS sessions,
-        0 AS atc
-      FROM ${source.table}
-      WHERE date >= ? AND date <= ?
-    `;
-    if (cutoffHour !== null && cutoffHour !== undefined) {
-      sql += ` AND hour <= ?`;
-      replacements.push(cutoffHour);
+  const buildAndRun = (discountFilters) => {
+    const replacements = [start, end];
+    let sql;
+    if (granularity === "hourly") {
+      sql = `
+        SELECT
+          DATE_FORMAT(date, '%Y-%m-%d') AS date,
+          hour,
+          COALESCE(SUM(gross_revenue), 0) AS sales,
+          COALESCE(SUM(total_orders), 0) AS orders,
+          0 AS sessions,
+          0 AS atc
+        FROM ${source.table}
+        WHERE date >= ? AND date <= ?
+      `;
+      if (cutoffHour !== null && cutoffHour !== undefined) {
+        sql += ` AND hour <= ?`;
+        replacements.push(cutoffHour);
+      }
+      sql = appendDiscountWhere(sql, replacements, discountFilters);
+      sql += ` GROUP BY date, hour ORDER BY date ASC, hour ASC`;
+    } else {
+      sql = `
+        SELECT
+          DATE_FORMAT(date, '%Y-%m-%d') AS date,
+          COALESCE(SUM(gross_revenue), 0) AS sales,
+          COALESCE(SUM(total_orders), 0) AS orders,
+          0 AS sessions,
+          0 AS atc
+        FROM ${source.table}
+        WHERE date >= ? AND date <= ?
+      `;
+      sql = appendDiscountWhere(sql, replacements, discountFilters);
+      sql += ` GROUP BY date ORDER BY date ASC`;
     }
-    sql = appendDiscountWhere(sql, replacements, source.filters);
-    sql += ` GROUP BY date, hour ORDER BY date ASC, hour ASC`;
-  } else {
-    sql = `
-      SELECT
-        DATE_FORMAT(date, '%Y-%m-%d') AS date,
-        COALESCE(SUM(gross_revenue), 0) AS sales,
-        COALESCE(SUM(total_orders), 0) AS orders,
-        0 AS sessions,
-        0 AS atc
-      FROM ${source.table}
-      WHERE date >= ? AND date <= ?
-    `;
-    sql = appendDiscountWhere(sql, replacements, source.filters);
-    sql += ` GROUP BY date ORDER BY date ASC`;
+    return conn.query(sql, {
+      type: QueryTypes.SELECT,
+      replacements,
+    });
+  };
+
+  return runDiscountAggregate({
+    conn,
+    source,
+    shape: ["rows", source.table, start, end, granularity, cutoffHour].join(" "),
+    buildAndRun,
+    aggregate: (perCode) => mergeDiscountRows(perCode, granularity),
+  });
+}
+
+// Payment-mode split (cod / prepaid / partially_paid) for a discount code set,
+// summing one numeric column of dashboard_discount_payment_{daily,hourly}.
+// Shares the per-code cache so it grows/shrinks with the selection like the
+// other discount aggregates.
+async function queryDiscountPaymentModeSplit(
+  conn,
+  { table, start, end, hourLte = null, valueColumn },
+  filters = {},
+) {
+  const codes = normalizeDiscountCodes(filters);
+  if (codes.length === 0) {
+    return { cod: 0, prepaid: 0, partially_paid: 0, sql: null };
   }
 
-  return conn.query(sql, {
-    type: QueryTypes.SELECT,
-    replacements,
+  let lastSql = null;
+  const buildAndRun = async (discountFilters) => {
+    let sql = `
+      SELECT
+        payment_mode,
+        COALESCE(SUM(${valueColumn}), 0) AS value
+      FROM ${table}
+      WHERE date >= ? AND date <= ?
+    `;
+    const replacements = [start, end];
+    if (Number.isInteger(hourLte)) {
+      sql += ` AND hour <= ?`;
+      replacements.push(hourLte);
+    }
+    sql = appendDiscountWhere(sql, replacements, discountFilters);
+    sql += ` GROUP BY payment_mode`;
+    lastSql = sql;
+    const rows = await conn.query(sql, {
+      type: QueryTypes.SELECT,
+      replacements,
+    });
+    const split = { cod: 0, prepaid: 0, partially_paid: 0 };
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (Object.prototype.hasOwnProperty.call(split, row.payment_mode)) {
+        split[row.payment_mode] += Number(row.value || 0);
+      }
+    }
+    return split;
+  };
+
+  const source = { filters: { discount_code: codes } };
+  const combined = await runDiscountAggregate({
+    conn,
+    source,
+    shape: ["pay", table, start, end, hourLte, valueColumn].join(" "),
+    buildAndRun,
+    aggregate: (parts) => ({
+      cod: sumField(parts, "cod"),
+      prepaid: sumField(parts, "prepaid"),
+      partially_paid: sumField(parts, "partially_paid"),
+    }),
   });
+  return { ...combined, sql: lastSql };
 }
 
 async function queryProductTypeAggregateRows(
@@ -1145,6 +1327,7 @@ module.exports = {
   queryDiscountAggregateTotals,
   queryDiscountAggregatePair,
   queryDiscountAggregateRows,
+  queryDiscountPaymentModeSplit,
   queryProductTypeAggregateTotals,
   queryProductTypeAggregatePair,
   queryProductTypeAggregateRows,

@@ -193,9 +193,9 @@ describe("metricsReportService", () => {
   test("returns discount-filtered order split from discount payment daily table", async () => {
     const conn = {
       query: jest.fn().mockResolvedValue([
-        { payment_mode: "cod", orders: 5 },
-        { payment_mode: "prepaid", orders: 9 },
-        { payment_mode: "partially_paid", orders: 2 },
+        { payment_mode: "cod", value: 5 },
+        { payment_mode: "prepaid", value: 9 },
+        { payment_mode: "partially_paid", value: 2 },
       ]),
     };
 
@@ -223,12 +223,42 @@ describe("metricsReportService", () => {
     });
   });
 
+  test("aggregates multiple discount codes with an IN clause", async () => {
+    const conn = {
+      query: jest.fn().mockResolvedValue([
+        { payment_mode: "cod", value: 5 },
+        { payment_mode: "prepaid", value: 9 },
+      ]),
+    };
+
+    const service = buildMetricsReportService();
+    await service.getOrderSplit({
+      conn,
+      start: "2026-03-01",
+      end: "2026-03-02",
+      filters: { discount_code: ["SAVE10", "SAVE20", "SAVE30"] },
+      includeSql: true,
+    });
+
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    expect(conn.query.mock.calls[0][0]).toContain(
+      "discount_code IN (?, ?, ?)",
+    );
+    expect(conn.query.mock.calls[0][1].replacements).toEqual([
+      "2026-03-01",
+      "2026-03-02",
+      "SAVE10",
+      "SAVE20",
+      "SAVE30",
+    ]);
+  });
+
   test("returns discount-filtered sales split from discount payment hourly table", async () => {
     const conn = {
       query: jest.fn().mockResolvedValue([
-        { payment_mode: "cod", sales: 500 },
-        { payment_mode: "prepaid", sales: 1500 },
-        { payment_mode: "partially_paid", sales: 250 },
+        { payment_mode: "cod", value: 500 },
+        { payment_mode: "prepaid", value: 1500 },
+        { payment_mode: "partially_paid", value: 250 },
       ]),
     };
 
