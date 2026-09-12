@@ -1435,6 +1435,32 @@ export async function getWebVitalsPages(args = {}) {
   };
 }
 
+export async function getPnlSummary(args = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      granularity: args.granularity || "daily",
+    },
+    args,
+  );
+  const json = await getJSON("/pnl/summary", params);
+  return {
+    brandKey: json?.brandKey || null,
+    granularity: json?.granularity || "daily",
+    start: json?.start || null,
+    end: json?.end || null,
+    previousStart: json?.previousStart || null,
+    previousEnd: json?.previousEnd || null,
+    channel: json?.channel || null,
+    productId: json?.productId || null,
+    kpis: json?.kpis || {},
+    lineItems: Array.isArray(json?.lineItems) ? json.lineItems : [],
+    filters: json?.filters || {},
+    error: json?.__error,
+  };
+}
+
 export async function getMonthlyTrend(args) {
   const base = { start: args.start, end: args.end };
   if (args.compare_start) base.compare_start = args.compare_start;
