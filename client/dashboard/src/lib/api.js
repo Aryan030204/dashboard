@@ -1457,8 +1457,26 @@ export async function getPnlSummary(args = {}) {
     kpis: json?.kpis || {},
     lineItems: Array.isArray(json?.lineItems) ? json.lineItems : [],
     filters: json?.filters || {},
+    metaAdSpend: json?.metaAdSpend || null,
     error: json?.__error,
   };
+}
+
+export async function getMetaAdsStatus(args = {}) {
+  return doGet("/pnl/meta-ads/status", appendBrandKey({}, args));
+}
+
+export async function connectMetaAds({ brand_key, ad_account_id, access_token }) {
+  return doPost("/pnl/meta-ads/connect", {
+    brand_key: normalizeBrandKey(brand_key),
+    ad_account_id,
+    access_token,
+  });
+}
+
+export async function disconnectMetaAds({ brand_key }) {
+  const params = qs({ brand_key: normalizeBrandKey(brand_key) });
+  return doDelete(`/pnl/meta-ads/disconnect${params}`);
 }
 
 export async function getMonthlyTrend(args) {

@@ -1,3 +1,6 @@
+const pnlAdSpendRollupService = require("./pnlAdSpendRollup.service");
+const pnlCostConfigService = require("./pnlCostConfig.service");
+
 const GST_RATE = 18 / 118;
 
 function seededRandom(seedStr) {
@@ -102,6 +105,16 @@ function buildMockPnl({ brandKey, start, end, channel, productId }) {
   };
 }
 
+// Overrides the mocked "meta" spend with a synced figure read from the
+// ad-spend rollup table and re-derives every total that cascades from it.
+function applyMetaSpendFromRollup(pnl, syncedSpend) {
+  pnl.meta = Math.round(syncedSpend);
+  pnl.cm2 = pnl.cm1 - pnl.meta - pnl.google - pnl.otherPaid;
+  pnl.cm3 = pnl.cm2 - pnl.influencers - pnl.content - pnl.sponsorships - pnl.otherBrand;
+  pnl.ebitda = pnl.cm3 - pnl.salaries - pnl.rent - pnl.technology - pnl.agencyFees - pnl.otherOverheads;
+  return pnl;
+}
+
 function pctOfNetSales(amount, netSales) {
   if (!netSales) return 0;
   return Math.round((amount / netSales) * 1000) / 10;
@@ -112,7 +125,7 @@ function changePct(current, previous) {
   return Math.round(((current - previous) / Math.abs(previous)) * 1000) / 10;
 }
 
-function buildLineItems(curr, prev) {
+function buildLineItems(curr, prev, { metaIsLive = false } = {}) {
   const rows = [];
   const push = (key, label, amount, previousAmount, opts = {}) => {
     rows.push({
@@ -142,7 +155,12 @@ function buildLineItems(curr, prev) {
   push("packaging", "(–) Packaging", -curr.packaging, -prev.packaging, { section: "cm1", isDeduction: true });
   push("cm1", "CM1", curr.cm1, prev.cm1, { section: "cm1", isSubtotal: true });
 
-  push("meta", "(–) Meta", -curr.meta, -prev.meta, { section: "cm2", isDeduction: true, isSubItem: true });
+  push("meta", "(–) Meta", -curr.meta, -prev.meta, {
+    section: "cm2",
+    isDeduction: true,
+    isSubItem: true,
+    isLive: metaIsLive,
+  });
   push("google", "(–) Google", -curr.google, -prev.google, { section: "cm2", isDeduction: true, isSubItem: true });
   push("otherPaid", "(–) Other Paid Channels", -curr.otherPaid, -prev.otherPaid, { section: "cm2", isDeduction: true, isSubItem: true });
   push("cm2", "CM2", curr.cm2, prev.cm2, { section: "cm2", isSubtotal: true });
@@ -181,15 +199,45 @@ function buildMarginKpi(currentMargin, currentNetSales, previousMargin, previous
   };
 }
 
-// Mock data source — replace with a query against the P&L rollup table once
-// it exists. The seeded RNG keeps values stable across reloads for the same
+// Revenue/order-derived fields are still mocked — replace with a query
+// against the P&L rollup table once that pipeline exists (out of scope
+// here). The seeded RNG keeps values stable across reloads for the same
 // brand/date-range/filter combination so the UI feels like it's backed by
-// real data until then.
-function getSummary({ brandKey, start, end, granularity = "daily", channel = null, productId = null }) {
+// real data until then. Cost fields and Meta spend are already sourced from
+// real per-brand tables where configured/synced (pnlCostConfigService,
+// pnlAdSpendRollupService) and only fall back to the mock baseline
+// otherwise.
+async function getSummary({ brandKey, start, end, granularity = "daily", channel = null, productId = null, conn = null }) {
   const [previousStart, previousEnd] = computePreviousRange(start, end, granularity);
 
   const curr = buildMockPnl({ brandKey, start, end, channel, productId });
   const prev = buildMockPnl({ brandKey, start: previousStart, end: previousEnd, channel, productId });
+
+  // Manually configured costs (rent, salaries, packaging, ...) take priority
+  // over the mocked baseline. Resolved separately per period so a config
+  // change between the current and previous range is reflected correctly.
+  const [currCostConfigs, prevCostConfigs] = await Promise.all([
+    pnlCostConfigService.getActiveConfigs(conn, { asOfDate: end }),
+    pnlCostConfigService.getActiveConfigs(conn, { asOfDate: previousEnd }),
+  ]);
+  pnlCostConfigService.applyCostConfigs(curr, currCostConfigs);
+  pnlCostConfigService.applyCostConfigs(prev, prevCostConfigs);
+
+  const [currMetaSpend, prevMetaSpend] = await Promise.all([
+    pnlAdSpendRollupService.getAdSpend({ conn, start, end }),
+    pnlAdSpendRollupService.getAdSpend({ conn, start: previousStart, end: previousEnd }),
+  ]);
+
+  const metaIsLive = currMetaSpend.available;
+  if (currMetaSpend.available) applyMetaSpendFromRollup(curr, currMetaSpend.spend);
+  if (prevMetaSpend.available) applyMetaSpendFromRollup(prev, prevMetaSpend.spend);
+
+  const metaAdSpend = {
+    available: currMetaSpend.available,
+    spend: currMetaSpend.available ? curr.meta : null,
+    error: currMetaSpend.error,
+    source: currMetaSpend.available ? "rollup" : "mock",
+  };
 
   return {
     brandKey: brandKey || null,
@@ -208,7 +256,8 @@ function getSummary({ brandKey, start, end, granularity = "daily", channel = nul
       cm3Pct: buildMarginKpi(curr.cm3, curr.netSales, prev.cm3, prev.netSales),
       ebitdaPct: buildMarginKpi(curr.ebitda, curr.netSales, prev.ebitda, prev.netSales),
     },
-    lineItems: buildLineItems(curr, prev),
+    lineItems: buildLineItems(curr, prev, { metaIsLive }),
+    metaAdSpend,
     filters: {
       channel: {
         available: false,

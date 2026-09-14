@@ -20,13 +20,14 @@ const pnlController = {
       const productId = req.query.product_id ? String(req.query.product_id) : null;
 
       return res.json(
-        pnlService.getSummary({
+        await pnlService.getSummary({
           brandKey: req.brandKey,
           start,
           end,
           granularity,
           channel,
           productId,
+          conn: req.brandDb?.sequelize,
         }),
       );
     } catch (error) {

@@ -7,6 +7,7 @@ import PnlFilterBar from "./components/PnlFilterBar.jsx";
 import PnlKpiRow from "./components/PnlKpiRow.jsx";
 import PnlTable from "./components/PnlTable.jsx";
 import PnlConfigSection from "./components/PnlConfigSection.jsx";
+import PnlMetaAdsSection from "./components/PnlMetaAdsSection.jsx";
 
 function formatDate(value) {
   return dayjs(value).format("YYYY-MM-DD");
@@ -22,6 +23,7 @@ export default function PnlPage({ brandKey }) {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const { formatAmount } = useInrCurrency(brandKey);
 
@@ -51,7 +53,7 @@ export default function PnlPage({ brandKey }) {
     return () => {
       cancelled = true;
     };
-  }, [brandKey, rangeStart, rangeEnd, granularity]);
+  }, [brandKey, rangeStart, rangeEnd, granularity, refreshTick]);
 
   const handleRangeChange = (nextStart, nextEnd) => {
     setRangeStart(nextStart);
@@ -60,6 +62,10 @@ export default function PnlPage({ brandKey }) {
 
   const channelNote = summary?.filters?.channel?.available === false ? summary.filters.channel.message : null;
   const productNote = summary?.filters?.product?.available === false ? summary.filters.product.message : null;
+  const metaAdSpendNote =
+    summary?.metaAdSpend && summary.metaAdSpend.available === false
+      ? `Meta ad spend isn't synced yet: ${summary.metaAdSpend.error || "no rollup data for this brand."} Showing an estimate instead.`
+      : null;
 
   return (
     <Stack spacing={2.5} sx={{ p: { xs: 1.5, md: 2 } }}>
@@ -91,6 +97,7 @@ export default function PnlPage({ brandKey }) {
       {!loading && (channelNote || productNote) ? (
         <Alert severity="info">{channelNote || productNote}</Alert>
       ) : null}
+      {!loading && metaAdSpendNote ? <Alert severity="warning">{metaAdSpendNote}</Alert> : null}
 
       <Stack spacing={1}>
         <Typography variant="subtitle2" color="text.secondary">
@@ -108,6 +115,8 @@ export default function PnlPage({ brandKey }) {
         previousEnd={summary?.previousEnd}
         formatAmount={formatAmount}
       />
+
+      <PnlMetaAdsSection brandKey={brandKey} onConnectionChange={() => setRefreshTick((t) => t + 1)} />
 
       <PnlConfigSection />
     </Stack>

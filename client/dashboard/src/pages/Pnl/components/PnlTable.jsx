@@ -1,5 +1,6 @@
 import {
   Card,
+  Chip,
   Skeleton,
   Stack,
   Table,
@@ -8,6 +9,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
   useTheme,
 } from "@mui/material";
@@ -100,7 +102,14 @@ export default function PnlTable({ rows, loading, start, end, previousStart, pre
                           pl: row.isSubItem ? 4 : 2,
                         }}
                       >
-                        {row.label}
+                        <Stack direction="row" alignItems="center" spacing={1} component="span">
+                          <span>{row.label}</span>
+                          {row.isLive ? (
+                            <Tooltip title="Synced spend from the Meta ad spend rollup for this date range">
+                              <Chip label="Synced" size="small" color="success" variant="outlined" />
+                            </Tooltip>
+                          ) : null}
+                        </Stack>
                       </TableCell>
                       <TableCell align="right" sx={{ fontWeight: row.isSubtotal ? 700 : 400 }}>
                         {formatAmount(row.amount)}

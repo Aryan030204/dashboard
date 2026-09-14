@@ -2,6 +2,7 @@
 */node_modules
 /.env
 **/.env
+**/.env.local
 /infra-firehose
 api-gateway/.env
 tenant-router/.env
