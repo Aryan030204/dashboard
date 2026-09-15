@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/../aws-pipeline-ec2/aws-pipeline-ec2.iml" filepath="$PROJECT_DIR$/../aws-pipeline-ec2/aws-pipeline-ec2.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/dashboard.iml" filepath="$PROJECT_DIR$/.idea/dashboard.iml" />
     </modules>
   </component>

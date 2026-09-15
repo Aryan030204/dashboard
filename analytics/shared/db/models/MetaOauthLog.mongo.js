@@ -9,7 +9,10 @@ const { mongoose } = require("../mongo");
 const metaOauthLogSchema = new mongoose.Schema(
   {
     brand: { type: mongoose.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
-    brand_id: { type: String, required: true, unique: true },
+    // One row per brand is enforced by the upsert in saveOauthLog, not by a
+    // unique index — a unique index would refuse to build while legacy rows
+    // without brand_id are still around (they all index as null).
+    brand_id: { type: String, required: true, index: true },
     access_token: { type: String, required: true },
     expires_in: { type: String, default: null },
     updated_by_email: { type: String, default: null },
