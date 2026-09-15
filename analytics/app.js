@@ -105,6 +105,12 @@ app.use((err, _req, res, _next) => {
 async function init() {
   await sequelize.authenticate();
   await connectMongo();
+  // Drops indexes these collections no longer declare (they've been re-keyed
+  // once already) so a stale unique index can't reject inserts.
+  await Promise.all([
+    require("./shared/db/models/AggregateConfig.mongo").syncIndexes(),
+    require("./shared/db/models/MetaOauthLog.mongo").syncIndexes(),
+  ]);
   try {
     await sequelize.models.api_keys.sync();
   } catch (err) {

@@ -217,8 +217,8 @@ async function getSummary({ brandKey, start, end, granularity = "daily", channel
   // over the mocked baseline. Resolved separately per period so a config
   // change between the current and previous range is reflected correctly.
   const [currCostConfigs, prevCostConfigs] = await Promise.all([
-    pnlCostConfigService.getActiveConfigs(conn, { asOfDate: end }),
-    pnlCostConfigService.getActiveConfigs(conn, { asOfDate: previousEnd }),
+    pnlCostConfigService.getActiveConfigs(brandKey, { asOfDate: end }),
+    pnlCostConfigService.getActiveConfigs(brandKey, { asOfDate: previousEnd }),
   ]);
   pnlCostConfigService.applyCostConfigs(curr, currCostConfigs);
   pnlCostConfigService.applyCostConfigs(prev, prevCostConfigs);

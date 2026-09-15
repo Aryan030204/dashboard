@@ -1,64 +1,113 @@
 import { useEffect, useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  Chip,
-  CircularProgress,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
+import { Alert, Box, Button, Card, Chip, CircularProgress, Stack, Typography } from "@mui/material";
 import dayjs from "dayjs";
-import { connectMetaAds, disconnectMetaAds, getMetaAdsStatus } from "../../../lib/api.js";
+import {
+  disconnectMetaAds,
+  getMetaAdsStatus,
+  getMetaOauthConfig,
+  getMetaOauthLog,
+  logMetaOauthToken,
+} from "../../../lib/api.js";
+
+const OAUTH_PENDING_KEY = "meta_oauth_pending_brand";
+
+function parseHashParams(hash) {
+  return Object.fromEntries(new URLSearchParams((hash || "").replace(/^#/, "")));
+}
 
 export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
   const [status, setStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
-  const [editing, setEditing] = useState(false);
 
-  const [adAccountId, setAdAccountId] = useState("");
-  const [accessToken, setAccessToken] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState("");
+  const [connectMessage, setConnectMessage] = useState("");
 
   const [disconnecting, setDisconnecting] = useState(false);
+
+  // Last token the OAuth flow captured for this brand (masked) — prefilled
+  // from the backend so a refresh doesn't lose track of what was connected.
+  const [oauthLog, setOauthLog] = useState(null);
 
   useEffect(() => {
     if (!brandKey) return;
     let cancelled = false;
     setLoadingStatus(true);
-    getMetaAdsStatus({ brand_key: brandKey }).then((result) => {
+    setOauthLog(null);
+    Promise.all([
+      getMetaAdsStatus({ brand_key: brandKey }),
+      getMetaOauthLog({ brand_key: brandKey }),
+    ]).then(([statusResult, logResult]) => {
       if (cancelled) return;
-      setStatus(result.error ? null : result.data);
+      setStatus(statusResult.error ? null : statusResult.data);
+      setOauthLog(logResult.error ? null : logResult.data?.log || null);
       setLoadingStatus(false);
-      setEditing(result.error || !result.data?.connected);
     });
     return () => {
       cancelled = true;
     };
   }, [brandKey]);
 
-  const handleConnect = async (event) => {
-    event.preventDefault();
-    setSaving(true);
-    setSaveError("");
-    const result = await connectMetaAds({
-      brand_key: brandKey,
-      ad_account_id: adAccountId,
-      access_token: accessToken,
-    });
-    setSaving(false);
-    if (result.error) {
-      setSaveError(result.data?.error || "Failed to connect Meta Ads. Check the token and ad account ID.");
+  // Meta's OAuth dialog sets Cross-Origin-Opener-Policy: same-origin, which
+  // severs window.opener the moment a popup navigates there — so a
+  // popup+postMessage handoff back to this tab is unreliable. Instead we
+  // navigate this same tab away to Meta and back: on return, the token is in
+  // the URL hash and sessionStorage tells us a connect was in flight.
+  useEffect(() => {
+    const pendingBrand = window.sessionStorage.getItem(OAUTH_PENDING_KEY);
+    const params = parseHashParams(window.location.hash);
+    if (!pendingBrand || !params.access_token) return;
+
+    window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    setConnecting(true);
+
+    logMetaOauthToken({
+      brand_key: pendingBrand,
+      access_token: params.access_token,
+      expires_in: params.expires_in,
+    })
+      .then((result) => {
+        setConnecting(false);
+        if (result.error) {
+          setConnectError(result.data?.error || "Failed to log the token on the backend.");
+          return;
+        }
+        setConnectMessage("Received a token from Meta and logged it on the backend.");
+        if (result.data?.log) setOauthLog(result.data.log);
+        onConnectionChange?.();
+      })
+      .catch(() => {
+        setConnecting(false);
+        setConnectError("Failed to log the token on the backend.");
+      });
+    // Only meant to run once, on the redirect back from Meta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleConnectWithMeta = async () => {
+    setConnecting(true);
+    setConnectError("");
+    setConnectMessage("");
+
+    const config = await getMetaOauthConfig({ brand_key: brandKey });
+    if (config.error || !config.data?.appId) {
+      setConnecting(false);
+      setConnectError(config.data?.error || "Meta app is not configured on the backend.");
       return;
     }
-    setStatus(result.data);
-    setEditing(false);
-    setAdAccountId("");
-    setAccessToken("");
-    onConnectionChange?.();
+
+    const { appId, apiVersion, scope } = config.data;
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    const oauthUrl = `https://www.facebook.com/${apiVersion}/dialog/oauth?${new URLSearchParams({
+      client_id: appId,
+      redirect_uri: redirectUri,
+      response_type: "token",
+      scope,
+    })}`;
+
+    window.sessionStorage.setItem(OAUTH_PENDING_KEY, brandKey);
+    window.location.assign(oauthUrl);
   };
 
   const handleDisconnect = async () => {
@@ -66,7 +115,6 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     await disconnectMetaAds({ brand_key: brandKey });
     setDisconnecting(false);
     setStatus({ connected: false });
-    setEditing(true);
     onConnectionChange?.();
   };
 
@@ -92,40 +140,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
 
       {loadingStatus ? (
         <CircularProgress size={20} />
-      ) : editing || !status?.connected ? (
-        <Box component="form" onSubmit={handleConnect}>
-          <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
-            <TextField
-              label="Ad Account ID"
-              placeholder="123456789012345 or act_123456789012345"
-              size="small"
-              value={adAccountId}
-              onChange={(e) => setAdAccountId(e.target.value)}
-              required
-            />
-            <TextField
-              label="Access Token"
-              type="password"
-              placeholder="Long-lived System User token with ads_read"
-              size="small"
-              value={accessToken}
-              onChange={(e) => setAccessToken(e.target.value)}
-              required
-            />
-            {saveError ? <Alert severity="error">{saveError}</Alert> : null}
-            <Stack direction="row" spacing={1}>
-              <Button type="submit" variant="contained" size="small" disabled={saving}>
-                {saving ? "Verifying…" : "Connect"}
-              </Button>
-              {status?.connected ? (
-                <Button size="small" onClick={() => setEditing(false)} disabled={saving}>
-                  Cancel
-                </Button>
-              ) : null}
-            </Stack>
-          </Stack>
-        </Box>
-      ) : (
+      ) : status?.connected ? (
         <Stack spacing={1}>
           <Typography variant="body2">
             Ad account <strong>{status.adAccountId}</strong>
@@ -143,14 +158,35 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
             </Alert>
           ) : null}
           <Stack direction="row" spacing={1}>
-            <Button size="small" onClick={() => setEditing(true)}>
-              Update token
-            </Button>
             <Button size="small" color="error" onClick={handleDisconnect} disabled={disconnecting}>
               {disconnecting ? "Disconnecting…" : "Disconnect"}
             </Button>
           </Stack>
         </Stack>
+      ) : (
+        <Box>
+          <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
+            <Typography variant="body2" color="text.secondary">
+              This connect flow is a work in progress: it sends you to Meta&apos;s login page and the token
+              it returns is logged on the backend for now, not yet wired into ad spend syncing.
+            </Typography>
+            {connectError ? <Alert severity="error">{connectError}</Alert> : null}
+            {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
+            {oauthLog ? (
+              <Typography variant="caption" color="text.secondary">
+                Token {oauthLog.tokenSuffix} captured{" "}
+                {dayjs(oauthLog.capturedAt).format("MMM DD, YYYY HH:mm")}
+                {oauthLog.updatedByEmail ? ` by ${oauthLog.updatedByEmail}` : ""}
+                {oauthLog.expiresIn ? ` · expires in ${oauthLog.expiresIn}s` : ""}
+              </Typography>
+            ) : null}
+            <Box>
+              <Button variant="contained" size="small" onClick={handleConnectWithMeta} disabled={connecting}>
+                {connecting ? "Redirecting to Meta…" : "Connect with Meta"}
+              </Button>
+            </Box>
+          </Stack>
+        </Box>
       )}
     </Card>
   );

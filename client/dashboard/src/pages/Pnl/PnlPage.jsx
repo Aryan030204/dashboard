@@ -118,7 +118,7 @@ export default function PnlPage({ brandKey }) {
 
       <PnlMetaAdsSection brandKey={brandKey} onConnectionChange={() => setRefreshTick((t) => t + 1)} />
 
-      <PnlConfigSection />
+      <PnlConfigSection brandKey={brandKey} onConfigChange={() => setRefreshTick((t) => t + 1)} />
     </Stack>
   );
 }

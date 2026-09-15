@@ -1466,9 +1466,13 @@ export async function getMetaAdsStatus(args = {}) {
   return doGet("/pnl/meta-ads/status", appendBrandKey({}, args));
 }
 
+// brand_key goes in the query string on every write below (not just the JSON
+// body): the gateway resolves brand context from query args/headers only, so
+// a body-only brand_key silently falls back to the caller's primary brand.
 export async function connectMetaAds({ brand_key, ad_account_id, access_token }) {
-  return doPost("/pnl/meta-ads/connect", {
-    brand_key: normalizeBrandKey(brand_key),
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/meta-ads/connect${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
     ad_account_id,
     access_token,
   });
@@ -1477,6 +1481,41 @@ export async function connectMetaAds({ brand_key, ad_account_id, access_token })
 export async function disconnectMetaAds({ brand_key }) {
   const params = qs({ brand_key: normalizeBrandKey(brand_key) });
   return doDelete(`/pnl/meta-ads/disconnect${params}`);
+}
+
+export async function getMetaOauthConfig(args = {}) {
+  return doGet("/pnl/meta-ads/oauth/config", appendBrandKey({}, args));
+}
+
+export async function getMetaOauthLog(args = {}) {
+  return doGet("/pnl/meta-ads/oauth/log", appendBrandKey({}, args));
+}
+
+export async function logMetaOauthToken({ brand_key, access_token, expires_in }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/meta-ads/oauth/log${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    access_token,
+    expires_in,
+  });
+}
+
+export async function getPnlCostConfigs(args = {}) {
+  return doGet("/pnl/cost-configs", appendBrandKey({}, args));
+}
+
+export async function savePnlCostConfig({ brand_key, category, value, value_type }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPut(`/pnl/cost-configs/${encodeURIComponent(category)}${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    value,
+    value_type,
+  });
+}
+
+export async function clearPnlCostConfig({ brand_key, category }) {
+  const params = qs({ brand_key: normalizeBrandKey(brand_key) });
+  return doDelete(`/pnl/cost-configs/${encodeURIComponent(category)}${params}`);
 }
 
 export async function getMonthlyTrend(args) {

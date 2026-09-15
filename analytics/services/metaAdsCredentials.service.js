@@ -1,6 +1,8 @@
 const axios = require("axios");
 const { sequelize } = require("../shared/db/mainSequelize");
 const { encryptText, decryptText } = require("../shared/utils/crypto");
+const MetaOauthLog = require("../shared/db/models/MetaOauthLog.mongo");
+const { resolveBrandRef } = require("../shared/db/models/Tenant.mongo");
 
 const MetaAdsCredential = sequelize.models.meta_ads_credentials;
 
@@ -128,10 +130,55 @@ async function deleteCredentials(brandKey) {
   return { success: true };
 }
 
+// ---- OAuth proof-of-concept log (Mongo) ------------------------------------
+// The "Connect with Meta" flow parks the token it captures here, one row per
+// brand, until it's wired into meta_ads_credentials above.
+
+function maskToken(token) {
+  const value = String(token || "");
+  return value.length > 6 ? `…${value.slice(-6)}` : "…";
+}
+
+function toOauthLogShape(row) {
+  return {
+    brandKey: row.brand_id,
+    tokenSuffix: maskToken(row.access_token),
+    expiresIn: row.expires_in,
+    capturedAt: row.captured_at,
+    updatedByEmail: row.updated_by_email,
+  };
+}
+
+async function saveOauthLog({ brandKey, accessToken, expiresIn, updatedByEmail }) {
+  const row = await MetaOauthLog.findOneAndUpdate(
+    { brand_id: brandKey },
+    {
+      $set: {
+        brand: await resolveBrandRef(brandKey),
+        brand_id: brandKey,
+        access_token: accessToken,
+        expires_in: expiresIn || null,
+        updated_by_email: updatedByEmail || null,
+        captured_at: new Date(),
+      },
+    },
+    { upsert: true, new: true },
+  ).lean();
+  return toOauthLogShape(row);
+}
+
+async function getOauthLog(brandKey) {
+  if (!brandKey) return null;
+  const row = await MetaOauthLog.findOne({ brand_id: brandKey }).lean();
+  return row ? toOauthLogShape(row) : null;
+}
+
 module.exports = {
   saveCredentials,
   getCredentials,
   getStatus,
   recordError,
   deleteCredentials,
+  saveOauthLog,
+  getOauthLog,
 };
