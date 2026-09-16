@@ -16,21 +16,34 @@ export const KPI_DEFS = {
   ebitdaPct: { label: "EBITDA %", type: "percent" },
 };
 
+// The P&L API returns the literal "-" for any figure it has no data for.
+export const MISSING = "-";
+
+export function isMissingValue(value) {
+  return value === null || value === undefined || typeof value !== "number" || Number.isNaN(value);
+}
+
 export function formatPercent(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (isMissingValue(value)) return MISSING;
   return `${value.toFixed(1)}%`;
 }
 
 export function formatSignedPercent(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (isMissingValue(value)) return MISSING;
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}%`;
 }
 
 export function formatSignedPoints(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (isMissingValue(value)) return MISSING;
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}pp`;
+}
+
+// Wraps the currency formatter so a missing amount renders as "-" instead of
+// being coerced to ₹0.
+export function formatAmountOrMissing(formatAmount, value) {
+  return isMissingValue(value) ? MISSING : formatAmount(value);
 }
 
 export const SECTION_LABELS = {

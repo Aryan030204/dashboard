@@ -109,7 +109,7 @@ async function init() {
   // once already) so a stale unique index can't reject inserts. Best-effort:
   // an index problem must never keep the service from starting.
   for (const model of [
-    require("./shared/db/models/AggregateConfig.mongo"),
+    require("./shared/db/models/TotalConfig.mongo"),
     require("./shared/db/models/MetaOauthLog.mongo"),
   ]) {
     try {

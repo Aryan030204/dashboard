@@ -23,9 +23,11 @@ function buildPnlRouter() {
   router.get("/meta-ads/oauth/log", brandContext, metaAdsCredentialsController.oauthLog);
   router.post("/meta-ads/oauth/log", brandContext, metaAdsCredentialsController.logOauthToken);
 
-  router.get("/cost-configs", brandContext, pnlCostConfigController.list);
-  router.put("/cost-configs/:category", brandContext, pnlCostConfigController.upsert);
-  router.delete("/cost-configs/:category", brandContext, pnlCostConfigController.clear);
+  // One total_config document per brand (gst_pct + every cost line).
+  router.get("/cost-configs", brandContext, pnlCostConfigController.get);
+  router.put("/cost-configs", brandContext, pnlCostConfigController.save);
+  router.put("/cost-configs/:field", brandContext, pnlCostConfigController.upsertField);
+  router.delete("/cost-configs/:field", brandContext, pnlCostConfigController.clearField);
 
   router.post(
     "/product-cogs/upload",

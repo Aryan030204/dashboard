@@ -1,24 +1,83 @@
-const pnlAdSpendRollupService = require("./pnlAdSpendRollup.service");
-const pnlCostConfigService = require("./pnlCostConfig.service");
+const { QueryTypes } = require("sequelize");
 
-const GST_RATE = 18 / 118;
+// Every P&L figure comes from the per-brand `overall_pnl` table, which the
+// pipeline's P&L worker rebuilds nightly (one row per date, costs already
+// resolved from the brand's cost configs and the Meta ad-spend rollup). This
+// service only sums those rows for the requested and previous ranges — it
+// never derives or estimates a number itself. Anything the table can't back
+// is returned as the literal string "-".
+const PNL_TABLE = "overall_pnl";
+const MISSING = "-";
 
-function seededRandom(seedStr) {
-  let h = 1779033703 ^ seedStr.length;
-  for (let i = 0; i < seedStr.length; i++) {
-    h = Math.imul(h ^ seedStr.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
-  }
-  return function next() {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    h ^= h >>> 16;
-    return (h >>> 0) / 4294967296;
-  };
+const MISSING_TABLE_CODES = new Set(["ER_NO_SUCH_TABLE", "ER_BAD_DB_ERROR"]);
+
+// overall_pnl column -> API field.
+const COLUMN_FIELD_MAP = {
+  gross_sales: "grossSales",
+  discounts: "discounts",
+  cancellations: "cancellations",
+  gst: "gst",
+  net_sales: "netSales",
+  cogs: "cogs",
+  freight_inwards: "freightInwards",
+  gross_margin: "grossMargin",
+  shipping: "shipping",
+  rto: "rto",
+  payment_gateway: "paymentGateway",
+  packaging: "packaging",
+  cm1: "cm1",
+  meta: "meta",
+  google: "google",
+  other_paid: "otherPaid",
+  cm2: "cm2",
+  influencers: "influencers",
+  content: "content",
+  sponsorships: "sponsorships",
+  other_brand: "otherBrand",
+  cm3: "cm3",
+  salaries: "salaries",
+  rent: "rent",
+  technology: "technology",
+  agency_fees: "agencyFees",
+  other_overheads: "otherOverheads",
+  ebitda: "ebitda",
+};
+
+// Cost lines the worker writes as 0 when nothing was attributed for the day
+// (no active cost config, no synced spend). A zero total over the range means
+// "no value", not "cost of zero", so those surface as "-".
+const COST_FIELDS = new Set([
+  "cogs",
+  "freightInwards",
+  "shipping",
+  "rto",
+  "paymentGateway",
+  "packaging",
+  "meta",
+  "google",
+  "otherPaid",
+  "influencers",
+  "content",
+  "sponsorships",
+  "otherBrand",
+  "salaries",
+  "rent",
+  "technology",
+  "agencyFees",
+  "otherOverheads",
+]);
+
+function isMissingTableError(error) {
+  const code = error?.code || error?.original?.code || error?.parent?.code;
+  return MISSING_TABLE_CODES.has(code);
 }
 
-function jitter(rng, base, spread = 0.2) {
-  return base * (1 + (rng() * 2 - 1) * spread);
+function isMissing(value) {
+  return value === MISSING || value === null || value === undefined || Number.isNaN(value);
+}
+
+function round2(value) {
+  return Math.round(Number(value) * 100) / 100;
 }
 
 function parseDateUTC(str) {
@@ -54,74 +113,75 @@ function computePreviousRange(start, end, granularity) {
   return [formatDateUTC(prevStart), formatDateUTC(prevEnd)];
 }
 
-function buildMockPnl({ brandKey, start, end, channel, productId }) {
-  const seed = [brandKey || "BRAND", start, end, channel || "", productId || ""].join("|");
-  const rng = seededRandom(seed);
+// Sums the brand's overall_pnl rows over [start, end]. Rows are keyed by
+// brand_key (the upper-cased brand tag the P&L worker writes). Resolves to
+// { dayCount: 0 } when the brand has no connection, no table yet, or no rows
+// in the range.
+async function fetchPnlTotals({ conn, brandKey, start, end }) {
+  if (!conn || !brandKey) return { dayCount: 0, metaSyncedDays: 0, totals: {} };
 
-  const days = daysBetweenInclusive(start, end);
-  const dailyBaseline = jitter(rng, 180000, 0.15);
-  const grossSales = Math.round(dailyBaseline * days);
+  const sums = Object.keys(COLUMN_FIELD_MAP)
+    .map((col) => `COALESCE(SUM(\`${col}\`), 0) AS \`${col}\``)
+    .join(",\n          ");
 
-  const discounts = Math.round(grossSales * jitter(rng, 0.07, 0.25));
-  const cancellations = Math.round(grossSales * jitter(rng, 0.03, 0.3));
-  const gst = Math.round((grossSales - discounts - cancellations) * GST_RATE);
-  const netSales = grossSales - discounts - cancellations - gst;
+  let rows;
+  try {
+    rows = await conn.query(
+      `
+        SELECT
+          COUNT(*) AS day_count,
+          COALESCE(SUM(meta_spend_synced), 0) AS meta_synced_days,
+          ${sums}
+        FROM \`${PNL_TABLE}\`
+        WHERE \`brand_key\` = ? AND \`date\` >= ? AND \`date\` <= ?
+      `,
+      { type: QueryTypes.SELECT, replacements: [String(brandKey).toUpperCase(), start, end] },
+    );
+  } catch (error) {
+    if (isMissingTableError(error)) return { dayCount: 0, metaSyncedDays: 0, totals: {} };
+    throw error;
+  }
 
-  const cogs = Math.round(netSales * jitter(rng, 0.32, 0.15));
-  const freightInwards = Math.round(netSales * jitter(rng, 0.02, 0.3));
-  const grossMargin = netSales - cogs - freightInwards;
-
-  const shipping = Math.round(netSales * jitter(rng, 0.06, 0.2));
-  const rto = Math.round(netSales * jitter(rng, 0.03, 0.3));
-  const paymentGateway = Math.round(netSales * jitter(rng, 0.02, 0.2));
-  const packaging = Math.round(netSales * jitter(rng, 0.015, 0.25));
-  const cm1 = grossMargin - shipping - rto - paymentGateway - packaging;
-
-  const meta = Math.round(netSales * jitter(rng, 0.08, 0.25));
-  const google = Math.round(netSales * jitter(rng, 0.05, 0.25));
-  const otherPaid = Math.round(netSales * jitter(rng, 0.01, 0.4));
-  const cm2 = cm1 - meta - google - otherPaid;
-
-  const influencers = Math.round(netSales * jitter(rng, 0.02, 0.3));
-  const content = Math.round(netSales * jitter(rng, 0.01, 0.3));
-  const sponsorships = Math.round(netSales * jitter(rng, 0.005, 0.4));
-  const otherBrand = Math.round(netSales * jitter(rng, 0.005, 0.4));
-  const cm3 = cm2 - influencers - content - sponsorships - otherBrand;
-
-  const salaries = Math.round(netSales * jitter(rng, 0.06, 0.15));
-  const rent = Math.round(netSales * jitter(rng, 0.01, 0.2));
-  const technology = Math.round(netSales * jitter(rng, 0.01, 0.3));
-  const agencyFees = Math.round(netSales * jitter(rng, 0.01, 0.3));
-  const otherOverheads = Math.round(netSales * jitter(rng, 0.01, 0.4));
-  const ebitda = cm3 - salaries - rent - technology - agencyFees - otherOverheads;
-
+  const row = rows?.[0] || {};
+  const totals = {};
+  for (const [col, field] of Object.entries(COLUMN_FIELD_MAP)) {
+    totals[field] = round2(row[col] || 0);
+  }
   return {
-    grossSales, discounts, cancellations, gst, netSales,
-    cogs, freightInwards, grossMargin,
-    shipping, rto, paymentGateway, packaging, cm1,
-    meta, google, otherPaid, cm2,
-    influencers, content, sponsorships, otherBrand, cm3,
-    salaries, rent, technology, agencyFees, otherOverheads, ebitda,
+    dayCount: Number(row.day_count || 0),
+    metaSyncedDays: Number(row.meta_synced_days || 0),
+    totals,
   };
 }
 
-// Overrides the mocked "meta" spend with a synced figure read from the
-// ad-spend rollup table and re-derives every total that cascades from it.
-function applyMetaSpendFromRollup(pnl, syncedSpend) {
-  pnl.meta = Math.round(syncedSpend);
-  pnl.cm2 = pnl.cm1 - pnl.meta - pnl.google - pnl.otherPaid;
-  pnl.cm3 = pnl.cm2 - pnl.influencers - pnl.content - pnl.sponsorships - pnl.otherBrand;
-  pnl.ebitda = pnl.cm3 - pnl.salaries - pnl.rent - pnl.technology - pnl.agencyFees - pnl.otherOverheads;
-  return pnl;
+// Turns range totals into the per-line figures the response carries. With no
+// rows every line is "-"; with rows, revenue lines and subtotals are the
+// summed values and unattributed cost lines are "-".
+function buildPeriod({ dayCount, totals }) {
+  const period = {};
+  for (const field of Object.values(COLUMN_FIELD_MAP)) {
+    if (dayCount === 0) {
+      period[field] = MISSING;
+      continue;
+    }
+    const amount = totals[field];
+    period[field] = COST_FIELDS.has(field) && amount === 0 ? MISSING : amount;
+  }
+  return period;
+}
+
+function negate(amount) {
+  return isMissing(amount) ? MISSING : -amount;
 }
 
 function pctOfNetSales(amount, netSales) {
-  if (!netSales) return 0;
+  if (isMissing(amount) || isMissing(netSales) || netSales === 0) return MISSING;
   return Math.round((amount / netSales) * 1000) / 10;
 }
 
 function changePct(current, previous) {
-  if (!previous) return current ? 100 : 0;
+  if (isMissing(current) || isMissing(previous)) return MISSING;
+  if (previous === 0) return current === 0 ? 0 : MISSING;
   return Math.round(((current - previous) / Math.abs(previous)) * 1000) / 10;
 }
 
@@ -138,53 +198,52 @@ function buildLineItems(curr, prev, { metaIsLive = false } = {}) {
       ...opts,
     });
   };
+  const deduction = (key, label, section, opts = {}) =>
+    push(key, label, negate(curr[key]), negate(prev[key]), { section, isDeduction: true, ...opts });
+  const subtotal = (key, label, section) =>
+    push(key, label, curr[key], prev[key], { section, isSubtotal: true });
 
   push("grossSales", "Gross Sales", curr.grossSales, prev.grossSales, { section: "revenue" });
-  push("discounts", "(–) Discounts", -curr.discounts, -prev.discounts, { section: "revenue", isDeduction: true });
-  push("cancellations", "(–) Cancellations", -curr.cancellations, -prev.cancellations, { section: "revenue", isDeduction: true });
-  push("gst", "(–) GST", -curr.gst, -prev.gst, { section: "revenue", isDeduction: true });
-  push("netSales", "Net Sales", curr.netSales, prev.netSales, { section: "revenue", isSubtotal: true });
+  deduction("discounts", "(–) Discounts", "revenue");
+  deduction("cancellations", "(–) Cancellations", "revenue");
+  deduction("gst", "(–) GST", "revenue");
+  subtotal("netSales", "Net Sales", "revenue");
 
-  push("cogs", "(–) COGS", -curr.cogs, -prev.cogs, { section: "grossMargin", isDeduction: true });
-  push("freightInwards", "(–) Freight Inwards", -curr.freightInwards, -prev.freightInwards, { section: "grossMargin", isDeduction: true });
-  push("grossMargin", "Gross Margin", curr.grossMargin, prev.grossMargin, { section: "grossMargin", isSubtotal: true });
+  deduction("cogs", "(–) COGS", "grossMargin");
+  deduction("freightInwards", "(–) Freight Inwards", "grossMargin");
+  subtotal("grossMargin", "Gross Margin", "grossMargin");
 
-  push("shipping", "(–) Shipping / Logistics", -curr.shipping, -prev.shipping, { section: "cm1", isDeduction: true });
-  push("rto", "(–) RTO Cost", -curr.rto, -prev.rto, { section: "cm1", isDeduction: true });
-  push("paymentGateway", "(–) Payment Gateway / Commission", -curr.paymentGateway, -prev.paymentGateway, { section: "cm1", isDeduction: true });
-  push("packaging", "(–) Packaging", -curr.packaging, -prev.packaging, { section: "cm1", isDeduction: true });
-  push("cm1", "CM1", curr.cm1, prev.cm1, { section: "cm1", isSubtotal: true });
+  deduction("shipping", "(–) Shipping / Logistics", "cm1");
+  deduction("rto", "(–) RTO Cost", "cm1");
+  deduction("paymentGateway", "(–) Payment Gateway / Commission", "cm1");
+  deduction("packaging", "(–) Packaging", "cm1");
+  subtotal("cm1", "CM1", "cm1");
 
-  push("meta", "(–) Meta", -curr.meta, -prev.meta, {
-    section: "cm2",
-    isDeduction: true,
-    isSubItem: true,
-    isLive: metaIsLive,
-  });
-  push("google", "(–) Google", -curr.google, -prev.google, { section: "cm2", isDeduction: true, isSubItem: true });
-  push("otherPaid", "(–) Other Paid Channels", -curr.otherPaid, -prev.otherPaid, { section: "cm2", isDeduction: true, isSubItem: true });
-  push("cm2", "CM2", curr.cm2, prev.cm2, { section: "cm2", isSubtotal: true });
+  deduction("meta", "(–) Meta", "cm2", { isSubItem: true, isLive: metaIsLive });
+  deduction("google", "(–) Google", "cm2", { isSubItem: true });
+  deduction("otherPaid", "(–) Other Paid Channels", "cm2", { isSubItem: true });
+  subtotal("cm2", "CM2", "cm2");
 
-  push("influencers", "(–) Influencers", -curr.influencers, -prev.influencers, { section: "cm3", isDeduction: true, isSubItem: true });
-  push("content", "(–) Content / Creative", -curr.content, -prev.content, { section: "cm3", isDeduction: true, isSubItem: true });
-  push("sponsorships", "(–) Sponsorships", -curr.sponsorships, -prev.sponsorships, { section: "cm3", isDeduction: true, isSubItem: true });
-  push("otherBrand", "(–) Other Brand Marketing", -curr.otherBrand, -prev.otherBrand, { section: "cm3", isDeduction: true, isSubItem: true });
-  push("cm3", "CM3", curr.cm3, prev.cm3, { section: "cm3", isSubtotal: true });
+  deduction("influencers", "(–) Influencers", "cm3", { isSubItem: true });
+  deduction("content", "(–) Content / Creative", "cm3", { isSubItem: true });
+  deduction("sponsorships", "(–) Sponsorships", "cm3", { isSubItem: true });
+  deduction("otherBrand", "(–) Other Brand Marketing", "cm3", { isSubItem: true });
+  subtotal("cm3", "CM3", "cm3");
 
-  push("salaries", "(–) Salaries", -curr.salaries, -prev.salaries, { section: "ebitda", isDeduction: true, isSubItem: true });
-  push("rent", "(–) Rent", -curr.rent, -prev.rent, { section: "ebitda", isDeduction: true, isSubItem: true });
-  push("technology", "(–) Technology", -curr.technology, -prev.technology, { section: "ebitda", isDeduction: true, isSubItem: true });
-  push("agencyFees", "(–) Agency Fees", -curr.agencyFees, -prev.agencyFees, { section: "ebitda", isDeduction: true, isSubItem: true });
-  push("otherOverheads", "(–) Other Overheads", -curr.otherOverheads, -prev.otherOverheads, { section: "ebitda", isDeduction: true, isSubItem: true });
-  push("ebitda", "EBITDA", curr.ebitda, prev.ebitda, { section: "ebitda", isSubtotal: true });
+  deduction("salaries", "(–) Salaries", "ebitda", { isSubItem: true });
+  deduction("rent", "(–) Rent", "ebitda", { isSubItem: true });
+  deduction("technology", "(–) Technology", "ebitda", { isSubItem: true });
+  deduction("agencyFees", "(–) Agency Fees", "ebitda", { isSubItem: true });
+  deduction("otherOverheads", "(–) Other Overheads", "ebitda", { isSubItem: true });
+  subtotal("ebitda", "EBITDA", "ebitda");
 
   return rows;
 }
 
 function buildKpi(currentAmount, previousAmount) {
   return {
-    value: currentAmount,
-    previousValue: previousAmount,
+    value: isMissing(currentAmount) ? MISSING : currentAmount,
+    previousValue: isMissing(previousAmount) ? MISSING : previousAmount,
     changePct: changePct(currentAmount, previousAmount),
   };
 }
@@ -195,49 +254,46 @@ function buildMarginKpi(currentMargin, currentNetSales, previousMargin, previous
   return {
     value: currentPct,
     previousValue: previousPct,
-    changePp: Math.round((currentPct - previousPct) * 10) / 10,
+    changePp:
+      isMissing(currentPct) || isMissing(previousPct)
+        ? MISSING
+        : Math.round((currentPct - previousPct) * 10) / 10,
   };
 }
 
-// Revenue/order-derived fields are still mocked — replace with a query
-// against the P&L rollup table once that pipeline exists (out of scope
-// here). The seeded RNG keeps values stable across reloads for the same
-// brand/date-range/filter combination so the UI feels like it's backed by
-// real data until then. Cost fields and Meta spend are already sourced from
-// real per-brand tables where configured/synced (pnlCostConfigService,
-// pnlAdSpendRollupService) and only fall back to the mock baseline
-// otherwise.
+function describeMetaAdSpend({ dayCount, metaSyncedDays }, curr) {
+  if (!dayCount) {
+    return { available: false, spend: null, error: "No P&L rows for this date range yet.", source: "none" };
+  }
+  if (!metaSyncedDays) {
+    return {
+      available: false,
+      spend: null,
+      error: "No synced Meta ad spend for this date range yet.",
+      source: "none",
+    };
+  }
+  return {
+    available: true,
+    spend: curr.meta,
+    error: null,
+    source: "rollup",
+    syncedDays: metaSyncedDays,
+    totalDays: dayCount,
+  };
+}
+
 async function getSummary({ brandKey, start, end, granularity = "daily", channel = null, productId = null, conn = null }) {
   const [previousStart, previousEnd] = computePreviousRange(start, end, granularity);
 
-  const curr = buildMockPnl({ brandKey, start, end, channel, productId });
-  const prev = buildMockPnl({ brandKey, start: previousStart, end: previousEnd, channel, productId });
-
-  // Manually configured costs (rent, salaries, packaging, ...) take priority
-  // over the mocked baseline. Resolved separately per period so a config
-  // change between the current and previous range is reflected correctly.
-  const [currCostConfigs, prevCostConfigs] = await Promise.all([
-    pnlCostConfigService.getActiveConfigs(brandKey, { asOfDate: end }),
-    pnlCostConfigService.getActiveConfigs(brandKey, { asOfDate: previousEnd }),
-  ]);
-  pnlCostConfigService.applyCostConfigs(curr, currCostConfigs);
-  pnlCostConfigService.applyCostConfigs(prev, prevCostConfigs);
-
-  const [currMetaSpend, prevMetaSpend] = await Promise.all([
-    pnlAdSpendRollupService.getAdSpend({ conn, start, end }),
-    pnlAdSpendRollupService.getAdSpend({ conn, start: previousStart, end: previousEnd }),
+  const [currTotals, prevTotals] = await Promise.all([
+    fetchPnlTotals({ conn, brandKey, start, end }),
+    fetchPnlTotals({ conn, brandKey, start: previousStart, end: previousEnd }),
   ]);
 
-  const metaIsLive = currMetaSpend.available;
-  if (currMetaSpend.available) applyMetaSpendFromRollup(curr, currMetaSpend.spend);
-  if (prevMetaSpend.available) applyMetaSpendFromRollup(prev, prevMetaSpend.spend);
-
-  const metaAdSpend = {
-    available: currMetaSpend.available,
-    spend: currMetaSpend.available ? curr.meta : null,
-    error: currMetaSpend.error,
-    source: currMetaSpend.available ? "rollup" : "mock",
-  };
+  const curr = buildPeriod(currTotals);
+  const prev = buildPeriod(prevTotals);
+  const metaAdSpend = describeMetaAdSpend(currTotals, curr);
 
   return {
     brandKey: brandKey || null,
@@ -256,22 +312,27 @@ async function getSummary({ brandKey, start, end, granularity = "daily", channel
       cm3Pct: buildMarginKpi(curr.cm3, curr.netSales, prev.cm3, prev.netSales),
       ebitdaPct: buildMarginKpi(curr.ebitda, curr.netSales, prev.ebitda, prev.netSales),
     },
-    lineItems: buildLineItems(curr, prev, { metaIsLive }),
+    lineItems: buildLineItems(curr, prev, { metaIsLive: metaAdSpend.available }),
     metaAdSpend,
-    filters: {
-      channel: {
-        available: false,
-        message: "Channel-level P&L breakdown is to be implemented — showing brand-level totals.",
-      },
-      product: {
-        available: false,
-        message: "Product-level P&L breakdown is to be implemented — showing brand-level totals.",
-      },
+    coverage: {
+      days: currTotals.dayCount,
+      expectedDays: daysBetweenInclusive(start, end),
+      previousDays: prevTotals.dayCount,
     },
-    source: "mock",
+    filters: {
+      channel: { available: false },
+      product: { available: false },
+    },
+    source: PNL_TABLE,
   };
 }
 
 module.exports = {
+  MISSING,
   getSummary,
+  computePreviousRange,
+  buildPeriod,
+  buildLineItems,
+  changePct,
+  pctOfNetSales,
 };

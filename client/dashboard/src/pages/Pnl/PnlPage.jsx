@@ -60,11 +60,9 @@ export default function PnlPage({ brandKey }) {
     setRangeEnd(nextEnd);
   };
 
-  const channelNote = summary?.filters?.channel?.available === false ? summary.filters.channel.message : null;
-  const productNote = summary?.filters?.product?.available === false ? summary.filters.product.message : null;
   const metaAdSpendNote =
     summary?.metaAdSpend && summary.metaAdSpend.available === false
-      ? `Meta ad spend isn't synced yet: ${summary.metaAdSpend.error || "no rollup data for this brand."} Showing an estimate instead.`
+      ? `Meta ad spend isn't synced yet: ${summary.metaAdSpend.error || "no rollup data for this brand."} Meta shows "-" until it is.`
       : null;
 
   return (
@@ -94,9 +92,6 @@ export default function PnlPage({ brandKey }) {
       </Stack>
 
       {error ? <Alert severity="error">{error}</Alert> : null}
-      {!loading && (channelNote || productNote) ? (
-        <Alert severity="info">{channelNote || productNote}</Alert>
-      ) : null}
       {!loading && metaAdSpendNote ? <Alert severity="warning">{metaAdSpendNote}</Alert> : null}
 
       <Stack spacing={1}>

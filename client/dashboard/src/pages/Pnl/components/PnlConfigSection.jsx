@@ -4,7 +4,9 @@ import {
   Button,
   Card,
   CircularProgress,
+  Divider,
   IconButton,
+  InputAdornment,
   Stack,
   TextField,
   ToggleButton,
@@ -13,43 +15,40 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import dayjs from "dayjs";
-import { clearPnlCostConfig, getPnlCostConfigs, savePnlCostConfig } from "../../../lib/api.js";
+import {
+  clearPnlCostConfig,
+  getPnlCostConfigs,
+  savePnlCostConfig,
+  savePnlTotalConfig,
+} from "../../../lib/api.js";
 
-// Mirrors analytics/services/pnlCostConfig.service.js's CATEGORY_FIELD_MAP —
-// keep these two lists in sync when a category is added or renamed.
-const CATEGORIES = [
-  { key: "cogs", label: "COGS (SKU level)" },
-  { key: "packaging", label: "Packaging Cost" },
-  { key: "freight_inwards", label: "Freight Inwards" },
-  { key: "shipping", label: "Shipping" },
-  { key: "rto", label: "RTO" },
-  { key: "influencers", label: "Influencers" },
-  { key: "content", label: "Content" },
-  { key: "sponsorships", label: "Sponsorships" },
-  { key: "other_brand", label: "Other Brand Marketing" },
-  { key: "salaries", label: "Salaries" },
-  { key: "rent", label: "Rent" },
-  { key: "technology", label: "Technology" },
-  { key: "agency_fees", label: "Agency Fees" },
-  { key: "other_overheads", label: "Other Overheads" },
+// Order of the cost lines as they appear in the P&L statement. Labels come
+// from the API (`config.labels`) so the backend's list stays the contract;
+// this is only the display order and the section grouping.
+const SECTIONS = [
+  { title: "Gross Margin", fields: ["cogs", "freight_inwards"] },
+  { title: "CM1", fields: ["shipping", "rto", "payment_gateway", "packaging"] },
+  { title: "CM2 — Paid marketing", fields: ["meta", "google", "other_paid"] },
+  { title: "CM3 — Brand marketing", fields: ["influencers", "content", "sponsorships", "other_brand"] },
+  { title: "EBITDA — Overheads", fields: ["salaries", "rent", "technology", "agency_fees", "other_overheads"] },
 ];
 
-function CostConfigRow({ brandKey, category, label, config, onSaved }) {
-  const [value, setValue] = useState(config ? String(config.value) : "");
-  const [valueType, setValueType] = useState(config?.valueType || "flat");
+function CostLineRow({ brandKey, field, label, line, onSaved }) {
+  const [value, setValue] = useState(line ? String(line.value) : "");
+  const [valueType, setValueType] = useState(line?.valueType || "flat");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setValue(config ? String(config.value) : "");
-    setValueType(config?.valueType || "flat");
-  }, [config]);
+    setValue(line ? String(line.value) : "");
+    setValueType(line?.valueType || "flat");
+  }, [line]);
 
-  const dirty = value !== (config ? String(config.value) : "") || valueType !== (config?.valueType || "flat");
+  const dirty = value !== (line ? String(line.value) : "") || valueType !== (line?.valueType || "flat");
 
   const handleSave = async () => {
     const numericValue = Number(value);
-    if (!value || Number.isNaN(numericValue)) {
+    if (value === "" || Number.isNaN(numericValue)) {
       setError("Enter a number");
       return;
     }
@@ -57,7 +56,7 @@ function CostConfigRow({ brandKey, category, label, config, onSaved }) {
     setSaving(true);
     const result = await savePnlCostConfig({
       brand_key: brandKey,
-      category,
+      category: field,
       value: numericValue,
       value_type: valueType,
     });
@@ -66,20 +65,18 @@ function CostConfigRow({ brandKey, category, label, config, onSaved }) {
       setError(result.data?.error || "Failed to save");
       return;
     }
-    onSaved(category, result.data);
+    onSaved(result.data?.config);
   };
 
   const handleClear = async () => {
     setSaving(true);
-    const result = await clearPnlCostConfig({ brand_key: brandKey, category });
+    const result = await clearPnlCostConfig({ brand_key: brandKey, category: field });
     setSaving(false);
     if (result.error) {
       setError(result.data?.error || "Failed to clear");
       return;
     }
-    setValue("");
-    setValueType("flat");
-    onSaved(category, null);
+    onSaved(result.data?.config);
   };
 
   return (
@@ -87,24 +84,21 @@ function CostConfigRow({ brandKey, category, label, config, onSaved }) {
       direction={{ xs: "column", sm: "row" }}
       alignItems={{ xs: "stretch", sm: "center" }}
       spacing={1}
-      sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}
+      sx={{ p: 1.25, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}
     >
-      <Box sx={{ minWidth: { sm: 180 }, flexShrink: 0 }}>
+      <Box sx={{ minWidth: { sm: 220 }, flexShrink: 0 }}>
         <Typography variant="body2" sx={{ fontWeight: 500 }}>
           {label}
         </Typography>
-        {config?.updatedAt ? (
-          <Typography variant="caption" color="text.secondary">
-            Updated {dayjs(config.updatedAt).format("MMM DD, YYYY")}
-            {config.updatedByEmail ? ` by ${config.updatedByEmail}` : ""}
-          </Typography>
-        ) : null}
+        <Typography variant="caption" color="text.secondary">
+          {line ? (line.valueType === "percentage" ? "% of Net Sales" : "₹ per month") : "Not configured — worker default applies"}
+        </Typography>
       </Box>
 
       <TextField
         size="small"
         type="number"
-        placeholder="Amount"
+        placeholder={valueType === "percentage" ? "%" : "₹ / month"}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         error={!!error}
@@ -118,7 +112,7 @@ function CostConfigRow({ brandKey, category, label, config, onSaved }) {
         exclusive
         onChange={(_e, next) => next && setValueType(next)}
       >
-        <ToggleButton value="flat">₹ Flat</ToggleButton>
+        <ToggleButton value="flat">₹ / month</ToggleButton>
         <ToggleButton value="percentage">% of Sales</ToggleButton>
       </ToggleButtonGroup>
 
@@ -126,8 +120,8 @@ function CostConfigRow({ brandKey, category, label, config, onSaved }) {
         <Button size="small" variant="contained" disabled={!dirty || saving} onClick={handleSave}>
           {saving ? <CircularProgress size={16} /> : "Save"}
         </Button>
-        {config ? (
-          <IconButton size="small" onClick={handleClear} disabled={saving} title="Clear override">
+        {line ? (
+          <IconButton size="small" onClick={handleClear} disabled={saving} title="Clear this line">
             <CloseIcon fontSize="small" />
           </IconButton>
         ) : null}
@@ -136,17 +130,86 @@ function CostConfigRow({ brandKey, category, label, config, onSaved }) {
   );
 }
 
+function GstRow({ brandKey, gstPct, onSaved }) {
+  const [value, setValue] = useState(String(gstPct ?? ""));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setValue(String(gstPct ?? ""));
+  }, [gstPct]);
+
+  const dirty = value !== String(gstPct ?? "");
+
+  const handleSave = async () => {
+    const numericValue = Number(value);
+    if (value === "" || Number.isNaN(numericValue) || numericValue < 0 || numericValue > 100) {
+      setError("0 to 100");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    const result = await savePnlTotalConfig({ brand_key: brandKey, gst_pct: numericValue });
+    setSaving(false);
+    if (result.error) {
+      setError(result.data?.error || "Failed to save");
+      return;
+    }
+    onSaved(result.data?.config);
+  };
+
+  return (
+    <Stack
+      direction={{ xs: "column", sm: "row" }}
+      alignItems={{ xs: "stretch", sm: "center" }}
+      spacing={1}
+      sx={{ p: 1.25, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}
+    >
+      <Box sx={{ minWidth: { sm: 220 }, flexShrink: 0 }}>
+        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+          GST rate
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Backed out of sales as rate / (100 + rate)
+        </Typography>
+      </Box>
+      <TextField
+        size="small"
+        type="number"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        error={!!error}
+        helperText={error || " "}
+        InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }}
+        sx={{ width: { xs: "100%", sm: 140 } }}
+      />
+      <Stack direction="row" spacing={0.5} sx={{ ml: { sm: "auto" } }}>
+        <Button size="small" variant="contained" disabled={!dirty || saving} onClick={handleSave}>
+          {saving ? <CircularProgress size={16} /> : "Save"}
+        </Button>
+      </Stack>
+    </Stack>
+  );
+}
+
 export default function PnlConfigSection({ brandKey, onConfigChange }) {
-  const [configs, setConfigs] = useState(null);
+  const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     if (!brandKey) return;
     let cancelled = false;
     setLoading(true);
+    setLoadError("");
     getPnlCostConfigs({ brand_key: brandKey }).then((result) => {
       if (cancelled) return;
-      setConfigs(result.error ? {} : result.data?.configs || {});
+      if (result.error || !result.data?.config) {
+        setConfig(null);
+        setLoadError("Failed to load cost configuration.");
+      } else {
+        setConfig(result.data.config);
+      }
       setLoading(false);
     });
     return () => {
@@ -154,20 +217,16 @@ export default function PnlConfigSection({ brandKey, onConfigChange }) {
     };
   }, [brandKey]);
 
-  const handleSaved = (category, updatedConfig) => {
-    setConfigs((prev) => {
-      const next = { ...(prev || {}) };
-      if (updatedConfig) next[category] = updatedConfig;
-      else delete next[category];
-      return next;
-    });
+  const handleSaved = (nextConfig) => {
+    if (nextConfig) setConfig(nextConfig);
     onConfigChange?.();
   };
 
   const configuredCount = useMemo(
-    () => Object.keys(configs || {}).length,
-    [configs],
+    () => Object.values(config?.costs || {}).filter(Boolean).length,
+    [config],
   );
+  const totalCount = Object.keys(config?.costs || {}).length;
 
   return (
     <Card variant="outlined" sx={{ p: 2.5 }}>
@@ -176,26 +235,49 @@ export default function PnlConfigSection({ brandKey, onConfigChange }) {
           Brand Cost Configuration
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Manual cost overrides for categories that aren&apos;t derivable from order data. A
-          flat amount or a percentage of Net Sales for the period — takes effect immediately
-          and applies until changed.
-          {configuredCount ? ` ${configuredCount} of ${CATEGORIES.length} configured.` : ""}
+          One configuration per brand: the GST rate and every P&amp;L cost line, as a monthly
+          amount or a percentage of Net Sales. The nightly P&amp;L worker applies it when it
+          builds the daily rollup, so changes show on the next run.
+          {totalCount ? ` ${configuredCount} of ${totalCount} cost lines configured.` : ""}
         </Typography>
+        {config?.updatedAt ? (
+          <Typography variant="caption" color="text.secondary">
+            Last saved {dayjs(config.updatedAt).format("MMM DD, YYYY HH:mm")}
+            {config.updatedByEmail ? ` by ${config.updatedByEmail}` : ""}
+          </Typography>
+        ) : null}
       </Stack>
 
-      {loading || !configs ? (
+      {loading || (!config && !loadError) ? (
         <CircularProgress size={20} />
+      ) : loadError ? (
+        <Typography variant="body2" color="error">
+          {loadError}
+        </Typography>
       ) : (
-        <Stack spacing={1}>
-          {CATEGORIES.map(({ key, label }) => (
-            <CostConfigRow
-              key={key}
-              brandKey={brandKey}
-              category={key}
-              label={label}
-              config={configs[key] || null}
-              onSaved={handleSaved}
-            />
+        <Stack spacing={1.5}>
+          <GstRow brandKey={brandKey} gstPct={config.gstPct} onSaved={handleSaved} />
+
+          {SECTIONS.map((section) => (
+            <Box key={section.title}>
+              <Divider textAlign="left" sx={{ mb: 1 }}>
+                <Typography variant="caption" color="text.secondary">
+                  {section.title}
+                </Typography>
+              </Divider>
+              <Stack spacing={1}>
+                {section.fields.map((field) => (
+                  <CostLineRow
+                    key={field}
+                    brandKey={brandKey}
+                    field={field}
+                    label={config.labels?.[field] || field}
+                    line={config.costs?.[field] || null}
+                    onSaved={handleSaved}
+                  />
+                ))}
+              </Stack>
+            </Box>
           ))}
         </Stack>
       )}

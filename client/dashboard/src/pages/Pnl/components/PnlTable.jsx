@@ -14,7 +14,7 @@ import {
   useTheme,
 } from "@mui/material";
 import dayjs from "dayjs";
-import { formatSignedPercent } from "../pnlFormat.js";
+import { formatAmountOrMissing, formatPercent, formatSignedPercent, isMissingValue } from "../pnlFormat.js";
 
 const GOOD_COLOR = "#10b981";
 const BAD_COLOR = "#ef4444";
@@ -74,7 +74,7 @@ export default function PnlTable({ rows, loading, start, end, previousStart, pre
               ) : (
                 rows.map((row) => {
                   const changeColor =
-                    !row.changePct || row.changePct === 0
+                    isMissingValue(row.changePct) || row.changePct === 0
                       ? "text.secondary"
                       : row.isDeduction
                         ? row.changePct < 0
@@ -112,13 +112,13 @@ export default function PnlTable({ rows, loading, start, end, previousStart, pre
                         </Stack>
                       </TableCell>
                       <TableCell align="right" sx={{ fontWeight: row.isSubtotal ? 700 : 400 }}>
-                        {formatAmount(row.amount)}
+                        {formatAmountOrMissing(formatAmount, row.amount)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontWeight: row.isSubtotal ? 700 : 400 }}>
-                        {row.pctOfNetSales.toFixed(1)}%
+                        {formatPercent(row.pctOfNetSales)}
                       </TableCell>
                       <TableCell align="right" color="text.secondary">
-                        {formatAmount(row.previousAmount)}
+                        {formatAmountOrMissing(formatAmount, row.previousAmount)}
                       </TableCell>
                       <TableCell align="right" sx={{ color: changeColor, fontWeight: 600 }}>
                         {formatSignedPercent(row.changePct)}

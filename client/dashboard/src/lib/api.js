@@ -1500,8 +1500,19 @@ export async function logMetaOauthToken({ brand_key, access_token, expires_in })
   });
 }
 
+// The brand's single total_config document: { config: { gstPct, costs: {field: {value, valueType} | null}, ... } }
 export async function getPnlCostConfigs(args = {}) {
   return doGet("/pnl/cost-configs", appendBrandKey({}, args));
+}
+
+// Whole-document save; fields left out of `costs` are untouched.
+export async function savePnlTotalConfig({ brand_key, gst_pct, costs, notes }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  const body = { brand_key: brandKey };
+  if (gst_pct !== undefined) body.gst_pct = gst_pct;
+  if (costs !== undefined) body.costs = costs;
+  if (notes !== undefined) body.notes = notes;
+  return doPut(`/pnl/cost-configs${qs({ brand_key: brandKey })}`, body);
 }
 
 export async function savePnlCostConfig({ brand_key, category, value, value_type }) {

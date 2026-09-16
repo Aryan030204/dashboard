@@ -1,35 +1,24 @@
-const AggregateConfig = require("../shared/db/models/AggregateConfig.mongo");
+const TotalConfig = require("../shared/db/models/TotalConfig.mongo");
 const { resolveBrandRef } = require("../shared/db/models/Tenant.mongo");
 
-// P&L line-item keys (see pnl.service.js buildMockPnl) that can be overridden
-// by a manually configured cost. Only categories that aren't derivable from
-// order/ad-platform data live here — revenue fields, gst, and the ad-spend
-// fields (meta/google/otherPaid) are excluded on purpose.
-const CATEGORY_FIELD_MAP = {
-  cogs: "cogs",
-  packaging: "packaging",
-  freight_inwards: "freightInwards",
-  shipping: "shipping",
-  rto: "rto",
-  influencers: "influencers",
-  content: "content",
-  sponsorships: "sponsorships",
-  other_brand: "otherBrand",
-  salaries: "salaries",
-  rent: "rent",
-  technology: "technology",
-  agency_fees: "agencyFees",
-  other_overheads: "otherOverheads",
-};
+const { COST_FIELDS, VALUE_TYPES } = TotalConfig;
 
-const CATEGORY_LABELS = {
+// One document per brand in `total_config`: gst_pct + every cost line. The
+// P&L worker reads the same document when it builds overall_pnl, so this
+// service is only an editor - it never derives P&L figures itself.
+
+const COST_LABELS = {
   cogs: "COGS (SKU level)",
-  packaging: "Packaging Cost",
   freight_inwards: "Freight Inwards",
-  shipping: "Shipping",
-  rto: "RTO",
+  shipping: "Shipping / Logistics",
+  rto: "RTO Cost",
+  payment_gateway: "Payment Gateway / Commission",
+  packaging: "Packaging",
+  meta: "Meta Ads",
+  google: "Google Ads",
+  other_paid: "Other Paid Channels",
   influencers: "Influencers",
-  content: "Content",
+  content: "Content / Creative",
   sponsorships: "Sponsorships",
   other_brand: "Other Brand Marketing",
   salaries: "Salaries",
@@ -39,161 +28,135 @@ const CATEGORY_LABELS = {
   other_overheads: "Other Overheads",
 };
 
-const VALUE_TYPES = new Set(["flat", "percentage"]);
+const DEFAULT_GST_PCT = 18;
+const VALUE_TYPE_SET = new Set(VALUE_TYPES);
 
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+function badRequest(message) {
+  return Object.assign(new Error(message), { status: 400 });
 }
 
-// Active rows for a brand as of a date, newest effective_from first, so the
-// first row seen per category is the winner when several overlap.
-function findActiveRows(brandKey, asOfDate) {
-  return AggregateConfig.find({
-    brand_id: brandKey,
-    is_active: true,
-    effective_from: { $lte: asOfDate },
-    $or: [{ effective_to: null }, { effective_to: { $gte: asOfDate } }],
-  })
-    .sort({ effective_from: -1 })
-    .lean();
+function normalizeBrandKey(brandKey) {
+  const key = String(brandKey || "").trim().toUpperCase();
+  if (!key) throw badRequest("brand_key is required");
+  return key;
 }
 
-function toApiShape(row) {
+function assertCostField(field) {
+  if (!COST_FIELDS.includes(field)) {
+    throw badRequest(`Unknown cost field: ${field}. Known: ${COST_FIELDS.join(", ")}`);
+  }
+}
+
+// { value, value_type } -> validated cost line, or null to clear it.
+function normalizeCostLine(field, raw) {
+  if (raw === null || raw === undefined || raw === "") return null;
+  if (typeof raw !== "object") throw badRequest(`${field} must be an object { value, value_type } or null`);
+  const valueType = String(raw.value_type ?? raw.valueType ?? "flat").trim();
+  if (!VALUE_TYPE_SET.has(valueType)) {
+    throw badRequest(`${field}.value_type must be one of ${VALUE_TYPES.join(", ")}`);
+  }
+  const value = Number(raw.value);
+  if (!Number.isFinite(value) || value < 0) throw badRequest(`${field}.value must be a number >= 0`);
+  if (valueType === "percentage" && value > 100) throw badRequest(`${field}.value cannot exceed 100%`);
+  return { value_type: valueType, value };
+}
+
+function normalizeGstPct(raw) {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 100) throw badRequest("gst_pct must be between 0 and 100");
+  return value;
+}
+
+function costLineToApi(line) {
+  if (!line) return null;
+  return { valueType: line.value_type, value: Number(line.value) };
+}
+
+// The shape the editor (and anything else) consumes. `exists` tells the UI
+// whether the brand has a document yet; costs are always fully enumerated.
+function toApiShape(brandKey, doc) {
+  const costs = {};
+  for (const field of COST_FIELDS) {
+    costs[field] = costLineToApi(doc?.costs?.[field]);
+  }
   return {
-    category: row.category,
-    label: row.label,
-    valueType: row.value_type,
-    value: Number(row.value),
-    frequency: row.frequency,
-    effectiveFrom: row.effective_from,
-    notes: row.notes || null,
-    updatedByEmail: row.updated_by_email || null,
-    updatedAt: row.updated_at,
+    brandId: brandKey,
+    exists: Boolean(doc),
+    gstPct: doc?.gst_pct ?? DEFAULT_GST_PCT,
+    costs,
+    labels: COST_LABELS,
+    notes: doc?.notes ?? null,
+    updatedByEmail: doc?.updated_by_email ?? null,
+    updatedAt: doc?.updated_at ?? null,
   };
 }
 
-// Returns the active configs for a brand as of a given date, keyed by
-// category and reduced to just what applyCostConfigs needs.
-async function getActiveConfigs(brandKey, { asOfDate }) {
-  if (!brandKey || !asOfDate) return {};
-
-  const rows = await findActiveRows(brandKey, asOfDate);
-  const configByCategory = {};
-  for (const row of rows) {
-    if (configByCategory[row.category]) continue;
-    if (!VALUE_TYPES.has(row.value_type)) continue;
-    configByCategory[row.category] = {
-      valueType: row.value_type,
-      value: Number(row.value),
-    };
-  }
-  return configByCategory;
+async function findDoc(brandKey) {
+  return TotalConfig.findOne({ brand_id: brandKey }).lean();
 }
 
-// Resolves one configured cost to a currency amount for the period: a
-// "percentage" value is a percentage of Net Sales, a "flat" value is used
-// as-is.
-function resolveConfiguredAmount(config, netSales) {
-  if (config.valueType === "percentage") {
-    return Math.round((config.value / 100) * netSales);
-  }
-  return Math.round(config.value);
+async function getTotalConfig(brandKey) {
+  const key = normalizeBrandKey(brandKey);
+  return toApiShape(key, await findDoc(key));
 }
 
-// Overrides the matching mocked line items with configured costs and
-// re-derives every total that cascades from them, mirroring
-// applyRealMetaSpend in pnl.service.js.
-function applyCostConfigs(pnl, configsByCategory) {
-  for (const [category, field] of Object.entries(CATEGORY_FIELD_MAP)) {
-    const config = configsByCategory[category];
-    if (!config) continue;
-    pnl[field] = resolveConfiguredAmount(config, pnl.netSales);
-  }
-
-  pnl.grossMargin = pnl.netSales - pnl.cogs - pnl.freightInwards;
-  pnl.cm1 = pnl.grossMargin - pnl.shipping - pnl.rto - pnl.paymentGateway - pnl.packaging;
-  pnl.cm2 = pnl.cm1 - pnl.meta - pnl.google - pnl.otherPaid;
-  pnl.cm3 = pnl.cm2 - pnl.influencers - pnl.content - pnl.sponsorships - pnl.otherBrand;
-  pnl.ebitda = pnl.cm3 - pnl.salaries - pnl.rent - pnl.technology - pnl.agencyFees - pnl.otherOverheads;
-
-  return pnl;
+// Applies a partial update to the brand's single document (creating it on
+// first save). `$set` paths are per-field so two editors saving different
+// lines don't clobber each other.
+async function applyUpdate(brandKey, set, updatedByEmail) {
+  const key = normalizeBrandKey(brandKey);
+  const brandRef = await resolveBrandRef(key);
+  const doc = await TotalConfig.findOneAndUpdate(
+    { brand_id: key },
+    {
+      $set: { ...set, brand: brandRef, updated_by_email: updatedByEmail || null },
+      $setOnInsert: { brand_id: key, created_by_email: updatedByEmail || null },
+    },
+    { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+  ).lean();
+  return toApiShape(key, doc);
 }
 
-// Every category's currently-active row (as of today) in full, for the P&L
-// page's config editor to prefill from.
-async function listCurrentConfigs(brandKey) {
-  if (!brandKey) return {};
-
-  const rows = await findActiveRows(brandKey, todayIsoDate());
-  const byCategory = {};
-  for (const row of rows) {
-    if (byCategory[row.category]) continue;
-    byCategory[row.category] = toApiShape(row);
+// Whole-document save: { gst_pct?, costs?: { <field>: {value, value_type} | null }, notes? }.
+// Fields not mentioned are left as they are.
+async function saveTotalConfig({ brandKey, gstPct, costs, notes, updatedByEmail }) {
+  const set = {};
+  const gst = normalizeGstPct(gstPct);
+  if (gst !== null) set.gst_pct = gst;
+  if (costs && typeof costs === "object") {
+    for (const [field, raw] of Object.entries(costs)) {
+      assertCostField(field);
+      set[`costs.${field}`] = normalizeCostLine(field, raw);
+    }
   }
-  return byCategory;
+  if (notes !== undefined) set.notes = notes ? String(notes).trim() : null;
+  if (Object.keys(set).length === 0) throw badRequest("Nothing to save");
+  return applyUpdate(brandKey, set, updatedByEmail);
 }
 
-// Creates a new active row for brand+category effective today and supersedes
-// whatever was active before by flipping it to is_active: false — history is
-// preserved, same as setting effective_to in the SQL table.
-async function upsertConfig({ brandKey, category, value, valueType, frequency, notes, updatedByEmail }) {
-  if (!brandKey) throw Object.assign(new Error("brand_key is required"), { status: 400 });
-  if (!CATEGORY_FIELD_MAP[category]) {
-    throw Object.assign(new Error(`Unknown cost category: ${category}`), { status: 400 });
-  }
-  if (!VALUE_TYPES.has(valueType)) {
-    throw Object.assign(new Error("value_type must be 'flat' or 'percentage'"), { status: 400 });
-  }
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    throw Object.assign(new Error("value must be a number"), { status: 400 });
-  }
-
-  const brandRef = await resolveBrandRef(brandKey);
-
-  await AggregateConfig.updateMany(
-    { brand_id: brandKey, category, is_active: true },
-    { $set: { is_active: false } },
-  );
-
-  const created = await AggregateConfig.create({
-    brand: brandRef,
-    brand_id: brandKey,
-    category,
-    label: CATEGORY_LABELS[category] || category,
-    value_type: valueType,
-    value: numericValue,
-    frequency: frequency === "one_time" ? "one_time" : "recurring",
-    effective_from: todayIsoDate(),
-    effective_to: null,
-    is_active: true,
-    notes: notes || null,
-    created_by_email: updatedByEmail || null,
-    updated_by_email: updatedByEmail || null,
-  });
-
-  return toApiShape(created.toObject());
+async function upsertCostLine({ brandKey, field, value, valueType, updatedByEmail }) {
+  assertCostField(field);
+  const line = normalizeCostLine(field, { value, value_type: valueType });
+  if (!line) throw badRequest(`${field} needs a value`);
+  return applyUpdate(brandKey, { [`costs.${field}`]: line }, updatedByEmail);
 }
 
-// Reverts a category to the mocked baseline by deactivating whatever is
-// currently active for it — rows are kept, same reasoning as above.
-async function clearConfig({ brandKey, category, updatedByEmail }) {
-  if (!brandKey || !CATEGORY_FIELD_MAP[category]) {
-    throw Object.assign(new Error("Unknown brand or cost category"), { status: 400 });
-  }
-  await AggregateConfig.updateMany(
-    { brand_id: brandKey, category, is_active: true },
-    { $set: { is_active: false, updated_by_email: updatedByEmail || null } },
-  );
-  return { cleared: true };
+async function clearCostLine({ brandKey, field, updatedByEmail }) {
+  assertCostField(field);
+  return applyUpdate(brandKey, { [`costs.${field}`]: null }, updatedByEmail);
 }
 
 module.exports = {
-  CATEGORY_FIELD_MAP,
-  CATEGORY_LABELS,
-  getActiveConfigs,
-  applyCostConfigs,
-  listCurrentConfigs,
-  upsertConfig,
-  clearConfig,
+  COST_FIELDS,
+  COST_LABELS,
+  DEFAULT_GST_PCT,
+  getTotalConfig,
+  saveTotalConfig,
+  upsertCostLine,
+  clearCostLine,
+  // exported for tests
+  normalizeCostLine,
+  normalizeGstPct,
+  toApiShape,
 };

@@ -1,7 +1,15 @@
 import { Box, Card, Skeleton, Typography } from "@mui/material";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
-import { KPI_DEFS, KPI_ORDER, formatPercent, formatSignedPercent, formatSignedPoints } from "../pnlFormat.js";
+import {
+  KPI_DEFS,
+  KPI_ORDER,
+  MISSING,
+  formatPercent,
+  formatSignedPercent,
+  formatSignedPoints,
+  isMissingValue,
+} from "../pnlFormat.js";
 
 const GOOD_COLOR = "#10b981";
 const BAD_COLOR = "#ef4444";
@@ -11,7 +19,7 @@ function KpiCard({ metricId, kpi, loading, formatAmount }) {
   const value = kpi?.value ?? null;
   const isCurrency = def.type === "currency";
   const delta = isCurrency ? kpi?.changePct : kpi?.changePp;
-  const hasDelta = delta !== null && delta !== undefined && !Number.isNaN(delta);
+  const hasDelta = !isMissingValue(delta);
   const direction = !hasDelta || delta === 0 ? "flat" : delta > 0 ? "up" : "down";
   const deltaColor = !hasDelta || delta === 0 ? "text.secondary" : delta > 0 ? GOOD_COLOR : BAD_COLOR;
 
@@ -28,7 +36,7 @@ function KpiCard({ metricId, kpi, loading, formatAmount }) {
         <Skeleton variant="text" width={100} height={40} />
       ) : (
         <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          {value === null ? "—" : isCurrency ? formatAmount(value) : formatPercent(value)}
+          {isMissingValue(value) ? MISSING : isCurrency ? formatAmount(value) : formatPercent(value)}
         </Typography>
       )}
 

@@ -2,47 +2,57 @@ const { handleControllerError } = require("../shared/middleware/handleController
 const pnlCostConfigService = require("../services/pnlCostConfig.service");
 
 const pnlCostConfigController = {
-  async list(req, res) {
+  // GET /pnl/cost-configs -> the brand's single total_config document
+  async get(req, res) {
     try {
-      const configs = await pnlCostConfigService.listCurrentConfigs(req.brandKey);
-      return res.json({ configs });
+      const config = await pnlCostConfigService.getTotalConfig(req.brandKey);
+      return res.json({ config });
     } catch (error) {
-      return handleControllerError(res, error, "pnl-cost-configs-list failed");
+      return handleControllerError(res, error, "pnl-cost-configs-get failed");
     }
   },
 
-  async upsert(req, res) {
+  // PUT /pnl/cost-configs  body: { gst_pct?, costs?: { field: {value, value_type} | null }, notes? }
+  async save(req, res) {
     try {
-      const category = String(req.params.category || "").trim();
-      const valueType = req.body?.value_type ? String(req.body.value_type).trim() : "flat";
-      const frequency = req.body?.frequency ? String(req.body.frequency).trim() : "recurring";
-      const notes = req.body?.notes ? String(req.body.notes).trim() : null;
-
-      const result = await pnlCostConfigService.upsertConfig({
+      const config = await pnlCostConfigService.saveTotalConfig({
         brandKey: req.brandKey,
-        category,
-        value: req.body?.value,
-        valueType,
-        frequency,
-        notes,
+        gstPct: req.body?.gst_pct,
+        costs: req.body?.costs,
+        notes: req.body?.notes,
         updatedByEmail: req.user?.email || null,
       });
+      return res.json({ config });
+    } catch (error) {
+      return handleControllerError(res, error, "pnl-cost-configs-save failed");
+    }
+  },
 
-      return res.json(result);
+  // PUT /pnl/cost-configs/:field  body: { value, value_type }
+  async upsertField(req, res) {
+    try {
+      const config = await pnlCostConfigService.upsertCostLine({
+        brandKey: req.brandKey,
+        field: String(req.params.field || "").trim(),
+        value: req.body?.value,
+        valueType: req.body?.value_type ? String(req.body.value_type).trim() : "flat",
+        updatedByEmail: req.user?.email || null,
+      });
+      return res.json({ config });
     } catch (error) {
       return handleControllerError(res, error, "pnl-cost-configs-upsert failed");
     }
   },
 
-  async clear(req, res) {
+  // DELETE /pnl/cost-configs/:field -> clears that one line (document stays)
+  async clearField(req, res) {
     try {
-      const category = String(req.params.category || "").trim();
-      const result = await pnlCostConfigService.clearConfig({
+      const config = await pnlCostConfigService.clearCostLine({
         brandKey: req.brandKey,
-        category,
+        field: String(req.params.field || "").trim(),
         updatedByEmail: req.user?.email || null,
       });
-      return res.json(result);
+      return res.json({ config });
     } catch (error) {
       return handleControllerError(res, error, "pnl-cost-configs-clear failed");
     }
