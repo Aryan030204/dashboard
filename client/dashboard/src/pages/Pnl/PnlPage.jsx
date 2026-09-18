@@ -61,10 +61,15 @@ export default function PnlPage({ brandKey }) {
     setRangeEnd(nextEnd);
   };
 
-  const metaAdSpendNote =
-    summary?.metaAdSpend && summary.metaAdSpend.available === false
-      ? `Meta ad spend isn't synced yet: ${summary.metaAdSpend.error || "no rollup data for this brand."} Meta shows "-" until it is.`
-      : null;
+  const adSpendNotes = [
+    ["Meta", summary?.metaAdSpend],
+    ["Google", summary?.googleAdSpend],
+  ]
+    .filter(([, adSpend]) => adSpend && adSpend.available === false)
+    .map(
+      ([label, adSpend]) =>
+        `${label} ad spend isn't synced yet: ${adSpend.error || "no rollup data for this brand."} ${label} shows "-" until it is.`,
+    );
 
   return (
     <Stack spacing={2.5} sx={{ p: { xs: 1.5, md: 2 } }}>
@@ -93,7 +98,13 @@ export default function PnlPage({ brandKey }) {
       </Stack>
 
       {error ? <Alert severity="error">{error}</Alert> : null}
-      {!loading && metaAdSpendNote ? <Alert severity="warning">{metaAdSpendNote}</Alert> : null}
+      {!loading
+        ? adSpendNotes.map((note) => (
+            <Alert key={note} severity="warning">
+              {note}
+            </Alert>
+          ))
+        : null}
 
       <Stack spacing={1}>
         <Typography variant="subtitle2" color="text.secondary">

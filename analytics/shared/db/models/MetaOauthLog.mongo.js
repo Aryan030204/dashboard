@@ -2,7 +2,7 @@ const { mongoose } = require("../mongo");
 
 // Backs the "Connect with Meta" proof-of-concept (POST /pnl/meta-ads/oauth/log):
 // proves the OAuth redirect round-trip works end to end before the token is
-// wired into the real meta_ads_credentials table. One document per brand,
+// wired into the real meta_ads_credentials collection. One document per brand,
 // tied to it by `brand` (ObjectId of the tenants document) and `brand_id`
 // (the same key tenants.brand_id uses). Keys are snake_case to match the
 // rest of the arch-auth database.

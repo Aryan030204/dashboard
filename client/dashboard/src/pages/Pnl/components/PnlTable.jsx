@@ -105,7 +105,7 @@ export default function PnlTable({ rows, loading, start, end, previousStart, pre
                         <Stack direction="row" alignItems="center" spacing={1} component="span">
                           <span>{row.label}</span>
                           {row.isLive ? (
-                            <Tooltip title="Synced spend from the Meta ad spend rollup for this date range">
+                            <Tooltip title="Synced spend from this channel's ad spend rollup for this date range">
                               <Chip label="Synced" size="small" color="success" variant="outlined" />
                             </Tooltip>
                           ) : null}

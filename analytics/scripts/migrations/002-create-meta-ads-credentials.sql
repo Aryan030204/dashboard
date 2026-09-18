@@ -1,3 +1,10 @@
+-- SUPERSEDED: Meta credentials now live in Mongo (arch-auth database,
+-- `meta_ads_credentials` collection, one document per brand — see
+-- analytics/shared/db/models/MetaAdsCredential.mongo.js) so the pipeline's
+-- P&L worker can read them next to total_config and google_ads_credentials.
+-- Nothing reads or writes this MySQL table any more; kept for history only.
+-- Brands connected before the move need to reconnect from the P&L page.
+--
 -- Migration: Create meta_ads_credentials table
 -- Run this against the analytics service's own central DB (the DB pointed
 -- to by DB_HOST/DB_NAME in analytics/.env, i.e. mainSequelize), NOT a

@@ -1458,6 +1458,7 @@ export async function getPnlSummary(args = {}) {
     lineItems: Array.isArray(json?.lineItems) ? json.lineItems : [],
     filters: json?.filters || {},
     metaAdSpend: json?.metaAdSpend || null,
+    googleAdSpend: json?.googleAdSpend || null,
     error: json?.__error,
   };
 }
@@ -1511,52 +1512,28 @@ export async function logMetaOauthToken({ brand_key, access_token, expires_in })
 }
 
 // ---- Google Ads connector (P&L page) ---------------------------------------
+// Merchants paste their Google Ads customer id + token; the backend stores it
+// encrypted in Mongo for the pipeline's Google Ads sync. Nothing here talks
+// to Google, and the token is never sent back by the status endpoint.
 export async function getGoogleAdsStatus(args = {}) {
   return doGet("/pnl/google-ads/status", appendBrandKey({}, args));
 }
 
-export async function getGoogleOauthConfig(args = {}) {
-  return doGet("/pnl/google-ads/oauth/config", appendBrandKey({}, args));
-}
-
-// Swaps the one-time code Google appended to the redirect for a stored
-// refresh token. redirect_uri must equal what the auth URL was built with.
-export async function exchangeGoogleOauthCode({ brand_key, code, redirect_uri }) {
+// brand_key goes in the query string (see connectMetaAds); the token goes in
+// the body only.
+export async function connectGoogleAds({ brand_key, customer_id, login_customer_id, token }) {
   const brandKey = normalizeBrandKey(brand_key);
-  return doPost(`/pnl/google-ads/oauth/exchange${qs({ brand_key: brandKey })}`, {
-    brand_key: brandKey,
-    code,
-    redirect_uri,
-  });
-}
-
-export async function refreshGoogleAdsCustomers({ brand_key }) {
-  const brandKey = normalizeBrandKey(brand_key);
-  return doPost(`/pnl/google-ads/customers/refresh${qs({ brand_key: brandKey })}`, { brand_key: brandKey });
-}
-
-export async function setGoogleAdsCustomer({ brand_key, customer_id }) {
-  const brandKey = normalizeBrandKey(brand_key);
-  return doPut(`/pnl/google-ads/customer${qs({ brand_key: brandKey })}`, {
+  return doPost(`/pnl/google-ads/connect${qs({ brand_key: brandKey })}`, {
     brand_key: brandKey,
     customer_id,
+    login_customer_id: login_customer_id || null,
+    token,
   });
 }
 
 export async function disconnectGoogleAds({ brand_key }) {
   const params = qs({ brand_key: normalizeBrandKey(brand_key) });
   return doDelete(`/pnl/google-ads/disconnect${params}`);
-}
-
-// Date-wise Google Ads spend for the brand's connected customer, pulled live
-// from the Google Ads API with the stored refresh token:
-// { start, end, customerId, currency, total, days: [{ date, spend, currency }] }
-// Pass `date` for a single day, or `start` + `end` for an inclusive range.
-export async function getGoogleAdsSpend({ brand_key, date, start, end, customer_id } = {}) {
-  return doGet(
-    "/pnl/google-ads/spend",
-    appendBrandKey({ date, start, end, customer_id }, { brand_key }),
-  );
 }
 
 // The brand's single total_config document: { config: { gstPct, costs: {field: {value, valueType} | null}, ... } }

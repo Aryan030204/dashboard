@@ -2,12 +2,30 @@ const { QueryTypes } = require("sequelize");
 
 // Every P&L figure comes from the per-brand `overall_pnl` table, which the
 // pipeline's P&L worker rebuilds nightly (one row per date, costs already
-// resolved from the brand's cost configs and the Meta ad-spend rollup). This
-// service only sums those rows for the requested and previous ranges — it
-// never derives or estimates a number itself. Anything the table can't back
-// is returned as the literal string "-".
+// resolved from the brand's cost configs). This service only sums those rows
+// for the requested and previous ranges — it never estimates a number itself.
+// Anything the table can't back is returned as the literal string "-".
+//
+// The two paid-ads lines are the exception: the worker fills `meta` and
+// `google` from the brand's cost config (or a default percentage) whenever
+// no real spend was synced, which would show an estimate as if it were
+// spend. So those two lines are read straight from the per-brand ad-spend
+// rollup tables the ad syncs write (one row per date, a `spend` column) and
+// are "-" for any range the rollup has no rows for. CM2, CM3 and EBITDA are
+// shifted by the same difference so the subtotals match the lines shown.
 const PNL_TABLE = "overall_pnl";
+const META_SPEND_TABLE = "pnl_meta_ad_spend_rollup";
+const GOOGLE_SPEND_TABLE = "pnl_google_ad_spend_rollup";
 const MISSING = "-";
+
+// API field -> rollup table for the ad-spend lines read outside overall_pnl.
+const AD_SPEND_TABLES = {
+  meta: META_SPEND_TABLE,
+  google: GOOGLE_SPEND_TABLE,
+};
+// Subtotals that sit below the paid-ads lines and therefore carry whatever
+// the worker put in `meta` / `google`.
+const AD_SPEND_SUBTOTALS = ["cm2", "cm3", "ebitda"];
 
 const MISSING_TABLE_CODES = new Set(["ER_NO_SUCH_TABLE", "ER_BAD_DB_ERROR"]);
 
@@ -44,8 +62,9 @@ const COLUMN_FIELD_MAP = {
 };
 
 // Cost lines the worker writes as 0 when nothing was attributed for the day
-// (no active cost config, no synced spend). A zero total over the range means
-// "no value", not "cost of zero", so those surface as "-".
+// (no active cost config). A zero total over the range means "no value", not
+// "cost of zero", so those surface as "-". meta / google aren't here: they
+// come from the rollup tables (see AD_SPEND_TABLES), not from overall_pnl.
 const COST_FIELDS = new Set([
   "cogs",
   "freightInwards",
@@ -53,8 +72,6 @@ const COST_FIELDS = new Set([
   "rto",
   "paymentGateway",
   "packaging",
-  "meta",
-  "google",
   "otherPaid",
   "influencers",
   "content",
@@ -118,7 +135,7 @@ function computePreviousRange(start, end, granularity) {
 // { dayCount: 0 } when the brand has no connection, no table yet, or no rows
 // in the range.
 async function fetchPnlTotals({ conn, brandKey, start, end }) {
-  if (!conn || !brandKey) return { dayCount: 0, metaSyncedDays: 0, totals: {} };
+  if (!conn || !brandKey) return { dayCount: 0, totals: {} };
 
   const sums = Object.keys(COLUMN_FIELD_MAP)
     .map((col) => `COALESCE(SUM(\`${col}\`), 0) AS \`${col}\``)
@@ -130,7 +147,6 @@ async function fetchPnlTotals({ conn, brandKey, start, end }) {
       `
         SELECT
           COUNT(*) AS day_count,
-          COALESCE(SUM(meta_spend_synced), 0) AS meta_synced_days,
           ${sums}
         FROM \`${PNL_TABLE}\`
         WHERE \`brand_key\` = ? AND \`date\` >= ? AND \`date\` <= ?
@@ -138,7 +154,7 @@ async function fetchPnlTotals({ conn, brandKey, start, end }) {
       { type: QueryTypes.SELECT, replacements: [String(brandKey).toUpperCase(), start, end] },
     );
   } catch (error) {
-    if (isMissingTableError(error)) return { dayCount: 0, metaSyncedDays: 0, totals: {} };
+    if (isMissingTableError(error)) return { dayCount: 0, totals: {} };
     throw error;
   }
 
@@ -149,15 +165,55 @@ async function fetchPnlTotals({ conn, brandKey, start, end }) {
   }
   return {
     dayCount: Number(row.day_count || 0),
-    metaSyncedDays: Number(row.meta_synced_days || 0),
     totals,
   };
 }
 
+// Sums one ad-spend rollup table over [start, end]. The rollups are per-brand
+// tables (one per brand database) with one row per date, so there's no brand
+// filter. Resolves to { days: 0 } when there's no connection, the sync has
+// never created the table, or the range has no rows — all of which mean
+// "no synced spend", never "spend of zero".
+async function fetchAdSpendTotals({ conn, table, start, end }) {
+  if (!conn) return { days: 0, spend: 0 };
+  let rows;
+  try {
+    rows = await conn.query(
+      `
+        SELECT COUNT(*) AS day_count, COALESCE(SUM(\`spend\`), 0) AS spend
+        FROM \`${table}\`
+        WHERE \`date\` >= ? AND \`date\` <= ?
+      `,
+      { type: QueryTypes.SELECT, replacements: [start, end] },
+    );
+  } catch (error) {
+    if (isMissingTableError(error)) return { days: 0, spend: 0 };
+    throw error;
+  }
+  const row = rows?.[0] || {};
+  return { days: Number(row.day_count || 0), spend: round2(row.spend || 0) };
+}
+
+async function fetchAdSpend({ conn, start, end }) {
+  const entries = await Promise.all(
+    Object.entries(AD_SPEND_TABLES).map(async ([field, table]) => [
+      field,
+      await fetchAdSpendTotals({ conn, table, start, end }),
+    ]),
+  );
+  return Object.fromEntries(entries);
+}
+
 // Turns range totals into the per-line figures the response carries. With no
-// rows every line is "-"; with rows, revenue lines and subtotals are the
-// summed values and unattributed cost lines are "-".
-function buildPeriod({ dayCount, totals }) {
+// overall_pnl rows every line is "-"; with rows, revenue lines and subtotals
+// are the summed values and unattributed cost lines are "-".
+//
+// `adSpend` ({ meta: { days, spend }, google: { days, spend } }) replaces the
+// worker's meta / google figures: a rollup with rows in the range gives the
+// line its synced spend, otherwise the line is "-". The subtotals below those
+// lines are moved by (worker figure - shown figure) so CM2, CM3 and EBITDA
+// still add up from what's on screen.
+function buildPeriod({ dayCount, totals }, adSpend = {}) {
   const period = {};
   for (const field of Object.values(COLUMN_FIELD_MAP)) {
     if (dayCount === 0) {
@@ -166,6 +222,19 @@ function buildPeriod({ dayCount, totals }) {
     }
     const amount = totals[field];
     period[field] = COST_FIELDS.has(field) && amount === 0 ? MISSING : amount;
+  }
+
+  let subtotalShift = 0;
+  for (const field of Object.keys(AD_SPEND_TABLES)) {
+    const rollup = adSpend[field] || { days: 0, spend: 0 };
+    const synced = rollup.days > 0;
+    period[field] = synced ? rollup.spend : MISSING;
+    if (dayCount > 0) subtotalShift += (totals[field] || 0) - (synced ? rollup.spend : 0);
+  }
+  if (dayCount > 0 && subtotalShift !== 0) {
+    for (const field of AD_SPEND_SUBTOTALS) {
+      period[field] = round2(period[field] + subtotalShift);
+    }
   }
   return period;
 }
@@ -185,7 +254,7 @@ function changePct(current, previous) {
   return Math.round(((current - previous) / Math.abs(previous)) * 1000) / 10;
 }
 
-function buildLineItems(curr, prev, { metaIsLive = false } = {}) {
+function buildLineItems(curr, prev, { metaIsLive = false, googleIsLive = false } = {}) {
   const rows = [];
   const push = (key, label, amount, previousAmount, opts = {}) => {
     rows.push({
@@ -220,7 +289,7 @@ function buildLineItems(curr, prev, { metaIsLive = false } = {}) {
   subtotal("cm1", "CM1", "cm1");
 
   deduction("meta", "(–) Meta", "cm2", { isSubItem: true, isLive: metaIsLive });
-  deduction("google", "(–) Google", "cm2", { isSubItem: true });
+  deduction("google", "(–) Google", "cm2", { isSubItem: true, isLive: googleIsLive });
   deduction("otherPaid", "(–) Other Paid Channels", "cm2", { isSubItem: true });
   subtotal("cm2", "CM2", "cm2");
 
@@ -261,39 +330,41 @@ function buildMarginKpi(currentMargin, currentNetSales, previousMargin, previous
   };
 }
 
-function describeMetaAdSpend({ dayCount, metaSyncedDays }, curr) {
-  if (!dayCount) {
-    return { available: false, spend: null, error: "No P&L rows for this date range yet.", source: "none" };
-  }
-  if (!metaSyncedDays) {
+// How a paid-ads line was (or wasn't) backed by its rollup for the range.
+function describeAdSpend(label, rollup, expectedDays) {
+  if (!rollup || !rollup.days) {
     return {
       available: false,
       spend: null,
-      error: "No synced Meta ad spend for this date range yet.",
+      error: `No synced ${label} ad spend for this date range yet.`,
       source: "none",
     };
   }
   return {
     available: true,
-    spend: curr.meta,
+    spend: rollup.spend,
     error: null,
     source: "rollup",
-    syncedDays: metaSyncedDays,
-    totalDays: dayCount,
+    syncedDays: rollup.days,
+    totalDays: expectedDays,
   };
 }
 
 async function getSummary({ brandKey, start, end, granularity = "daily", channel = null, productId = null, conn = null }) {
   const [previousStart, previousEnd] = computePreviousRange(start, end, granularity);
 
-  const [currTotals, prevTotals] = await Promise.all([
+  const [currTotals, currAdSpend, prevTotals, prevAdSpend] = await Promise.all([
     fetchPnlTotals({ conn, brandKey, start, end }),
+    fetchAdSpend({ conn, start, end }),
     fetchPnlTotals({ conn, brandKey, start: previousStart, end: previousEnd }),
+    fetchAdSpend({ conn, start: previousStart, end: previousEnd }),
   ]);
 
-  const curr = buildPeriod(currTotals);
-  const prev = buildPeriod(prevTotals);
-  const metaAdSpend = describeMetaAdSpend(currTotals, curr);
+  const curr = buildPeriod(currTotals, currAdSpend);
+  const prev = buildPeriod(prevTotals, prevAdSpend);
+  const expectedDays = daysBetweenInclusive(start, end);
+  const metaAdSpend = describeAdSpend("Meta", currAdSpend.meta, expectedDays);
+  const googleAdSpend = describeAdSpend("Google", currAdSpend.google, expectedDays);
 
   return {
     brandKey: brandKey || null,
@@ -312,11 +383,15 @@ async function getSummary({ brandKey, start, end, granularity = "daily", channel
       cm3Pct: buildMarginKpi(curr.cm3, curr.netSales, prev.cm3, prev.netSales),
       ebitdaPct: buildMarginKpi(curr.ebitda, curr.netSales, prev.ebitda, prev.netSales),
     },
-    lineItems: buildLineItems(curr, prev, { metaIsLive: metaAdSpend.available }),
+    lineItems: buildLineItems(curr, prev, {
+      metaIsLive: metaAdSpend.available,
+      googleIsLive: googleAdSpend.available,
+    }),
     metaAdSpend,
+    googleAdSpend,
     coverage: {
       days: currTotals.dayCount,
-      expectedDays: daysBetweenInclusive(start, end),
+      expectedDays,
       previousDays: prevTotals.dayCount,
     },
     filters: {
@@ -329,6 +404,8 @@ async function getSummary({ brandKey, start, end, granularity = "daily", channel
 
 module.exports = {
   MISSING,
+  META_SPEND_TABLE,
+  GOOGLE_SPEND_TABLE,
   getSummary,
   computePreviousRange,
   buildPeriod,

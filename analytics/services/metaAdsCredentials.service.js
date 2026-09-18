@@ -1,13 +1,19 @@
 const axios = require("axios");
-const { sequelize } = require("../shared/db/mainSequelize");
 const { encryptText, decryptText } = require("../shared/utils/crypto");
+const MetaAdsCredential = require("../shared/db/models/MetaAdsCredential.mongo");
 const MetaOauthLog = require("../shared/db/models/MetaOauthLog.mongo");
 const { resolveBrandRef } = require("../shared/db/models/Tenant.mongo");
 
-const MetaAdsCredential = sequelize.models.meta_ads_credentials;
+// Credentials live in Mongo (meta_ads_credentials, one document per brand),
+// alongside the Google Ads ones and the brand's total_config, so the
+// pipeline's P&L worker reads all three from one place.
 
 function apiVersion() {
   return process.env.META_API_VERSION || "v21.0";
+}
+
+function normalizeBrandKey(brandKey) {
+  return String(brandKey || "").trim().toUpperCase();
 }
 
 function normalizeAdAccountId(rawId) {
@@ -108,7 +114,8 @@ async function tryExchangeForLongLivedToken(accessToken) {
 }
 
 async function saveCredentials({ brandKey, adAccountId, accessToken, updatedByEmail }) {
-  if (!brandKey) throw new Error("brandKey is required");
+  const key = normalizeBrandKey(brandKey);
+  if (!key) throw new Error("brandKey is required");
   if (!adAccountId || !accessToken) {
     return { success: false, error: "Ad account ID and access token are both required." };
   }
@@ -120,23 +127,30 @@ async function saveCredentials({ brandKey, adAccountId, accessToken, updatedByEm
 
   const exchanged = await tryExchangeForLongLivedToken(accessToken);
 
-  await MetaAdsCredential.upsert({
-    brand_key: brandKey,
-    ad_account_id: normalizeAdAccountId(adAccountId),
-    access_token_encrypted: encryptText(exchanged.accessToken),
-    token_expires_at: exchanged.expiresAt,
-    last_verified_at: new Date(),
-    last_error: null,
-    updated_by_email: updatedByEmail || null,
-    updated_at: new Date(),
-  });
+  await MetaAdsCredential.findOneAndUpdate(
+    { brand_id: key },
+    {
+      $set: {
+        brand: await resolveBrandRef(key),
+        brand_id: key,
+        ad_account_id: normalizeAdAccountId(adAccountId),
+        access_token_encrypted: encryptText(exchanged.accessToken),
+        token_expires_at: exchanged.expiresAt,
+        last_verified_at: new Date(),
+        last_error: null,
+        updated_by_email: updatedByEmail || null,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
 
   return { success: true };
 }
 
 async function getCredentials(brandKey) {
-  if (!brandKey) return null;
-  const row = await MetaAdsCredential.findOne({ where: { brand_key: brandKey } });
+  const key = normalizeBrandKey(brandKey);
+  if (!key) return null;
+  const row = await MetaAdsCredential.findOne({ brand_id: key }).lean();
   if (!row) return null;
   return {
     adAccountId: row.ad_account_id,
@@ -146,33 +160,37 @@ async function getCredentials(brandKey) {
 }
 
 async function getStatus(brandKey) {
-  if (!brandKey) return { connected: false };
-  const row = await MetaAdsCredential.findOne({ where: { brand_key: brandKey } });
+  const key = normalizeBrandKey(brandKey);
+  if (!key) return { connected: false };
+  const row = await MetaAdsCredential.findOne({ brand_id: key }).lean();
   if (!row) return { connected: false };
   return {
     connected: true,
     adAccountId: row.ad_account_id,
-    expiresAt: row.token_expires_at,
-    lastVerifiedAt: row.last_verified_at,
-    lastError: row.last_error,
-    updatedByEmail: row.updated_by_email,
-    updatedAt: row.updated_at,
+    expiresAt: row.token_expires_at || null,
+    lastVerifiedAt: row.last_verified_at || null,
+    lastError: row.last_error || null,
+    updatedByEmail: row.updated_by_email || null,
+    updatedAt: row.updated_at || null,
   };
 }
 
-// Records a live-call failure against the saved row (surfaced on the status
-// endpoint) without touching the token itself.
+// Records a live-call failure against the saved document (surfaced on the
+// status endpoint) without touching the token itself. The pipeline's P&L
+// worker writes the same field when its nightly spend pull fails.
 async function recordError(brandKey, message) {
-  if (!brandKey) return;
-  await MetaAdsCredential.update(
-    { last_error: String(message || "").slice(0, 500) },
-    { where: { brand_key: brandKey } },
+  const key = normalizeBrandKey(brandKey);
+  if (!key) return;
+  await MetaAdsCredential.updateOne(
+    { brand_id: key },
+    { $set: { last_error: String(message || "").slice(0, 500) } },
   );
 }
 
 async function deleteCredentials(brandKey) {
-  if (!brandKey) return { success: false };
-  await MetaAdsCredential.destroy({ where: { brand_key: brandKey } });
+  const key = normalizeBrandKey(brandKey);
+  if (!key) return { success: false };
+  await MetaAdsCredential.deleteOne({ brand_id: key });
   return { success: true };
 }
 

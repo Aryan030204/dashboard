@@ -85,7 +85,7 @@ const metaAdsCredentialsController = {
   // whatever token the OAuth redirect captured in Mongo (analytics-service's
   // own DB, not the tenant brand DB — those connections are read replicas),
   // so we can confirm the connect flow works end to end before wiring it into
-  // the real meta_ads_credentials table.
+  // the real meta_ads_credentials collection.
   async logOauthToken(req, res) {
     try {
       const accessToken = req.body?.access_token ? String(req.body.access_token).trim() : "";

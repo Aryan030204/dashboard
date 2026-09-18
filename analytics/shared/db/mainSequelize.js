@@ -4,7 +4,6 @@
 const { Sequelize, DataTypes } = require("sequelize");
 const { defineApiKeyModel } = require("./models/apiKey");
 const { defineDashboardLayoutModel } = require("./models/dashboardLayout");
-const { defineMetaAdsCredentialModel } = require("./models/metaAdsCredential");
 
 const DB_HOST = process.env.DB_PROXY_HOST || process.env.DB_HOST;
 const DB_PORT = Number(process.env.DB_PROXY_PORT || process.env.DB_PORT || 3306);
@@ -43,6 +42,5 @@ const sequelize = new Sequelize(
 
 defineApiKeyModel(sequelize, DataTypes, Sequelize);
 defineDashboardLayoutModel(sequelize, DataTypes, Sequelize);
-defineMetaAdsCredentialModel(sequelize, DataTypes, Sequelize);
 
 module.exports = { sequelize };

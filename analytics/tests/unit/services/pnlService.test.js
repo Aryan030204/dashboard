@@ -1,11 +1,10 @@
 const pnlService = require("../../../services/pnl.service");
 
-const { MISSING } = pnlService;
+const { MISSING, META_SPEND_TABLE, GOOGLE_SPEND_TABLE } = pnlService;
 
 function dbRow(overrides = {}) {
   return {
     day_count: 3,
-    meta_synced_days: 0,
     gross_sales: "1000.00",
     discounts: "100.00",
     cancellations: "50.00",
@@ -38,11 +37,29 @@ function dbRow(overrides = {}) {
   };
 }
 
-function connReturning(...rowsPerCall) {
-  const query = jest.fn();
-  for (const row of rowsPerCall) query.mockResolvedValueOnce([row]);
+const NO_ROLLUP = { day_count: 0, spend: "0.00" };
+
+// A fake brand connection: overall_pnl answers come from `pnlRows` in call
+// order (current range, then previous); each ad-spend rollup answers from
+// its own list the same way, defaulting to "no rows" when not given.
+function connReturning(...pnlRows) {
+  return connWith({ pnl: pnlRows });
+}
+
+function connWith({ pnl = [], meta = [], google = [] }) {
+  const queues = { pnl: [...pnl], meta: [...meta], google: [...google] };
+  const query = jest.fn(async (sql) => {
+    let queue = queues.pnl;
+    if (sql.includes(`\`${META_SPEND_TABLE}\``)) queue = queues.meta;
+    else if (sql.includes(`\`${GOOGLE_SPEND_TABLE}\``)) queue = queues.google;
+    const row = queue.shift();
+    if (row === undefined) return [queue === queues.pnl ? { day_count: 0 } : NO_ROLLUP];
+    return [row];
+  });
   return { query };
 }
+
+const sqlCalls = (conn, table) => conn.query.mock.calls.filter(([sql]) => sql.includes(`\`${table}\``));
 
 const lineByKey = (summary, key) => summary.lineItems.find((row) => row.key === key);
 
@@ -57,11 +74,11 @@ describe("pnl.service getSummary", () => {
       conn,
     });
 
-    expect(conn.query).toHaveBeenCalledTimes(2);
-    expect(conn.query.mock.calls[0][0]).toMatch(/FROM `overall_pnl`/);
-    expect(conn.query.mock.calls[0][0]).toMatch(/`brand_key` = \?/);
-    expect(conn.query.mock.calls[0][1].replacements).toEqual(["BBB", "2026-09-08", "2026-09-10"]);
-    expect(conn.query.mock.calls[1][1].replacements).toEqual(["BBB", "2026-09-05", "2026-09-07"]);
+    const pnlCalls = sqlCalls(conn, "overall_pnl");
+    expect(pnlCalls).toHaveLength(2);
+    expect(pnlCalls[0][0]).toMatch(/`brand_key` = \?/);
+    expect(pnlCalls[0][1].replacements).toEqual(["BBB", "2026-09-08", "2026-09-10"]);
+    expect(pnlCalls[1][1].replacements).toEqual(["BBB", "2026-09-05", "2026-09-07"]);
     expect(summary.source).toBe("overall_pnl");
     expect(summary.coverage).toEqual({ days: 3, expectedDays: 3, previousDays: 3 });
   });
@@ -83,19 +100,17 @@ describe("pnl.service getSummary", () => {
     const conn = connReturning(dbRow(), dbRow());
     const summary = await pnlService.getSummary({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-10", conn });
 
-    for (const key of ["rent", "salaries", "google", "meta", "paymentGateway"]) {
+    for (const key of ["rent", "salaries", "paymentGateway"]) {
       const row = lineByKey(summary, key);
       expect(row.amount).toBe(MISSING);
       expect(row.previousAmount).toBe(MISSING);
       expect(row.pctOfNetSales).toBe(MISSING);
       expect(row.changePct).toBe(MISSING);
     }
-    expect(summary.metaAdSpend.available).toBe(false);
-    expect(lineByKey(summary, "meta").isLive).toBe(false);
   });
 
   test("returns '-' everywhere when the range has no rows", async () => {
-    const empty = { day_count: 0, meta_synced_days: 0 };
+    const empty = { day_count: 0 };
     const conn = connReturning(empty, empty);
     const summary = await pnlService.getSummary({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-10", conn });
 
@@ -108,11 +123,12 @@ describe("pnl.service getSummary", () => {
     expect(summary.kpis.netSales).toEqual({ value: MISSING, previousValue: MISSING, changePct: MISSING });
     expect(summary.kpis.ebitdaPct).toEqual({ value: MISSING, previousValue: MISSING, changePp: MISSING });
     expect(summary.metaAdSpend.available).toBe(false);
+    expect(summary.googleAdSpend.available).toBe(false);
     expect(summary.coverage.days).toBe(0);
   });
 
   test("returns '-' for the comparison when only the previous range is empty", async () => {
-    const conn = connReturning(dbRow(), { day_count: 0, meta_synced_days: 0 });
+    const conn = connReturning(dbRow(), { day_count: 0 });
     const summary = await pnlService.getSummary({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-10", conn });
 
     const gross = lineByKey(summary, "grossSales");
@@ -133,12 +149,84 @@ describe("pnl.service getSummary", () => {
     expect(summary.kpis.grossMarginPct.changePp).toBe(5.5);
   });
 
-  test("marks Meta as synced when the rollup covered the range", async () => {
-    const conn = connReturning(dbRow({ meta_synced_days: 3, meta: "90.00" }), dbRow());
+  test("reads the Meta and Google lines from their rollup tables, not overall_pnl", async () => {
+    const conn = connWith({
+      pnl: [dbRow({ meta: "80.00", google: "50.00", cm2: "350.34", cm3: "350.34", ebitda: "350.34" }), dbRow()],
+      meta: [{ day_count: 3, spend: "90.00" }],
+      google: [{ day_count: 2, spend: "30.00" }],
+    });
     const summary = await pnlService.getSummary({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-10", conn });
 
-    expect(summary.metaAdSpend).toMatchObject({ available: true, spend: 90, source: "rollup", syncedDays: 3 });
+    const metaCalls = sqlCalls(conn, META_SPEND_TABLE);
+    expect(metaCalls).toHaveLength(2);
+    expect(metaCalls[0][1].replacements).toEqual(["2026-09-08", "2026-09-10"]);
+    expect(sqlCalls(conn, GOOGLE_SPEND_TABLE)[1][1].replacements).toEqual(["2026-09-05", "2026-09-07"]);
+
     expect(lineByKey(summary, "meta")).toMatchObject({ amount: -90, isLive: true });
+    expect(lineByKey(summary, "google")).toMatchObject({ amount: -30, isLive: true });
+    expect(summary.metaAdSpend).toMatchObject({ available: true, spend: 90, source: "rollup", syncedDays: 3, totalDays: 3 });
+    expect(summary.googleAdSpend).toMatchObject({ available: true, spend: 30, source: "rollup", syncedDays: 2, totalDays: 3 });
+  });
+
+  test("shifts CM2/CM3/EBITDA so they add up from the rollup spend shown", async () => {
+    // Worker deducted 80 (meta) + 50 (google) from CM1 = 480.34; the rollups
+    // say the real spend was 90 + 30, so the subtotals move by +10.
+    const conn = connWith({
+      pnl: [dbRow({ meta: "80.00", google: "50.00", cm2: "350.34", cm3: "350.34", ebitda: "350.34" }), dbRow()],
+      meta: [{ day_count: 3, spend: "90.00" }],
+      google: [{ day_count: 3, spend: "30.00" }],
+    });
+    const summary = await pnlService.getSummary({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-10", conn });
+
+    expect(lineByKey(summary, "cm1").amount).toBe(480.34);
+    expect(lineByKey(summary, "cm2").amount).toBe(360.34);
+    expect(lineByKey(summary, "cm3").amount).toBe(360.34);
+    expect(lineByKey(summary, "ebitda").amount).toBe(360.34);
+    expect(summary.kpis.ebitdaPct.value).toBe(50);
+  });
+
+  test("returns '-' for Meta and Google when their rollups have no rows, and backs the estimate out of the subtotals", async () => {
+    // Worker had no synced spend, so it charged the configured/default
+    // percentages (80 meta, 50 google). Neither is real spend: both lines are
+    // "-" and the subtotals go back to CM1.
+    const conn = connWith({
+      pnl: [dbRow({ meta: "80.00", google: "50.00", cm2: "350.34", cm3: "350.34", ebitda: "350.34" }), dbRow()],
+    });
+    const summary = await pnlService.getSummary({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-10", conn });
+
+    for (const key of ["meta", "google"]) {
+      const row = lineByKey(summary, key);
+      expect(row.amount).toBe(MISSING);
+      expect(row.previousAmount).toBe(MISSING);
+      expect(row.pctOfNetSales).toBe(MISSING);
+      expect(row.changePct).toBe(MISSING);
+      expect(row.isLive).toBe(false);
+    }
+    expect(lineByKey(summary, "cm2").amount).toBe(480.34);
+    expect(lineByKey(summary, "ebitda").amount).toBe(480.34);
+    expect(summary.metaAdSpend).toMatchObject({ available: false, source: "none" });
+    expect(summary.googleAdSpend).toMatchObject({ available: false, source: "none" });
+  });
+
+  test("treats a missing rollup table as no synced spend", async () => {
+    const query = jest.fn(async (sql) => {
+      if (sql.includes("`overall_pnl`")) return [dbRow()];
+      throw { original: { code: "ER_NO_SUCH_TABLE" } };
+    });
+    const summary = await pnlService.getSummary({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-10", conn: { query } });
+
+    expect(lineByKey(summary, "grossSales").amount).toBe(1000);
+    expect(lineByKey(summary, "meta").amount).toBe(MISSING);
+    expect(lineByKey(summary, "google").amount).toBe(MISSING);
+  });
+
+  test("shows rollup spend even when overall_pnl has no rows for the range", async () => {
+    const conn = connWith({ pnl: [], meta: [{ day_count: 1, spend: "12.50" }] });
+    const summary = await pnlService.getSummary({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-10", conn });
+
+    expect(lineByKey(summary, "meta").amount).toBe(-12.5);
+    expect(lineByKey(summary, "google").amount).toBe(MISSING);
+    expect(lineByKey(summary, "cm2").amount).toBe(MISSING);
   });
 
   test("treats a missing overall_pnl table as no data", async () => {

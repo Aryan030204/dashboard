@@ -25,13 +25,11 @@ function buildPnlRouter() {
   router.get("/meta-ads/oauth/log", brandContext, metaAdsCredentialsController.oauthLog);
   router.post("/meta-ads/oauth/log", brandContext, metaAdsCredentialsController.logOauthToken);
 
+  // Merchant pastes a Google Ads customer id + token; stored in Mongo for the
+  // pipeline's Google Ads sync. No OAuth and no live Google calls here.
   router.get("/google-ads/status", brandContext, googleAdsCredentialsController.status);
-  router.get("/google-ads/oauth/config", brandContext, googleAdsCredentialsController.oauthConfig);
-  router.post("/google-ads/oauth/exchange", brandContext, googleAdsCredentialsController.oauthExchange);
-  router.post("/google-ads/customers/refresh", brandContext, googleAdsCredentialsController.refreshCustomers);
-  router.put("/google-ads/customer", brandContext, googleAdsCredentialsController.setCustomer);
+  router.post("/google-ads/connect", brandContext, googleAdsCredentialsController.connect);
   router.delete("/google-ads/disconnect", brandContext, googleAdsCredentialsController.disconnect);
-  router.get("/google-ads/spend", brandContext, googleAdsCredentialsController.spend);
 
   // One total_config document per brand (gst_pct + every cost line).
   router.get("/cost-configs", brandContext, pnlCostConfigController.get);
