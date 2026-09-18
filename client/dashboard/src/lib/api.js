@@ -1487,6 +1487,16 @@ export async function getMetaOauthConfig(args = {}) {
   return doGet("/pnl/meta-ads/oauth/config", appendBrandKey({}, args));
 }
 
+// Lists the ad accounts a Meta user token can see, so the brand can pick one
+// after the OAuth redirect. Token goes in the body, not the query string.
+export async function listMetaOauthAdAccounts({ brand_key, access_token }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/meta-ads/oauth/ad-accounts${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    access_token,
+  });
+}
+
 export async function getMetaOauthLog(args = {}) {
   return doGet("/pnl/meta-ads/oauth/log", appendBrandKey({}, args));
 }
@@ -1498,6 +1508,55 @@ export async function logMetaOauthToken({ brand_key, access_token, expires_in })
     access_token,
     expires_in,
   });
+}
+
+// ---- Google Ads connector (P&L page) ---------------------------------------
+export async function getGoogleAdsStatus(args = {}) {
+  return doGet("/pnl/google-ads/status", appendBrandKey({}, args));
+}
+
+export async function getGoogleOauthConfig(args = {}) {
+  return doGet("/pnl/google-ads/oauth/config", appendBrandKey({}, args));
+}
+
+// Swaps the one-time code Google appended to the redirect for a stored
+// refresh token. redirect_uri must equal what the auth URL was built with.
+export async function exchangeGoogleOauthCode({ brand_key, code, redirect_uri }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/google-ads/oauth/exchange${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    code,
+    redirect_uri,
+  });
+}
+
+export async function refreshGoogleAdsCustomers({ brand_key }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/google-ads/customers/refresh${qs({ brand_key: brandKey })}`, { brand_key: brandKey });
+}
+
+export async function setGoogleAdsCustomer({ brand_key, customer_id }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPut(`/pnl/google-ads/customer${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    customer_id,
+  });
+}
+
+export async function disconnectGoogleAds({ brand_key }) {
+  const params = qs({ brand_key: normalizeBrandKey(brand_key) });
+  return doDelete(`/pnl/google-ads/disconnect${params}`);
+}
+
+// Date-wise Google Ads spend for the brand's connected customer, pulled live
+// from the Google Ads API with the stored refresh token:
+// { start, end, customerId, currency, total, days: [{ date, spend, currency }] }
+// Pass `date` for a single day, or `start` + `end` for an inclusive range.
+export async function getGoogleAdsSpend({ brand_key, date, start, end, customer_id } = {}) {
+  return doGet(
+    "/pnl/google-ads/spend",
+    appendBrandKey({ date, start, end, customer_id }, { brand_key }),
+  );
 }
 
 // The brand's single total_config document: { config: { gstPct, costs: {field: {value, valueType} | null}, ... } }

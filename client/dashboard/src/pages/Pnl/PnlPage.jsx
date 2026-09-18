@@ -8,6 +8,7 @@ import PnlKpiRow from "./components/PnlKpiRow.jsx";
 import PnlTable from "./components/PnlTable.jsx";
 import PnlConfigSection from "./components/PnlConfigSection.jsx";
 import PnlMetaAdsSection from "./components/PnlMetaAdsSection.jsx";
+import PnlGoogleAdsSection from "./components/PnlGoogleAdsSection.jsx";
 
 function formatDate(value) {
   return dayjs(value).format("YYYY-MM-DD");
@@ -112,6 +113,8 @@ export default function PnlPage({ brandKey }) {
       />
 
       <PnlMetaAdsSection brandKey={brandKey} onConnectionChange={() => setRefreshTick((t) => t + 1)} />
+
+      <PnlGoogleAdsSection brandKey={brandKey} onConnectionChange={() => setRefreshTick((t) => t + 1)} />
 
       <PnlConfigSection brandKey={brandKey} onConfigChange={() => setRefreshTick((t) => t + 1)} />
     </Stack>

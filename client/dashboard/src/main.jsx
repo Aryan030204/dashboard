@@ -10,18 +10,28 @@ import 'react-toastify/dist/ReactToastify.css';
 import { initFrontendObservability } from './observability.js';
 import ObservabilityErrorBoundary from './components/ObservabilityErrorBoundary.jsx';
 import { BrowserRouter } from 'react-router-dom';
+import { relayGoogleOauthResultIfPopup } from './lib/googleOauthPopup.js';
 
-initFrontendObservability();
+// The Google Ads OAuth popup lands back on the P&L page URL. Hand its result
+// to the tab that opened it and close, instead of booting the whole app there.
+if (relayGoogleOauthResultIfPopup()) {
+  document.getElementById('root').textContent = 'Google sign-in finished. You can close this window.';
+} else {
+  initFrontendObservability();
+  renderApp();
+}
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <Provider store={store}>
-      <BrowserRouter>
-        <ObservabilityErrorBoundary>
-          <App />
-        </ObservabilityErrorBoundary>
-      </BrowserRouter>
-      <ToastContainer position="top-center" delay={5000} />
-    </Provider>
-  </StrictMode>,
-);
+function renderApp() {
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <Provider store={store}>
+        <BrowserRouter>
+          <ObservabilityErrorBoundary>
+            <App />
+          </ObservabilityErrorBoundary>
+        </BrowserRouter>
+        <ToastContainer position="top-center" delay={5000} />
+      </Provider>
+    </StrictMode>,
+  );
+}

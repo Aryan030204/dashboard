@@ -61,6 +61,26 @@ const metaAdsCredentialsController = {
     }
   },
 
+  // Second leg of the "Connect with Meta" flow: the OAuth redirect hands the
+  // frontend a user token, and this lists the ad accounts that token can see
+  // so the brand can pick which one to connect. Token travels in the body,
+  // not the query string, to keep it out of access logs.
+  async oauthAdAccounts(req, res) {
+    try {
+      const accessToken = req.body?.access_token ? String(req.body.access_token).trim() : "";
+      if (!accessToken) {
+        return res.status(400).json({ error: "access_token is required" });
+      }
+      const result = await metaAdsCredentialsService.listAdAccounts(accessToken);
+      if (!result.success) {
+        return res.status(400).json({ error: `Meta rejected the token: ${result.error}` });
+      }
+      return res.json({ accounts: result.accounts });
+    } catch (error) {
+      return handleControllerError(res, error, "meta-ads-oauth-ad-accounts failed");
+    }
+  },
+
   // Proof-of-concept endpoint backing the "Connect with Meta" button: parks
   // whatever token the OAuth redirect captured in Mongo (analytics-service's
   // own DB, not the tenant brand DB — those connections are read replicas),

@@ -32,6 +32,52 @@ async function verifyToken(adAccountId, accessToken) {
   }
 }
 
+// Meta's OAuth dialog never asks which ad account the user means — the
+// ads_read grant covers every account the logged-in user can see — so after
+// the redirect we list them and let the brand pick one. Follows paging.next
+// for a few pages; agencies routinely sit on more than one page of accounts.
+const AD_ACCOUNT_STATUS_LABELS = {
+  1: "Active",
+  2: "Disabled",
+  3: "Unsettled",
+  7: "Pending risk review",
+  8: "Pending settlement",
+  9: "In grace period",
+  100: "Pending closure",
+  101: "Closed",
+};
+
+async function listAdAccounts(accessToken) {
+  if (!accessToken) return { success: false, error: "access_token is required" };
+
+  const accounts = [];
+  let url = `https://graph.facebook.com/${apiVersion()}/me/adaccounts`;
+  let params = { fields: "id,name,account_status,currency", limit: 100, access_token: accessToken };
+
+  try {
+    for (let page = 0; page < 5 && url; page += 1) {
+      const response = await axios.get(url, { params, timeout: 10000 });
+      const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+      for (const row of rows) {
+        accounts.push({
+          id: normalizeAdAccountId(row.id),
+          name: row.name || row.id,
+          currency: row.currency || null,
+          accountStatus: row.account_status ?? null,
+          accountStatusLabel: AD_ACCOUNT_STATUS_LABELS[row.account_status] || null,
+        });
+      }
+      // paging.next is a fully-formed URL (token included), so drop our params.
+      url = response.data?.paging?.next || null;
+      params = undefined;
+    }
+    return { success: true, accounts };
+  } catch (error) {
+    const message = error.response?.data?.error?.message || error.message || "Could not list ad accounts";
+    return { success: false, error: message };
+  }
+}
+
 // If a Meta developer app (META_APP_ID/META_APP_SECRET) is configured,
 // exchange whatever token the brand pasted for a long-lived one (~60 days)
 // via the app-level token exchange endpoint. System User tokens generated
@@ -174,6 +220,7 @@ async function getOauthLog(brandKey) {
 }
 
 module.exports = {
+  listAdAccounts,
   saveCredentials,
   getCredentials,
   getStatus,
