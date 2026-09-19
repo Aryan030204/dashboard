@@ -1,0 +1,69 @@
+# Staging identity override.
+#
+# docker-compose.yml hardcodes container_name / network name / host ports
+# for the *production* stack (the "-main" suffix, saas-net-main, ports
+# 8081/3006). Without this override, running the staging stack on the same
+# host reuses those exact same identifiers, so whichever stack deploys last
+# silently steals the other's containers, network, and ports.
+#
+# scripts/compose-stack.js layers this file in automatically when invoked
+# with COMPOSE_ENV_SUFFIX=staging (see deploy-staging.sh).
+version: "3.9"
+
+services:
+  api-gateway:
+    container_name: api-gateway-staging
+    # !override: plain compose merge APPENDS ports lists across files, it does
+    # not replace by matching target port. Without !override, the container
+    # would publish both 8081 (production's) and 8091, and fail to bind 8081
+    # since production already holds it on this host.
+    ports: !override
+      - "8091:18080"
+    networks:
+      - saas-net
+
+  auth-service:
+    container_name: auth-service-staging
+    networks:
+      - saas-net
+
+  tenant-router:
+    container_name: tenant-router-staging
+    networks:
+      - saas-net
+      - shared-net
+
+  alerts-service:
+    container_name: alerts-service-staging
+    networks:
+      - saas-net
+
+  merchant-requests-service:
+    container_name: merchant-requests-service-staging
+    networks:
+      - saas-net
+
+  daily-insights-service:
+    container_name: daily-insights-service-staging
+    networks:
+      - saas-net
+      - shared-net
+
+  analytics-service:
+    container_name: analytics-service-staging
+    ports: !override
+      - "3016:3006"
+    networks:
+      - saas-net
+      - shared-net
+
+  sessions-service:
+    container_name: sessions-service-staging
+    networks:
+      - saas-net
+      - shared-net
+
+networks:
+  saas-net:
+    name: saas-net-staging
+    driver: bridge

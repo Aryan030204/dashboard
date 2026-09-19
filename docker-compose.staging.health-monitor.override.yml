@@ -1,0 +1,20 @@
+# Staging identity override for the optional health-monitor stack.
+# Layered in only when HEALTH_MONITOR is enabled AND COMPOSE_ENV_SUFFIX=staging
+# (see scripts/compose-stack.js), so it never gets pulled in as a dangling
+# service definition when health monitoring is disabled.
+version: "3.9"
+
+services:
+  health-monitor-service:
+    container_name: health-monitor-service-staging
+    # !override: see docker-compose.staging.override.yml for why this is
+    # needed — plain merge appends port lists instead of replacing them.
+    ports: !override
+      - "4025:4015"
+    networks:
+      - saas-net
+
+networks:
+  saas-net:
+    name: saas-net-staging
+    driver: bridge

@@ -102,10 +102,31 @@ function injectComposeFiles(args, healthMonitorEnabled) {
 
   if (hasExplicitComposeFile) return [...args];
 
+  // COMPOSE_ENV_SUFFIX lets a deploy script layer an environment-specific
+  // override (e.g. COMPOSE_ENV_SUFFIX=staging -> docker-compose.staging.override.yml)
+  // on top of the base files, without touching this shared script's default
+  // behavior when unset. This is how staging gets its own container names /
+  // network / host ports so it can never collide with the production stack.
+  const envSuffix = String(process.env.COMPOSE_ENV_SUFFIX || "").trim();
+
   const files = ["-f", BASE_COMPOSE_FILE];
+  if (envSuffix) {
+    const overrideFile = `docker-compose.${envSuffix}.override.yml`;
+    if (fs.existsSync(path.join(ROOT_DIR, overrideFile))) {
+      files.push("-f", overrideFile);
+    }
+  }
+
   if (healthMonitorEnabled) {
     files.push("-f", HEALTH_MONITOR_COMPOSE_FILE);
+    if (envSuffix) {
+      const healthOverrideFile = `docker-compose.${envSuffix}.health-monitor.override.yml`;
+      if (fs.existsSync(path.join(ROOT_DIR, healthOverrideFile))) {
+        files.push("-f", healthOverrideFile);
+      }
+    }
   }
+
   return [...files, ...args];
 }
 
@@ -121,7 +142,7 @@ if (composeCommand && serviceScopedCommands.has(composeCommand)) {
 }
 
 console.log(
-  `[compose-stack] HEALTH_MONITOR=${healthMonitorEnabled ? "true" : "false"}${composeCommand && serviceScopedCommands.has(composeCommand) ? ` | services=${buildServiceList(healthMonitorEnabled).join(",")}` : ""}`,
+  `[compose-stack] env=${process.env.COMPOSE_ENV_SUFFIX || "production"} HEALTH_MONITOR=${healthMonitorEnabled ? "true" : "false"}${composeCommand && serviceScopedCommands.has(composeCommand) ? ` | services=${buildServiceList(healthMonitorEnabled).join(",")}` : ""}`,
 );
 
 const result = spawnSync("docker", ["compose", ...finalArgs], {

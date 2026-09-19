@@ -17,7 +17,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /home/ubuntu/dashboard-main/dashboard
+            cd /home/ubuntu/datum-deploy/dashboard
             GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git fetch origin
             GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git reset --hard origin/staging
-            bash .github/workflows/deploy.sh
+            bash /home/ubuntu/datum-deploy/dashboard/.github/workflows/deploy-main-staging.sh

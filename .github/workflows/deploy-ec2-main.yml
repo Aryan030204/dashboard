@@ -34,4 +34,4 @@ jobs:
             cd /home/ubuntu/dashboard-main/dashboard
             GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git fetch origin
             GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/deploy_key -o IdentitiesOnly=yes' git reset --hard origin/main
-            bash .github/workflows/deploy-main.sh
+            bash /home/ubuntu/dashboard-main/dashboard/.github/workflows/deploy-main-production.sh
