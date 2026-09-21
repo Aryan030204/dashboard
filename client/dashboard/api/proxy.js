@@ -162,7 +162,7 @@ function sendMaintenanceResponse(req, res, status = 502) {
 
 export default async function handler(req, res) {
   try {
-    const rawTargetBase = (process.env.API_BASE_URL || "https://api.trytechit.co/staging")
+    const rawTargetBase = (process.env.API_BASE_URL || "")
       .trim()
       .replace(/\/+$/, "");
 

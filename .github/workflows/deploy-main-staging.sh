@@ -11,4 +11,4 @@
 #   bash /home/ubuntu/datum-deploy/dashboard/.github/workflows/deploy-main-staging.sh
 set -e
 
-exec bash /home/ubuntu/datum-deploy/dashboard/.github/workflows/deploy-staging.sh
+# exec bash /home/ubuntu/datum-deploy/dashboard/.github/workflows/deploy-staging.sh
