@@ -1513,9 +1513,12 @@ export async function logMetaOauthToken({ brand_key, access_token, expires_in })
 }
 
 // ---- Google Ads connector (P&L page) ---------------------------------------
-// Merchants paste their Google Ads customer id + token; the backend stores it
-// encrypted in Mongo for the pipeline's Google Ads sync. Nothing here talks
-// to Google, and the token is never sent back by the status endpoint.
+// "Connect with Google" sends the brand through Google's OAuth consent
+// screen; the backend exchanges the resulting code for a refresh token
+// server-side (never sent to the browser) and stores it encrypted in Mongo
+// for the pipeline's Google Ads sync. connectGoogleAds (paste a refresh
+// token directly) stays as a fallback. Either way the token is never sent
+// back by the status endpoint.
 export async function getGoogleAdsStatus(args = {}) {
   return doGet("/pnl/google-ads/status", appendBrandKey({}, args));
 }
@@ -1535,6 +1538,32 @@ export async function connectGoogleAds({ brand_key, customer_id, login_customer_
 export async function disconnectGoogleAds({ brand_key }) {
   const params = qs({ brand_key: normalizeBrandKey(brand_key) });
   return doDelete(`/pnl/google-ads/disconnect${params}`);
+}
+
+export async function getGoogleOauthConfig(args = {}) {
+  return doGet("/pnl/google-ads/oauth/config", appendBrandKey({}, args));
+}
+
+// Exchanges the authorization code Google just redirected back with for a
+// refresh token, parked server-side against the brand. Returns { verified }.
+export async function exchangeGoogleOauthCode({ brand_key, code, redirect_uri }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/google-ads/oauth/exchange${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    code,
+    redirect_uri,
+  });
+}
+
+// Final step: the brand picked which customer id to connect. Reads the
+// refresh token parked by exchangeGoogleOauthCode and stores it for real.
+export async function connectGoogleOauth({ brand_key, customer_id, login_customer_id }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/google-ads/oauth/connect${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    customer_id,
+    login_customer_id: login_customer_id || null,
+  });
 }
 
 // The brand's single total_config document: { config: { gstPct, costs: {field: {value, valueType} | null}, ... } }

@@ -1,27 +1,50 @@
 import { useEffect, useState } from "react";
 import { Alert, Box, Button, Card, Chip, CircularProgress, Stack, TextField, Typography } from "@mui/material";
 import dayjs from "dayjs";
-import { connectGoogleAds, disconnectGoogleAds, getGoogleAdsStatus } from "../../../lib/api.js";
+import {
+  connectGoogleAds,
+  connectGoogleOauth,
+  disconnectGoogleAds,
+  exchangeGoogleOauthCode,
+  getGoogleAdsStatus,
+  getGoogleOauthConfig,
+} from "../../../lib/api.js";
+
+const OAUTH_PENDING_KEY = "google_oauth_pending_brand";
+const OAUTH_STATE_KEY = "google_oauth_pending_state";
 
 function formatCustomerId(id) {
   const digits = String(id || "").replace(/\D/g, "");
   return digits.length === 10 ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}` : digits;
 }
 
-// Google Ads card on the P&L page. No OAuth: the merchant pastes their
-// customer id and token, the backend stores it encrypted, and the pipeline's
-// Google Ads sync uses it to fill the rollup the Google line reads from.
+function randomState() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+// Google Ads card on the P&L page. "Connect with Google" sends the brand
+// through Google's OAuth consent screen for a refresh token - the backend
+// exchanges the code for it server-side (Google's exchange needs the app's
+// client secret, so it can never happen in the browser) and the token is
+// never sent back to this page. Pasting a refresh token directly stays as a
+// fallback for a brand that already has one.
 export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
   const [status, setStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
 
-  const [editing, setEditing] = useState(false);
+  const [connectMode, setConnectMode] = useState("oauth");
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState("");
+  const [connectMessage, setConnectMessage] = useState("");
+
+  // Set once the OAuth code exchange has verified a refresh token for the
+  // brand (parked server-side): the brand still needs to say which customer
+  // id it's for before anything is finalized.
+  const [pending, setPending] = useState(null); // { brandKey }
   const [customerId, setCustomerId] = useState("");
   const [loginCustomerId, setLoginCustomerId] = useState("");
-  const [token, setToken] = useState("");
+  const [manualToken, setManualToken] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [saveMessage, setSaveMessage] = useState("");
 
   const [disconnecting, setDisconnecting] = useState(false);
 
@@ -29,9 +52,6 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
     if (!brandKey) return;
     let cancelled = false;
     setLoadingStatus(true);
-    setEditing(false);
-    setSaveError("");
-    setSaveMessage("");
     getGoogleAdsStatus({ brand_key: brandKey }).then((result) => {
       if (cancelled) return;
       setStatus(result.error ? null : result.data);
@@ -42,40 +62,135 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
     };
   }, [brandKey]);
 
-  const resetForm = () => {
+  // Google's redirect back lands on this same page with ?code=...&state=...
+  // in the query string (not the hash - unlike Meta's implicit grant, an
+  // authorization code isn't a secret worth hiding from server logs the same
+  // way, and Google's own examples use the query string).
+  useEffect(() => {
+    const pendingBrand = window.sessionStorage.getItem(OAUTH_PENDING_KEY);
+    const pendingState = window.sessionStorage.getItem(OAUTH_STATE_KEY);
+    if (!pendingBrand) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const state = params.get("state");
+    const error = params.get("error");
+    if (!code && !error) return;
+
+    window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
+    window.sessionStorage.removeItem(OAUTH_STATE_KEY);
+    window.history.replaceState(null, "", window.location.pathname);
+
+    if (error) {
+      setConnectError(error === "access_denied" ? "Google sign-in was cancelled." : error);
+      return;
+    }
+    if (state !== pendingState) {
+      setConnectError("Could not verify this Google login (state mismatch). Please try connecting again.");
+      return;
+    }
+
+    setConnecting(true);
+    setConnectError("");
+    setConnectMessage("");
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    exchangeGoogleOauthCode({ brand_key: pendingBrand, code, redirect_uri: redirectUri })
+      .then((result) => {
+        setConnecting(false);
+        if (result.error) {
+          setConnectError(result.data?.error || "Failed to verify the Google login.");
+          return;
+        }
+        setPending({ brandKey: pendingBrand });
+        setCustomerId("");
+        setLoginCustomerId("");
+      })
+      .catch(() => {
+        setConnecting(false);
+        setConnectError("Failed to verify the Google login.");
+      });
+    // Only meant to run once, on the redirect back from Google.
+  }, []);
+
+  const handleConnectWithGoogle = async () => {
+    setConnecting(true);
+    setConnectError("");
+    setConnectMessage("");
+
+    const config = await getGoogleOauthConfig({ brand_key: brandKey });
+    if (config.error || !config.data?.clientId) {
+      setConnecting(false);
+      setConnectError(config.data?.error || "Google app is not configured on the backend.");
+      return;
+    }
+
+    const { clientId, scope } = config.data;
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    const state = randomState();
+    const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope,
+      access_type: "offline",
+      prompt: "consent",
+      state,
+    })}`;
+
+    window.sessionStorage.setItem(OAUTH_PENDING_KEY, brandKey);
+    window.sessionStorage.setItem(OAUTH_STATE_KEY, state);
+    window.location.assign(oauthUrl);
+  };
+
+  const resetPending = () => {
+    setPending(null);
     setCustomerId("");
     setLoginCustomerId("");
-    setToken("");
-    setEditing(false);
+    setManualToken("");
+    setConnectError("");
   };
 
-  const startEditing = () => {
-    setCustomerId(status?.customerId ? formatCustomerId(status.customerId) : "");
-    setLoginCustomerId(status?.loginCustomerId ? formatCustomerId(status.loginCustomerId) : "");
-    setToken("");
-    setSaveError("");
-    setSaveMessage("");
-    setEditing(true);
-  };
-
-  const handleSave = async () => {
+  // Finishes the OAuth path: the refresh token is already parked server-side
+  // from the code exchange above, this just says which customer id it's for.
+  const handleFinishOauthConnect = async () => {
+    if (!pending) return;
     setSaving(true);
-    setSaveError("");
-    setSaveMessage("");
+    setConnectError("");
+    const result = await connectGoogleOauth({
+      brand_key: pending.brandKey,
+      customer_id: customerId.trim(),
+      login_customer_id: loginCustomerId.trim() || null,
+    });
+    setSaving(false);
+    if (result.error) {
+      setConnectError(result.data?.error || "Failed to connect this customer id.");
+      return;
+    }
+    resetPending();
+    setStatus(result.data);
+    setConnectMessage("Google Ads account connected.");
+    onConnectionChange?.();
+  };
+
+  // Fallback for a brand that already has a refresh token and pastes it
+  // directly - same persistence as the OAuth path, minus the consent screen.
+  const handleManualSave = async () => {
+    setSaving(true);
+    setConnectError("");
     const result = await connectGoogleAds({
       brand_key: brandKey,
       customer_id: customerId.trim(),
       login_customer_id: loginCustomerId.trim() || null,
-      token: token.trim(),
+      token: manualToken.trim(),
     });
     setSaving(false);
     if (result.error) {
-      setSaveError(result.data?.error || "Failed to save the Google Ads token.");
+      setConnectError(result.data?.error || "Failed to save the Google Ads token.");
       return;
     }
+    resetPending();
     setStatus(result.data);
-    resetForm();
-    setSaveMessage("Google Ads token saved. Spend shows once the next sync has run.");
+    setConnectMessage("Google Ads token saved. Spend shows once the next sync has run.");
     onConnectionChange?.();
   };
 
@@ -84,13 +199,14 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
     await disconnectGoogleAds({ brand_key: brandKey });
     setDisconnecting(false);
     setStatus({ connected: false });
-    resetForm();
-    setSaveMessage("");
+    resetPending();
+    setConnectMessage("");
     onConnectionChange?.();
   };
 
-  const canSave = customerId.replace(/\D/g, "").length === 10 && token.trim().length > 0;
-  const showForm = editing || !status?.connected;
+  const pickerForOtherBrand = pending && brandKey && pending.brandKey !== brandKey;
+  const canFinishOauth = customerId.replace(/\D/g, "").length === 10;
+  const canManualSave = customerId.replace(/\D/g, "").length === 10 && manualToken.trim().length > 0;
 
   return (
     <Card variant="outlined" sx={{ p: 2.5 }}>
@@ -106,22 +222,34 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
             Google Ads Integration
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Paste this brand&apos;s Google Ads customer id and token so real ad spend can be pulled into the
-            Google line above.
+            Connect this brand&apos;s Google Ads account to pull real ad spend into the Google line above.
           </Typography>
         </Stack>
-        {status?.connected ? <Chip label="Connected" size="small" color="success" /> : null}
+        {status?.connected ? (
+          <Stack direction="row" spacing={0.75}>
+            <Chip label="Connected" size="small" color="success" />
+            {status.authMethod === "oauth" ? (
+              <Chip label="Google login" size="small" variant="outlined" />
+            ) : null}
+          </Stack>
+        ) : null}
       </Stack>
 
       {loadingStatus ? (
         <CircularProgress size={20} />
-      ) : showForm ? (
-        <Stack spacing={1.5} sx={{ maxWidth: 520 }}>
+      ) : pending ? (
+        <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
           <Typography variant="body2" color="text.secondary">
-            The token is stored encrypted and never shown again. The nightly sync uses it to pull daily
-            spend; until that has run, the Google line shows &quot;-&quot;.
+            Google login verified. Enter this brand&apos;s Customer ID to finish connecting
+            {pickerForOtherBrand ? ` for brand ${pending.brandKey}` : ""}.
           </Typography>
-          {saveError ? <Alert severity="error">{saveError}</Alert> : null}
+          {pickerForOtherBrand ? (
+            <Alert severity="warning">
+              This connect was started for brand <strong>{pending.brandKey}</strong>, not the one currently
+              selected. Cancel and reconnect if that isn&apos;t what you want.
+            </Alert>
+          ) : null}
+          {connectError ? <Alert severity="error">{connectError}</Alert> : null}
           <TextField
             size="small"
             label="Customer id"
@@ -140,34 +268,23 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
             helperText="Only if this account is reached through a manager account."
             autoComplete="off"
           />
-          <TextField
-            size="small"
-            label="Token"
-            type="password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            helperText="The Google Ads API token for this account."
-            autoComplete="off"
-            multiline
-            minRows={2}
-          />
           <Stack direction="row" spacing={1}>
-            <Button variant="contained" size="small" onClick={handleSave} disabled={saving || !canSave}>
-              {saving ? "Saving…" : status?.connected ? "Replace token" : "Save token"}
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleFinishOauthConnect}
+              disabled={saving || !canFinishOauth}
+            >
+              {saving ? "Connecting…" : "Connect this account"}
             </Button>
-            {status?.connected ? (
-              <Button size="small" onClick={resetForm} disabled={saving}>
-                Cancel
-              </Button>
-            ) : null}
+            <Button size="small" onClick={resetPending} disabled={saving}>
+              Cancel
+            </Button>
           </Stack>
         </Stack>
-      ) : (
+      ) : status?.connected ? (
         <Stack spacing={1}>
-          {saveMessage ? <Alert severity="success">{saveMessage}</Alert> : null}
-          {status.lastError ? (
-            <Alert severity="warning">Last spend sync failed: {status.lastError}. Replace the token if it was revoked.</Alert>
-          ) : null}
+          {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
           <Typography variant="body2">
             Customer <strong>{formatCustomerId(status.customerId)}</strong>
             {status.loginCustomerId ? ` · via manager ${formatCustomerId(status.loginCustomerId)}` : ""}
@@ -179,15 +296,107 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
               {status.updatedByEmail ? ` by ${status.updatedByEmail}` : ""}
             </Typography>
           ) : null}
+          {status.lastError ? (
+            <Alert severity="warning">
+              Last spend sync failed: {status.lastError}. Reconnect if the token was revoked.
+            </Alert>
+          ) : null}
           <Stack direction="row" spacing={1}>
-            <Button size="small" onClick={startEditing}>
-              Replace token
-            </Button>
             <Button size="small" color="error" onClick={handleDisconnect} disabled={disconnecting}>
               {disconnecting ? "Disconnecting…" : "Disconnect"}
             </Button>
           </Stack>
         </Stack>
+      ) : (
+        <Box>
+          <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                variant={connectMode === "oauth" ? "contained" : "outlined"}
+                onClick={() => {
+                  setConnectMode("oauth");
+                  setConnectError("");
+                }}
+              >
+                Google login
+              </Button>
+              <Button
+                size="small"
+                variant={connectMode === "manual" ? "contained" : "outlined"}
+                onClick={() => {
+                  setConnectMode("manual");
+                  setConnectError("");
+                }}
+              >
+                Refresh token
+              </Button>
+            </Stack>
+
+            {connectError ? <Alert severity="error">{connectError}</Alert> : null}
+            {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
+
+            {connectMode === "oauth" ? (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  You&apos;ll be sent to Google to sign in with the account that has access to this brand&apos;s
+                  Ads account, then asked for the Customer ID. The refresh token from that login is stored
+                  encrypted and never shown again.
+                </Typography>
+                <Box>
+                  <Button variant="contained" size="small" onClick={handleConnectWithGoogle} disabled={connecting}>
+                    {connecting ? "Working…" : "Connect with Google"}
+                  </Button>
+                </Box>
+              </>
+            ) : (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  For a brand that already has a Google Ads refresh token: paste the customer id and token
+                  directly. Stored encrypted and never shown again.
+                </Typography>
+                <TextField
+                  size="small"
+                  label="Customer id"
+                  placeholder="123-456-7890"
+                  value={customerId}
+                  onChange={(event) => setCustomerId(event.target.value)}
+                  helperText="Shown at the top right of Google Ads. Dashes optional."
+                  autoComplete="off"
+                />
+                <TextField
+                  size="small"
+                  label="Manager (MCC) customer id — optional"
+                  placeholder="987-654-3210"
+                  value={loginCustomerId}
+                  onChange={(event) => setLoginCustomerId(event.target.value)}
+                  helperText="Only if this account is reached through a manager account."
+                  autoComplete="off"
+                />
+                <TextField
+                  size="small"
+                  label="Refresh token"
+                  type="password"
+                  value={manualToken}
+                  onChange={(event) => setManualToken(event.target.value)}
+                  autoComplete="off"
+                  multiline
+                  minRows={2}
+                />
+                <Box>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleManualSave}
+                    disabled={saving || !canManualSave}
+                  >
+                    {saving ? "Saving…" : "Save token"}
+                  </Button>
+                </Box>
+              </>
+            )}
+          </Stack>
+        </Box>
       )}
     </Card>
   );

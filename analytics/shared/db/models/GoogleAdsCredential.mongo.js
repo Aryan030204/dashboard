@@ -7,10 +7,14 @@ const { mongoose } = require("../mongo");
 // its own collection: the tenants document carries an unrelated access_token
 // that must never be touched.
 //
-// The merchant pastes the token themselves (no OAuth dance here); it's kept
-// encrypted with the shared PASSWORD_AES_KEY. This service never calls Google
-// with it — the pipeline's Google Ads sync reads this document, pulls spend,
-// and writes the daily rollup the P&L summary reads.
+// The token is a Google Ads OAuth refresh token, obtained either by sending
+// the brand through the "Connect with Google" consent flow (see
+// GoogleOauthPending.mongo.js for the short-lived hop between the code
+// exchange and the brand picking a customer id) or pasted manually as a
+// fallback. Either way it's kept encrypted with the shared PASSWORD_AES_KEY.
+// This service never calls Google with it once stored — the pipeline's
+// Google Ads sync reads this document, pulls spend, and writes the daily
+// rollup the P&L summary reads.
 const googleAdsCredentialSchema = new mongoose.Schema(
   {
     brand: { type: mongoose.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
@@ -24,6 +28,8 @@ const googleAdsCredentialSchema = new mongoose.Schema(
     // Last few characters of the token, so the dashboard can show which token
     // is stored without ever sending the token back out.
     token_suffix: { type: String, default: null },
+    // "oauth" (Connect with Google) or "manual" (refresh token pasted directly).
+    auth_method: { type: String, enum: ["oauth", "manual"], default: "manual" },
     updated_by_email: { type: String, default: null },
     captured_at: { type: Date, default: Date.now },
     // Set by whatever last tried to use the token (the pipeline sync), so the
