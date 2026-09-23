@@ -11,6 +11,7 @@ import {
   MenuItem,
   Select,
   Stack,
+  TextField,
   Typography,
 } from "@mui/material";
 import dayjs from "dayjs";
@@ -45,13 +46,59 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
 
   const [disconnecting, setDisconnecting] = useState(false);
 
-  // Set once Meta redirects back with a user token: the brand the connect was
-  // started for, the token itself, and the ad accounts that token can see.
-  // The token lives only in memory — a refresh mid-pick means reconnecting.
-  const [pending, setPending] = useState(null); // { brandKey, accessToken }
+  // Which "not connected yet" option is showing: the OAuth login button, or
+  // the paste-a-System-User-token form.
+  const [connectMode, setConnectMode] = useState("system_user");
+  const [manualToken, setManualToken] = useState("");
+
+  // Set once we have a token to work with (either Meta's OAuth redirect, or a
+  // pasted System User token): the brand the connect was started for, the
+  // token itself, which kind of token it is, and the ad accounts that token
+  // can see. The token lives only in memory — a refresh mid-pick means
+  // starting over.
+  const [pending, setPending] = useState(null); // { brandKey, accessToken, tokenType }
   const [adAccounts, setAdAccounts] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Shared by both the OAuth redirect handler and the manual System User
+  // token form: given any Meta access token, verify it by listing the ad
+  // accounts it can see, then let the brand pick one.
+  const startWithToken = (forBrandKey, accessToken, tokenType) => {
+    setPending({ brandKey: forBrandKey, accessToken, tokenType });
+    setAdAccounts([]);
+    setSelectedAccountId("");
+    setConnecting(true);
+    setConnectError("");
+    setConnectMessage("");
+
+    listMetaOauthAdAccounts({ brand_key: forBrandKey, access_token: accessToken })
+      .then((result) => {
+        setConnecting(false);
+        if (result.error) {
+          setPending(null);
+          setConnectError(result.data?.error || "Failed to list ad accounts for this token.");
+          return;
+        }
+        const accounts = Array.isArray(result.data?.accounts) ? result.data.accounts : [];
+        if (accounts.length === 0) {
+          setPending(null);
+          setConnectError(
+            tokenType === "system_user"
+              ? "This System User has no ad accounts assigned to it in Business Settings."
+              : "This Meta login has no ad accounts. Log in with a user who can see the brand's account.",
+          );
+          return;
+        }
+        setAdAccounts(accounts);
+        setSelectedAccountId(accounts.length === 1 ? accounts[0].id : "");
+      })
+      .catch(() => {
+        setConnecting(false);
+        setPending(null);
+        setConnectError("Failed to list ad accounts for this token.");
+      });
+  };
 
   useEffect(() => {
     if (!brandKey) return;
@@ -93,34 +140,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
 
-    const accessToken = params.access_token;
-    setPending({ brandKey: pendingBrand, accessToken });
-    setConnecting(true);
-    setConnectError("");
-    setConnectMessage("");
-
-    listMetaOauthAdAccounts({ brand_key: pendingBrand, access_token: accessToken })
-      .then((result) => {
-        setConnecting(false);
-        if (result.error) {
-          setPending(null);
-          setConnectError(result.data?.error || "Failed to list ad accounts for this Meta login.");
-          return;
-        }
-        const accounts = Array.isArray(result.data?.accounts) ? result.data.accounts : [];
-        if (accounts.length === 0) {
-          setPending(null);
-          setConnectError("This Meta login has no ad accounts. Log in with a user who can see the brand's account.");
-          return;
-        }
-        setAdAccounts(accounts);
-        setSelectedAccountId(accounts.length === 1 ? accounts[0].id : "");
-      })
-      .catch(() => {
-        setConnecting(false);
-        setPending(null);
-        setConnectError("Failed to list ad accounts for this Meta login.");
-      });
+    startWithToken(pendingBrand, params.access_token, "user");
     // Only meant to run once, on the redirect back from Meta.
   }, []);
 
@@ -149,14 +169,27 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     window.location.assign(oauthUrl);
   };
 
+  // System User tokens are generated manually in Meta Business Settings
+  // (System Users → the relevant system user → Generate New Token, with the
+  // ad account granted to it and "Never" expiry) — there's no OAuth dialog
+  // for these, so this just verifies whatever was pasted by listing the ad
+  // accounts it can see, same as the OAuth path.
+  const handleUseSystemUserToken = () => {
+    const token = manualToken.trim();
+    if (!brandKey || !token) return;
+    startWithToken(brandKey, token, "system_user");
+  };
+
   const resetPending = () => {
     setPending(null);
     setAdAccounts([]);
     setSelectedAccountId("");
+    setManualToken("");
   };
 
-  // Posts the picked account + user token to the real connect endpoint, which
-  // verifies the pair against Graph, exchanges for a long-lived token, and
+  // Posts the picked account + token to the real connect endpoint, which
+  // verifies the pair against Graph, exchanges for a long-lived token (user
+  // tokens only — System User tokens are stored exactly as pasted), and
   // stores it encrypted in meta_ads_credentials.
   const handleSaveAccount = async () => {
     if (!pending || !selectedAccountId) return;
@@ -166,6 +199,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
       brand_key: pending.brandKey,
       ad_account_id: selectedAccountId,
       access_token: pending.accessToken,
+      token_type: pending.tokenType,
     });
     setSaving(false);
     if (result.error) {
@@ -174,7 +208,11 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     }
     resetPending();
     setStatus(result.data);
-    setConnectMessage("Meta ad account connected.");
+    setConnectMessage(
+      pending.tokenType === "system_user"
+        ? "Meta ad account connected with a System User token."
+        : "Meta ad account connected.",
+    );
     onConnectionChange?.();
   };
 
@@ -206,7 +244,14 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
             Connect this brand&apos;s Meta Ads account to pull real ad spend into the Meta line above.
           </Typography>
         </Stack>
-        {status?.connected ? <Chip label="Connected" size="small" color="success" /> : null}
+        {status?.connected ? (
+          <Stack direction="row" spacing={0.75}>
+            <Chip label="Connected" size="small" color="success" />
+            {status.tokenType === "system_user" ? (
+              <Chip label="System User token" size="small" variant="outlined" />
+            ) : null}
+          </Stack>
+        ) : null}
       </Stack>
 
       {loadingStatus ? (
@@ -214,7 +259,8 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
       ) : pending ? (
         <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
           <Typography variant="body2" color="text.secondary">
-            Meta login succeeded. Pick the ad account to connect
+            {pending.tokenType === "system_user" ? "Token verified." : "Meta login succeeded."} Pick the ad
+            account to connect
             {pickerForOtherBrand ? ` for brand ${pending.brandKey}` : ""}.
           </Typography>
           {pickerForOtherBrand ? (
@@ -274,7 +320,11 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
           {status.lastVerifiedAt ? (
             <Typography variant="caption" color="text.secondary">
               Last verified {dayjs(status.lastVerifiedAt).format("MMM DD, YYYY HH:mm")}
-              {status.expiresAt ? ` · token expires ${dayjs(status.expiresAt).format("MMM DD, YYYY")}` : ""}
+              {status.expiresAt
+                ? ` · token expires ${dayjs(status.expiresAt).format("MMM DD, YYYY")}`
+                : status.tokenType === "system_user"
+                  ? " · System User token, no expiry tracked"
+                  : ""}
             </Typography>
           ) : null}
           {status.lastError ? (
@@ -292,17 +342,73 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
       ) : (
         <Box>
           <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
-            <Typography variant="body2" color="text.secondary">
-              You&apos;ll be sent to Meta to log in, then asked which ad account to connect. The token is
-              verified, exchanged for a long-lived one, and stored encrypted.
-            </Typography>
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                variant={connectMode === "system_user" ? "contained" : "outlined"}
+                onClick={() => {
+                  setConnectMode("system_user");
+                  setConnectError("");
+                }}
+              >
+                System User token
+              </Button>
+              <Button
+                size="small"
+                variant={connectMode === "oauth" ? "contained" : "outlined"}
+                onClick={() => {
+                  setConnectMode("oauth");
+                  setConnectError("");
+                }}
+              >
+                Meta login
+              </Button>
+            </Stack>
+
             {connectError ? <Alert severity="error">{connectError}</Alert> : null}
             {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
-            <Box>
-              <Button variant="contained" size="small" onClick={handleConnectWithMeta} disabled={connecting}>
-                {connecting ? "Redirecting to Meta…" : "Connect with Meta"}
-              </Button>
-            </Box>
+
+            {connectMode === "system_user" ? (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  Paste a System User access token from Meta Business Settings (System Users → the system
+                  user → Generate New Token, with this brand&apos;s ad account granted and expiry set to
+                  Never). Stored exactly as pasted — never exchanged or modified.
+                </Typography>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="System User access token"
+                  value={manualToken}
+                  onChange={(event) => setManualToken(event.target.value)}
+                  disabled={connecting}
+                />
+                <Box>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleUseSystemUserToken}
+                    disabled={connecting || !manualToken.trim()}
+                  >
+                    {connecting ? "Verifying…" : "Verify token"}
+                  </Button>
+                </Box>
+              </>
+            ) : (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  You&apos;ll be sent to Meta to log in, then asked which ad account to connect. This issues
+                  a regular user token, exchanged for a long-lived one (~60 days) — it will need
+                  reconnecting when that expires. Prefer a System User token above for a connection that
+                  doesn&apos;t expire.
+                </Typography>
+                <Box>
+                  <Button variant="contained" size="small" onClick={handleConnectWithMeta} disabled={connecting}>
+                    {connecting ? "Redirecting to Meta…" : "Connect with Meta"}
+                  </Button>
+                </Box>
+              </>
+            )}
           </Stack>
         </Box>
       )}

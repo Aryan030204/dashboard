@@ -17,6 +17,12 @@ const metaAdsCredentialSchema = new mongoose.Schema(
     brand_id: { type: String, required: true, unique: true },
     ad_account_id: { type: String, required: true }, // act_<id>
     access_token_encrypted: { type: String, required: true },
+    // "system_user" tokens (generated in Business Settings) are never sent
+    // through the fb_exchange_token dance below — they're already long-lived
+    // (commonly "never expires"), and re-exchanging a non-OAuth token through
+    // that endpoint is not something to gamble on. "user" is the OAuth-dialog
+    // token, which does go through the exchange.
+    token_type: { type: String, enum: ["user", "system_user"], default: "user" },
     token_expires_at: { type: Date, default: null },
     last_verified_at: { type: Date, default: null },
     last_error: { type: String, default: null },

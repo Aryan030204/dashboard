@@ -113,19 +113,32 @@ async function tryExchangeForLongLivedToken(accessToken) {
   }
 }
 
-async function saveCredentials({ brandKey, adAccountId, accessToken, updatedByEmail }) {
+function normalizeTokenType(rawType) {
+  return rawType === "system_user" ? "system_user" : "user";
+}
+
+async function saveCredentials({ brandKey, adAccountId, accessToken, updatedByEmail, tokenType }) {
   const key = normalizeBrandKey(brandKey);
   if (!key) throw new Error("brandKey is required");
   if (!adAccountId || !accessToken) {
     return { success: false, error: "Ad account ID and access token are both required." };
   }
 
+  const normalizedTokenType = normalizeTokenType(tokenType);
+
   const verification = await verifyToken(adAccountId, accessToken);
   if (!verification.valid) {
     return { success: false, error: `Meta rejected these credentials: ${verification.error}` };
   }
 
-  const exchanged = await tryExchangeForLongLivedToken(accessToken);
+  // System User tokens are generated directly in Business Settings and are
+  // already long-lived (typically "never expires") — they are not an OAuth
+  // user token, so they never go through fb_exchange_token. Stored exactly
+  // as pasted, byte-for-byte, so there is no risk of the exchange call
+  // silently handing back something different.
+  const exchanged = normalizedTokenType === "system_user"
+    ? { accessToken, expiresAt: null }
+    : await tryExchangeForLongLivedToken(accessToken);
 
   await MetaAdsCredential.findOneAndUpdate(
     { brand_id: key },
@@ -135,6 +148,7 @@ async function saveCredentials({ brandKey, adAccountId, accessToken, updatedByEm
         brand_id: key,
         ad_account_id: normalizeAdAccountId(adAccountId),
         access_token_encrypted: encryptText(exchanged.accessToken),
+        token_type: normalizedTokenType,
         token_expires_at: exchanged.expiresAt,
         last_verified_at: new Date(),
         last_error: null,
@@ -167,6 +181,7 @@ async function getStatus(brandKey) {
   return {
     connected: true,
     adAccountId: row.ad_account_id,
+    tokenType: row.token_type || "user",
     expiresAt: row.token_expires_at || null,
     lastVerifiedAt: row.last_verified_at || null,
     lastError: row.last_error || null,

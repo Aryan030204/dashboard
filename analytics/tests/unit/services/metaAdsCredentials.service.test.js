@@ -58,6 +58,65 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
     expect(options).toMatchObject({ upsert: true });
   });
 
+  test("saveCredentials defaults to token_type 'user' and exchanges via META_APP_ID/SECRET when configured", async () => {
+    process.env.META_APP_ID = "app-id";
+    process.env.META_APP_SECRET = "app-secret";
+    axios.get
+      .mockResolvedValueOnce({ data: { id: "act_1", name: "Brand" } }) // verifyToken
+      .mockResolvedValueOnce({ data: { access_token: "LONG-LIVED", expires_in: 5184000 } }); // exchange
+    MetaAdsCredential.findOneAndUpdate.mockResolvedValue({});
+
+    const result = await service.saveCredentials({
+      brandKey: "bbb",
+      adAccountId: "1",
+      accessToken: "EAAB-token",
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(axios.get).toHaveBeenCalledTimes(2);
+    const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
+    expect(update.$set.token_type).toBe("user");
+    expect(update.$set.access_token_encrypted).toBe("enc(LONG-LIVED)");
+    expect(update.$set.token_expires_at).toBeInstanceOf(Date);
+  });
+
+  test("saveCredentials with token_type 'system_user' never calls the exchange endpoint and stores the token as-is", async () => {
+    process.env.META_APP_ID = "app-id";
+    process.env.META_APP_SECRET = "app-secret";
+    axios.get.mockResolvedValueOnce({ data: { id: "act_1", name: "Brand" } }); // verifyToken only
+    MetaAdsCredential.findOneAndUpdate.mockResolvedValue({});
+
+    const result = await service.saveCredentials({
+      brandKey: "bbb",
+      adAccountId: "1",
+      accessToken: "SYSTEM-USER-TOKEN",
+      tokenType: "system_user",
+    });
+
+    expect(result).toEqual({ success: true });
+    // Only verifyToken's call — the exchange endpoint is never hit for system_user.
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
+    expect(update.$set.token_type).toBe("system_user");
+    expect(update.$set.access_token_encrypted).toBe("enc(SYSTEM-USER-TOKEN)");
+    expect(update.$set.token_expires_at).toBeNull();
+  });
+
+  test("saveCredentials treats any unrecognized token_type as 'user'", async () => {
+    axios.get.mockResolvedValueOnce({ data: { id: "act_1", name: "Brand" } });
+    MetaAdsCredential.findOneAndUpdate.mockResolvedValue({});
+
+    await service.saveCredentials({
+      brandKey: "bbb",
+      adAccountId: "1",
+      accessToken: "tok",
+      tokenType: "not-a-real-type",
+    });
+
+    const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
+    expect(update.$set.token_type).toBe("user");
+  });
+
   test("saveCredentials refuses a token Meta rejects and writes nothing", async () => {
     axios.get.mockRejectedValue({ response: { data: { error: { message: "Invalid OAuth access token." } } } });
     const result = await service.saveCredentials({ brandKey: "BBB", adAccountId: "1", accessToken: "bad" });
@@ -83,6 +142,23 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
     expect(MetaAdsCredential.findOne).toHaveBeenCalledWith({ brand_id: "BBB" });
     expect(status).toMatchObject({ connected: true, adAccountId: "act_1", lastError: "Meta insights: token expired" });
     expect(JSON.stringify(status)).not.toContain("secret");
+  });
+
+  test("getStatus surfaces token_type, defaulting to 'user' for older documents without it", async () => {
+    MetaAdsCredential.findOne.mockReturnValueOnce(
+      lean({ brand_id: "BBB", ad_account_id: "act_1", access_token_encrypted: "enc(x)" }),
+    );
+    expect(await service.getStatus("BBB")).toMatchObject({ tokenType: "user" });
+
+    MetaAdsCredential.findOne.mockReturnValueOnce(
+      lean({
+        brand_id: "BBB",
+        ad_account_id: "act_1",
+        access_token_encrypted: "enc(x)",
+        token_type: "system_user",
+      }),
+    );
+    expect(await service.getStatus("BBB")).toMatchObject({ tokenType: "system_user" });
   });
 
   test("getStatus is not connected without a document", async () => {

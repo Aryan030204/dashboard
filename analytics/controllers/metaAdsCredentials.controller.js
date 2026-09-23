@@ -15,11 +15,16 @@ const metaAdsCredentialsController = {
     try {
       const adAccountId = req.body?.ad_account_id ? String(req.body.ad_account_id).trim() : "";
       const accessToken = req.body?.access_token ? String(req.body.access_token).trim() : "";
+      const rawTokenType = req.body?.token_type ? String(req.body.token_type).trim() : "user";
+      if (rawTokenType !== "user" && rawTokenType !== "system_user") {
+        return res.status(400).json({ error: "token_type must be 'user' or 'system_user'." });
+      }
 
       const result = await metaAdsCredentialsService.saveCredentials({
         brandKey: req.brandKey,
         adAccountId,
         accessToken,
+        tokenType: rawTokenType,
         updatedByEmail: req.user?.email || null,
       });
 
