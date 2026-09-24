@@ -5,7 +5,11 @@ jest.mock("../../../shared/db/models/MetaAdsCredential.mongo", () => ({
   updateOne: jest.fn(),
   deleteOne: jest.fn(),
 }));
-jest.mock("../../../shared/db/models/MetaOauthLog.mongo", () => ({}));
+jest.mock("../../../shared/db/models/MetaOauthPending.mongo", () => ({
+  findOne: jest.fn(),
+  findOneAndUpdate: jest.fn(),
+  deleteOne: jest.fn(),
+}));
 jest.mock("../../../shared/db/models/Tenant.mongo", () => ({
   resolveBrandRef: jest.fn(async () => "tenant-oid"),
 }));
@@ -16,6 +20,7 @@ jest.mock("../../../shared/utils/crypto", () => ({
 
 const axios = require("axios");
 const MetaAdsCredential = require("../../../shared/db/models/MetaAdsCredential.mongo");
+const MetaOauthPending = require("../../../shared/db/models/MetaOauthPending.mongo");
 const service = require("../../../services/metaAdsCredentials.service");
 
 const lean = (value) => ({ lean: jest.fn(async () => value) });
@@ -27,6 +32,9 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
     MetaAdsCredential.findOneAndUpdate.mockReset();
     MetaAdsCredential.updateOne.mockReset();
     MetaAdsCredential.deleteOne.mockReset();
+    MetaOauthPending.findOne.mockReset();
+    MetaOauthPending.findOneAndUpdate.mockReset();
+    MetaOauthPending.deleteOne.mockReset();
     delete process.env.META_APP_ID;
     delete process.env.META_APP_SECRET;
   });
@@ -181,5 +189,112 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
     expect(MetaAdsCredential.updateOne.mock.calls[0][1].$set.last_error).toHaveLength(500);
     expect(await service.deleteCredentials("bbb")).toEqual({ success: true });
     expect(MetaAdsCredential.deleteOne).toHaveBeenCalledWith({ brand_id: "BBB" });
+  });
+
+  describe("OAuth (Continue with Meta)", () => {
+    test("startOauth exchanges the code, lists ad accounts, and parks the encrypted token without persisting the real credential", async () => {
+      process.env.META_APP_ID = "app-id";
+      process.env.META_APP_SECRET = "app-secret";
+      axios.get
+        .mockResolvedValueOnce({ data: { access_token: "SYSTEM-BUSINESS-TOKEN" } }) // code exchange
+        .mockResolvedValueOnce({ data: { data: [{ id: "act_1", name: "Brand" }] } }); // listAdAccounts
+      MetaOauthPending.findOneAndUpdate.mockResolvedValue({});
+
+      const result = await service.startOauth({
+        brandKey: "bbb",
+        code: "auth-code",
+        redirectUri: "https://app.example.com/pnl",
+        updatedByEmail: "a@b.c",
+      });
+
+      expect(result).toEqual({
+        success: true,
+        accounts: [{ id: "act_1", name: "Brand", currency: null, accountStatus: null, accountStatusLabel: null }],
+      });
+      expect(axios.get.mock.calls[0][1].params).toMatchObject({
+        client_id: "app-id",
+        client_secret: "app-secret",
+        redirect_uri: "https://app.example.com/pnl",
+        code: "auth-code",
+      });
+      const [filter, update, options] = MetaOauthPending.findOneAndUpdate.mock.calls[0];
+      expect(filter).toEqual({ brand_id: "BBB" });
+      expect(update.$set).toMatchObject({
+        brand: "tenant-oid",
+        brand_id: "BBB",
+        access_token_encrypted: "enc(SYSTEM-BUSINESS-TOKEN)",
+        updated_by_email: "a@b.c",
+      });
+      expect(options).toMatchObject({ upsert: true });
+      expect(MetaAdsCredential.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test("startOauth fails without META_APP_ID/SECRET configured", async () => {
+      const result = await service.startOauth({ brandKey: "BBB", code: "x", redirectUri: "https://x" });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("META_APP_ID");
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    test("startOauth surfaces Meta's rejection of the code", async () => {
+      process.env.META_APP_ID = "app-id";
+      process.env.META_APP_SECRET = "app-secret";
+      axios.get.mockRejectedValue({ response: { data: { error: { message: "Invalid verification code format." } } } });
+
+      const result = await service.startOauth({ brandKey: "BBB", code: "bad", redirectUri: "https://x" });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Invalid verification code format.");
+      expect(MetaOauthPending.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test("startOauth fails when the login covered no ad accounts", async () => {
+      process.env.META_APP_ID = "app-id";
+      process.env.META_APP_SECRET = "app-secret";
+      axios.get
+        .mockResolvedValueOnce({ data: { access_token: "SYSTEM-BUSINESS-TOKEN" } })
+        .mockResolvedValueOnce({ data: { data: [] } });
+
+      const result = await service.startOauth({ brandKey: "BBB", code: "x", redirectUri: "https://x" });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("No ad accounts were shared");
+      expect(MetaOauthPending.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test("finalizeOauth reads back the parked token, verifies + persists it with token_type 'system_user', and clears the pending doc", async () => {
+      MetaOauthPending.findOne.mockReturnValue(
+        lean({ brand_id: "BBB", access_token_encrypted: "enc(SYSTEM-BUSINESS-TOKEN)" }),
+      );
+      axios.get.mockResolvedValue({ data: { id: "act_1", name: "Brand" } }); // verifyToken
+      MetaAdsCredential.findOneAndUpdate.mockResolvedValue({});
+      MetaOauthPending.deleteOne.mockResolvedValue({});
+
+      const result = await service.finalizeOauth({
+        brandKey: "bbb",
+        adAccountId: "act_1",
+        updatedByEmail: "a@b.c",
+      });
+
+      expect(result).toEqual({ success: true });
+      const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
+      expect(update.$set.access_token_encrypted).toBe("enc(SYSTEM-BUSINESS-TOKEN)");
+      expect(update.$set.token_type).toBe("system_user");
+      expect(update.$set.token_expires_at).toBeNull();
+      expect(MetaOauthPending.deleteOne).toHaveBeenCalledWith({ brand_id: "BBB" });
+    });
+
+    test("finalizeOauth fails when there's no pending session for the brand", async () => {
+      MetaOauthPending.findOne.mockReturnValue(lean(null));
+      const result = await service.finalizeOauth({ brandKey: "BBB", adAccountId: "act_1" });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("expired");
+      expect(MetaAdsCredential.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(MetaOauthPending.deleteOne).not.toHaveBeenCalled();
+    });
+
+    test("finalizeOauth requires an ad_account_id", async () => {
+      const result = await service.finalizeOauth({ brandKey: "BBB", adAccountId: "" });
+      expect(result).toEqual({ success: false, error: "ad_account_id is required." });
+      expect(MetaOauthPending.findOne).not.toHaveBeenCalled();
+    });
   });
 });

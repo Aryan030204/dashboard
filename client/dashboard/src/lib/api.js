@@ -1499,16 +1499,26 @@ export async function listMetaOauthAdAccounts({ brand_key, access_token }) {
   });
 }
 
-export async function getMetaOauthLog(args = {}) {
-  return doGet("/pnl/meta-ads/oauth/log", appendBrandKey({}, args));
+// Exchanges the authorization code Meta just redirected back with for a
+// System-business access token, parked server-side against the brand. Never
+// sent to the browser — returns the ad accounts that token can see so the
+// brand can pick one.
+export async function exchangeMetaOauthCode({ brand_key, code, redirect_uri }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/meta-ads/oauth/exchange${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    code,
+    redirect_uri,
+  });
 }
 
-export async function logMetaOauthToken({ brand_key, access_token, expires_in }) {
+// Final step of "Continue with Meta": the brand picked which ad account to
+// connect. Reads the token parked by exchangeMetaOauthCode and stores it.
+export async function connectMetaOauth({ brand_key, ad_account_id }) {
   const brandKey = normalizeBrandKey(brand_key);
-  return doPost(`/pnl/meta-ads/oauth/log${qs({ brand_key: brandKey })}`, {
+  return doPost(`/pnl/meta-ads/oauth/connect${qs({ brand_key: brandKey })}`, {
     brand_key: brandKey,
-    access_token,
-    expires_in,
+    ad_account_id,
   });
 }
 
@@ -1593,6 +1603,55 @@ export async function savePnlCostConfig({ brand_key, category, value, value_type
 export async function clearPnlCostConfig({ brand_key, category }) {
   const params = qs({ brand_key: normalizeBrandKey(brand_key) });
   return doDelete(`/pnl/cost-configs/${encodeURIComponent(category)}${params}`);
+}
+
+// ---- Per-product COGS (P&L cost configuration section) --------------------
+// "Download Template" gives the brand a CSV of their products (product_id,
+// title, and any cogs already saved); they fill in a flat cogs value per
+// product and re-upload it. The upload replaces the brand's whole
+// product_config document and rolls the sum into the "cogs" cost line above.
+
+export async function getProductCogsConfig(args = {}) {
+  return doGet("/pnl/product-config", appendBrandKey({}, args));
+}
+
+export async function downloadProductCogsTemplate({ brand_key }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  const fallbackName = `product-cogs-template-${brandKey || "brand"}.csv`;
+  const url = `${resolveApiBase()}/pnl/product-config/template${qs({ brand_key: brandKey })}`;
+  try {
+    const res = await fetch(url, {
+      credentials: "include",
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) return { error: true, status: res.status };
+    const blob = await res.blob();
+    const fromHeader = filenameFromDisposition(res.headers.get("Content-Disposition"));
+    return { error: false, blob, filename: fromHeader || fallbackName };
+  } catch (e) {
+    console.error("API error product-config csv", e);
+    return { error: true };
+  }
+}
+
+export async function uploadProductCogsTemplate({ brand_key, file }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  const path = "/pnl/product-config/upload";
+  const url = `${API_BASE}${path}${qs({ brand_key: brandKey })}`;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const res = await fetchWithAuth(url, { method: "POST", body: form });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      captureFailure(path, { status: res.status, method: "POST", brandKey });
+      return { error: true, status: res.status, data: json };
+    }
+    return { error: false, data: json };
+  } catch {
+    captureFailure(path, { method: "POST", brandKey });
+    return { error: true };
+  }
 }
 
 export async function getMonthlyTrend(args) {

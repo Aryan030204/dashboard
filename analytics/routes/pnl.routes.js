@@ -6,6 +6,7 @@ const pnlController = require("../controllers/pnl.controller");
 const metaAdsCredentialsController = require("../controllers/metaAdsCredentials.controller");
 const googleAdsCredentialsController = require("../controllers/googleAdsCredentials.controller");
 const pnlProductCogsController = require("../controllers/pnlProductCogs.controller");
+const pnlProductConfigController = require("../controllers/pnlProductConfig.controller");
 const pnlCostConfigController = require("../controllers/pnlCostConfig.controller");
 
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -22,8 +23,8 @@ function buildPnlRouter() {
   router.delete("/meta-ads/disconnect", brandContext, metaAdsCredentialsController.disconnect);
   router.get("/meta-ads/oauth/config", brandContext, metaAdsCredentialsController.oauthConfig);
   router.post("/meta-ads/oauth/ad-accounts", brandContext, metaAdsCredentialsController.oauthAdAccounts);
-  router.get("/meta-ads/oauth/log", brandContext, metaAdsCredentialsController.oauthLog);
-  router.post("/meta-ads/oauth/log", brandContext, metaAdsCredentialsController.logOauthToken);
+  router.post("/meta-ads/oauth/exchange", brandContext, metaAdsCredentialsController.oauthExchange);
+  router.post("/meta-ads/oauth/connect", brandContext, metaAdsCredentialsController.oauthConnect);
 
   // "Connect with Google" sends the brand through Google's OAuth consent
   // screen for a refresh token; /connect stays as a fallback for a brand
@@ -47,6 +48,18 @@ function buildPnlRouter() {
     brandContext,
     csvUpload.single("file"),
     pnlProductCogsController.upload,
+  );
+
+  // Per-product COGS (flat, one document per brand in `product_config`):
+  // download a CSV of the brand's products to fill in, then upload it back.
+  // Uploading also rolls the sum into the cost config's "cogs" line above.
+  router.get("/product-config", brandContext, pnlProductConfigController.get);
+  router.get("/product-config/template", brandContext, pnlProductConfigController.downloadTemplate);
+  router.post(
+    "/product-config/upload",
+    brandContext,
+    csvUpload.single("file"),
+    pnlProductConfigController.upload,
   );
 
   return router;

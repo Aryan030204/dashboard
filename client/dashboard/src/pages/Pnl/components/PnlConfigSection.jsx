@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   Box,
   Button,
   Card,
@@ -17,10 +18,24 @@ import CloseIcon from "@mui/icons-material/Close";
 import dayjs from "dayjs";
 import {
   clearPnlCostConfig,
+  downloadProductCogsTemplate,
   getPnlCostConfigs,
+  getProductCogsConfig,
   savePnlCostConfig,
   savePnlTotalConfig,
+  uploadProductCogsTemplate,
 } from "../../../lib/api.js";
+
+function downloadBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
 
 // Order of the cost lines as they appear in the P&L statement. Labels come
 // from the API (`config.labels`) so the backend's list stays the contract;
@@ -130,6 +145,134 @@ function CostLineRow({ brandKey, field, label, line, onSaved }) {
   );
 }
 
+// Flat per-product COGS: download a CSV of this brand's products (product_id
+// + title, from product_landing_mapping), fill in a cogs value per product,
+// and upload it back. The upload replaces the brand's whole product_config
+// document and also rolls the sum into the "COGS (SKU level)" line above, so
+// onUploaded refreshes the parent's config to keep that row in sync.
+function ProductCogsPanel({ brandKey, onUploaded }) {
+  const [status, setStatus] = useState(null); // { exists, productConfig, updatedByEmail, updatedAt }
+  const [loadingStatus, setLoadingStatus] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [rowErrors, setRowErrors] = useState([]);
+
+  const refreshStatus = () => {
+    setLoadingStatus(true);
+    return getProductCogsConfig({ brand_key: brandKey }).then((result) => {
+      setStatus(result.error ? null : result.data?.config || null);
+      setLoadingStatus(false);
+    });
+  };
+
+  useEffect(() => {
+    if (!brandKey) return;
+    let cancelled = false;
+    getProductCogsConfig({ brand_key: brandKey }).then((result) => {
+      if (cancelled) return;
+      setStatus(result.error ? null : result.data?.config || null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [brandKey]);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    setError("");
+    setMessage("");
+    const result = await downloadProductCogsTemplate({ brand_key: brandKey });
+    setDownloading(false);
+    if (result.error) {
+      setError("Failed to download the template.");
+      return;
+    }
+    downloadBlob(result.blob, result.filename);
+  };
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-selecting the same file after a failed upload
+    if (!file) return;
+
+    setUploading(true);
+    setError("");
+    setMessage("");
+    setRowErrors([]);
+    const result = await uploadProductCogsTemplate({ brand_key: brandKey, file });
+    setUploading(false);
+
+    if (result.error) {
+      setError(result.data?.error || "Failed to upload the CSV.");
+      return;
+    }
+    const data = result.data || {};
+    setRowErrors((data.results || []).filter((row) => row.status === "error"));
+    if (data.succeeded > 0) {
+      const aggregate = Number.isFinite(data.aggregateCogs) ? data.aggregateCogs.toFixed(2) : data.aggregateCogs;
+      setMessage(
+        data.success
+          ? `Saved cogs for ${data.succeeded} product${data.succeeded === 1 ? "" : "s"}. Aggregate (₹${aggregate}) rolled into COGS (SKU level) above.`
+          : `Saved cogs for ${data.succeeded} product(s); ${data.failed} row(s) had errors — see below.`,
+      );
+    } else {
+      setError(data.error || "No valid rows were found in the CSV.");
+    }
+    await refreshStatus();
+    onUploaded?.();
+  };
+
+  const configuredCount = status?.productConfig ? Object.keys(status.productConfig).length : 0;
+
+  return (
+    <Box sx={{ p: 1.25, border: "1px solid", borderColor: "divider", borderRadius: 1.5 }}>
+      <Stack spacing={1}>
+        <Box>
+          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+            Per-product COGS
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Download a CSV of this brand&apos;s products, fill in a flat cogs value per product, and
+            upload it back.
+            {configuredCount ? ` ${configuredCount} product${configuredCount === 1 ? "" : "s"} configured.` : ""}
+          </Typography>
+          {status?.updatedAt ? (
+            <Typography variant="caption" color="text.secondary" display="block">
+              Last uploaded {dayjs(status.updatedAt).format("MMM DD, YYYY HH:mm")}
+              {status.updatedByEmail ? ` by ${status.updatedByEmail}` : ""}
+            </Typography>
+          ) : null}
+        </Box>
+
+        {error ? <Alert severity="error">{error}</Alert> : null}
+        {message ? <Alert severity="success">{message}</Alert> : null}
+        {rowErrors.length > 0 ? (
+          <Alert severity="warning">
+            {rowErrors.length} row{rowErrors.length === 1 ? "" : "s"} skipped:{" "}
+            {rowErrors
+              .slice(0, 5)
+              .map((row) => `line ${row.line} (${row.error})`)
+              .join(", ")}
+            {rowErrors.length > 5 ? "…" : ""}
+          </Alert>
+        ) : null}
+
+        <Stack direction="row" spacing={1}>
+          <Button size="small" variant="outlined" onClick={handleDownload} disabled={downloading || loadingStatus}>
+            {downloading ? "Downloading…" : "Download template"}
+          </Button>
+          <Button size="small" variant="contained" component="label" disabled={uploading}>
+            {uploading ? "Uploading…" : "Upload filled template"}
+            <input type="file" accept=".csv,text/csv" hidden onChange={handleFileChange} />
+          </Button>
+        </Stack>
+      </Stack>
+    </Box>
+  );
+}
+
 function GstRow({ brandKey, gstPct, onSaved }) {
   const [value, setValue] = useState(String(gstPct ?? ""));
   const [saving, setSaving] = useState(false);
@@ -222,6 +365,15 @@ export default function PnlConfigSection({ brandKey, onConfigChange }) {
     onConfigChange?.();
   };
 
+  // A per-product COGS upload rolls its aggregate into costs.cogs on the
+  // backend without returning the updated document, so re-fetch the whole
+  // config to keep the "COGS (SKU level)" row above in sync.
+  const handleProductCogsUploaded = async () => {
+    const result = await getPnlCostConfigs({ brand_key: brandKey });
+    if (!result.error && result.data?.config) setConfig(result.data.config);
+    onConfigChange?.();
+  };
+
   const configuredCount = useMemo(
     () => Object.values(config?.costs || {}).filter(Boolean).length,
     [config],
@@ -276,6 +428,9 @@ export default function PnlConfigSection({ brandKey, onConfigChange }) {
                     onSaved={handleSaved}
                   />
                 ))}
+                {section.title === "Gross Margin" ? (
+                  <ProductCogsPanel brandKey={brandKey} onUploaded={handleProductCogsUploaded} />
+                ) : null}
               </Stack>
             </Box>
           ))}

@@ -1,7 +1,7 @@
 const axios = require("axios");
 const { encryptText, decryptText } = require("../shared/utils/crypto");
 const MetaAdsCredential = require("../shared/db/models/MetaAdsCredential.mongo");
-const MetaOauthLog = require("../shared/db/models/MetaOauthLog.mongo");
+const MetaOauthPending = require("../shared/db/models/MetaOauthPending.mongo");
 const { resolveBrandRef } = require("../shared/db/models/Tenant.mongo");
 
 // Credentials live in Mongo (meta_ads_credentials, one document per brand),
@@ -209,47 +209,120 @@ async function deleteCredentials(brandKey) {
   return { success: true };
 }
 
-// ---- OAuth proof-of-concept log (Mongo) ------------------------------------
-// The "Connect with Meta" flow parks the token it captures here, one row per
-// brand, until it's wired into meta_ads_credentials above.
+// ---- OAuth ("Continue with Meta") ------------------------------------------
+// Mirrors googleAdsCredentials.service.js's startOauth/finalizeOauth: the
+// authorization-code exchange needs the app secret, so it only ever runs
+// server-side, and the resulting token is parked (encrypted) in
+// MetaOauthPending rather than sent back to the browser. The brand still
+// needs to say which of the ad account(s) the login covered to connect - the
+// Facebook Login for Business dialog's asset picker doesn't narrow it to one
+// for us the way Google's customer id field does.
 
-function maskToken(token) {
-  const value = String(token || "");
-  return value.length > 6 ? `…${value.slice(-6)}` : "…";
+// Authorization code -> System-business access token. Needs the app secret
+// (mirrors tryExchangeForLongLivedToken's fb_exchange_token call, one step
+// earlier in the same OAuth app).
+async function exchangeCodeForToken(code, redirectUri) {
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appId || !appSecret) {
+    throw new Error("META_APP_ID / META_APP_SECRET are not configured on the backend.");
+  }
+  try {
+    const response = await axios.get(`https://graph.facebook.com/${apiVersion()}/oauth/access_token`, {
+      params: {
+        client_id: appId,
+        client_secret: appSecret,
+        redirect_uri: redirectUri,
+        code,
+      },
+      timeout: 10000,
+    });
+    return response.data || {};
+  } catch (error) {
+    const message = error.response?.data?.error?.message || error.message || "Meta rejected the authorization code";
+    throw new Error(`Meta rejected the authorization code: ${message}`);
+  }
 }
 
-function toOauthLogShape(row) {
-  return {
-    brandKey: row.brand_id,
-    tokenSuffix: maskToken(row.access_token),
-    expiresIn: row.expires_in,
-    capturedAt: row.captured_at,
-    updatedByEmail: row.updated_by_email,
-  };
-}
+// Step 1 of the picker: exchanges the code Meta just redirected back with,
+// lists the ad account(s) the resulting token can see (so the frontend can
+// show a picker), and parks the token against the brand - never sent to the
+// browser.
+async function startOauth({ brandKey, code, redirectUri, updatedByEmail }) {
+  const key = normalizeBrandKey(brandKey);
+  if (!key) throw new Error("brandKey is required");
+  if (!code || !redirectUri) return { success: false, error: "code and redirect_uri are required." };
 
-async function saveOauthLog({ brandKey, accessToken, expiresIn, updatedByEmail }) {
-  const row = await MetaOauthLog.findOneAndUpdate(
-    { brand_id: brandKey },
+  let tokenResponse;
+  try {
+    tokenResponse = await exchangeCodeForToken(code, redirectUri);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+
+  const accessToken = tokenResponse.access_token;
+  if (!accessToken) {
+    return { success: false, error: "Meta did not return an access token." };
+  }
+
+  const listResult = await listAdAccounts(accessToken);
+  if (!listResult.success) {
+    return { success: false, error: `Meta rejected the token: ${listResult.error}` };
+  }
+  if (listResult.accounts.length === 0) {
+    return {
+      success: false,
+      error: "No ad accounts were shared during that Meta login. Try again and pick at least one ad account.",
+    };
+  }
+
+  await MetaOauthPending.findOneAndUpdate(
+    { brand_id: key },
     {
       $set: {
-        brand: await resolveBrandRef(brandKey),
-        brand_id: brandKey,
-        access_token: accessToken,
-        expires_in: expiresIn || null,
+        brand: await resolveBrandRef(key),
+        brand_id: key,
+        access_token_encrypted: encryptText(accessToken),
         updated_by_email: updatedByEmail || null,
-        captured_at: new Date(),
+        created_at: new Date(),
       },
     },
-    { upsert: true, new: true },
-  ).lean();
-  return toOauthLogShape(row);
+    { upsert: true, setDefaultsOnInsert: true },
+  );
+
+  return { success: true, accounts: listResult.accounts };
 }
 
-async function getOauthLog(brandKey) {
-  if (!brandKey) return null;
-  const row = await MetaOauthLog.findOne({ brand_id: brandKey }).lean();
-  return row ? toOauthLogShape(row) : null;
+// Step 2 of the picker: the brand has picked which ad account to connect;
+// read back the token parked by startOauth and persist the real credential
+// the same way saveCredentials does for a pasted System User token - a
+// "Continue with Meta" login scoped to a Facebook Login for Business
+// configuration hands back the same kind of non-expiring System-business
+// token, so it's stored the same way (token_type "system_user", no exchange).
+// The pending document is removed either way.
+async function finalizeOauth({ brandKey, adAccountId, updatedByEmail }) {
+  const key = normalizeBrandKey(brandKey);
+  if (!key) throw new Error("brandKey is required");
+  if (!adAccountId) return { success: false, error: "ad_account_id is required." };
+
+  const pending = await MetaOauthPending.findOne({ brand_id: key }).lean();
+  if (!pending) {
+    return {
+      success: false,
+      error: 'This connect session has expired. Click "Continue with Meta" again.',
+    };
+  }
+
+  const accessToken = decryptText(pending.access_token_encrypted);
+  const result = await saveCredentials({
+    brandKey: key,
+    adAccountId,
+    accessToken,
+    tokenType: "system_user",
+    updatedByEmail,
+  });
+  await MetaOauthPending.deleteOne({ brand_id: key });
+  return result;
 }
 
 module.exports = {
@@ -259,6 +332,6 @@ module.exports = {
   getStatus,
   recordError,
   deleteCredentials,
-  saveOauthLog,
-  getOauthLog,
+  startOauth,
+  finalizeOauth,
 };

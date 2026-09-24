@@ -110,7 +110,6 @@ async function init() {
   // an index problem must never keep the service from starting.
   for (const model of [
     require("./shared/db/models/TotalConfig.mongo"),
-    require("./shared/db/models/MetaOauthLog.mongo"),
   ]) {
     try {
       await model.syncIndexes();

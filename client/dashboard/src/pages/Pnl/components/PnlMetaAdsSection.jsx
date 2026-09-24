@@ -17,16 +17,19 @@ import {
 import dayjs from "dayjs";
 import {
   connectMetaAds,
+  connectMetaOauth,
   disconnectMetaAds,
+  exchangeMetaOauthCode,
   getMetaAdsStatus,
   getMetaOauthConfig,
   listMetaOauthAdAccounts,
 } from "../../../lib/api.js";
 
 const OAUTH_PENDING_KEY = "meta_oauth_pending_brand";
+const OAUTH_STATE_KEY = "meta_oauth_pending_state";
 
-function parseHashParams(hash) {
-  return Object.fromEntries(new URLSearchParams((hash || "").replace(/^#/, "")));
+function randomState() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 function describeAccount(account) {
@@ -46,26 +49,28 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
 
   const [disconnecting, setDisconnecting] = useState(false);
 
-  // Which "not connected yet" option is showing: the OAuth login button, or
-  // the paste-a-System-User-token form.
-  const [connectMode, setConnectMode] = useState("system_user");
+  // Which "not connected yet" option is showing: "Continue with Meta"
+  // (Facebook Login for Business), or the paste-a-System-User-token form.
+  const [connectMode, setConnectMode] = useState("oauth");
   const [manualToken, setManualToken] = useState("");
 
-  // Set once we have a token to work with (either Meta's OAuth redirect, or a
-  // pasted System User token): the brand the connect was started for, the
-  // token itself, which kind of token it is, and the ad accounts that token
-  // can see. The token lives only in memory — a refresh mid-pick means
-  // starting over.
-  const [pending, setPending] = useState(null); // { brandKey, accessToken, tokenType }
+  // Set once we have a token to work with (either the "Continue with Meta"
+  // redirect, or a pasted System User token): the brand the connect was
+  // started for, the token itself, which kind of token it is, whether it
+  // came via the OAuth dialog (UI copy only - both kinds are token_type
+  // "system_user" once saved), and the ad accounts that token can see. The
+  // token lives only in memory — a refresh mid-pick means starting over.
+  const [pending, setPending] = useState(null); // { brandKey, accessToken, tokenType, viaOauth }
   const [adAccounts, setAdAccounts] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Shared by both the OAuth redirect handler and the manual System User
-  // token form: given any Meta access token, verify it by listing the ad
-  // accounts it can see, then let the brand pick one.
-  const startWithToken = (forBrandKey, accessToken, tokenType) => {
-    setPending({ brandKey: forBrandKey, accessToken, tokenType });
+  // Manual System User token paste path: verify the token by listing the ad
+  // accounts it can see, then let the brand pick one. The "Continue with
+  // Meta" path below never holds the token client-side, so this is only
+  // reached from handleUseSystemUserToken now.
+  const startWithToken = (forBrandKey, accessToken) => {
+    setPending({ brandKey: forBrandKey, accessToken, tokenType: "system_user", viaOauth: false });
     setAdAccounts([]);
     setSelectedAccountId("");
     setConnecting(true);
@@ -83,11 +88,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
         const accounts = Array.isArray(result.data?.accounts) ? result.data.accounts : [];
         if (accounts.length === 0) {
           setPending(null);
-          setConnectError(
-            tokenType === "system_user"
-              ? "This System User has no ad accounts assigned to it in Business Settings."
-              : "This Meta login has no ad accounts. Log in with a user who can see the brand's account.",
-          );
+          setConnectError("This System User has no ad accounts assigned to it in Business Settings.");
           return;
         }
         setAdAccounts(accounts);
@@ -117,30 +118,62 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
   // Meta's OAuth dialog sets Cross-Origin-Opener-Policy: same-origin, which
   // severs window.opener the moment a popup navigates there — so a
   // popup+postMessage handoff back to this tab is unreliable. Instead we
-  // navigate this same tab away to Meta and back: on return, the token is in
-  // the URL hash and sessionStorage tells us a connect was in flight.
+  // navigate this same tab away to Meta and back: on return, the authorization
+  // code is in the query string and sessionStorage tells us a connect was in
+  // flight (and which state value to expect, for CSRF protection).
   //
-  // The token is a user-level grant (ads_read covers every ad account the
-  // user can see), so Meta never asks which account — we list them here and
-  // let the brand pick before anything is saved.
+  // response_type=code (not token): the code is exchanged for the access
+  // token server-side, using the app secret, so the token itself never
+  // reaches the browser. The dialog is scoped to a Facebook Login for
+  // Business configuration (config_id, set below), so the token the exchange
+  // gets back is a System-business access token already scoped to just the
+  // ad account(s) the brand admin picked during consent — same non-expiring,
+  // no-further-exchange handling as a manually pasted System User token.
   useEffect(() => {
     const pendingBrand = window.sessionStorage.getItem(OAUTH_PENDING_KEY);
-    const params = parseHashParams(window.location.hash);
+    const pendingState = window.sessionStorage.getItem(OAUTH_STATE_KEY);
     if (!pendingBrand) return;
-    if (!params.access_token) {
-      // Came back without a token (user cancelled the dialog, or Meta errored).
-      if (params.error || params.error_description) {
-        window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
-        window.history.replaceState(null, "", window.location.pathname + window.location.search);
-        setConnectError(params.error_description || params.error || "Meta did not return a token.");
-      }
+
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const state = params.get("state");
+    const error = params.get("error");
+    const errorDescription = params.get("error_description");
+    if (!code && !error) return;
+
+    window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
+    window.sessionStorage.removeItem(OAUTH_STATE_KEY);
+    window.history.replaceState(null, "", window.location.pathname);
+
+    if (error) {
+      setConnectError(error === "access_denied" ? "Meta login was cancelled." : errorDescription || error);
+      return;
+    }
+    if (state !== pendingState) {
+      setConnectError("Could not verify this Meta login (state mismatch). Please try connecting again.");
       return;
     }
 
-    window.sessionStorage.removeItem(OAUTH_PENDING_KEY);
-    window.history.replaceState(null, "", window.location.pathname + window.location.search);
-
-    startWithToken(pendingBrand, params.access_token, "user");
+    setConnecting(true);
+    setConnectError("");
+    setConnectMessage("");
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    exchangeMetaOauthCode({ brand_key: pendingBrand, code, redirect_uri: redirectUri })
+      .then((result) => {
+        setConnecting(false);
+        if (result.error) {
+          setConnectError(result.data?.error || "Failed to verify the Meta login.");
+          return;
+        }
+        const accounts = Array.isArray(result.data?.accounts) ? result.data.accounts : [];
+        setPending({ brandKey: pendingBrand, viaOauth: true });
+        setAdAccounts(accounts);
+        setSelectedAccountId(accounts.length === 1 ? accounts[0].id : "");
+      })
+      .catch(() => {
+        setConnecting(false);
+        setConnectError("Failed to verify the Meta login.");
+      });
     // Only meant to run once, on the redirect back from Meta.
   }, []);
 
@@ -150,22 +183,29 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     setConnectMessage("");
 
     const config = await getMetaOauthConfig({ brand_key: brandKey });
-    if (config.error || !config.data?.appId) {
+    if (config.error || !config.data?.appId || !config.data?.configId) {
       setConnecting(false);
       setConnectError(config.data?.error || "Meta app is not configured on the backend.");
       return;
     }
 
-    const { appId, apiVersion, scope } = config.data;
+    const { appId, configId, apiVersion } = config.data;
     const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    const state = randomState();
+    // config_id (not scope) drives which permissions and ad-account picker
+    // Meta shows — it comes from the app's Facebook Login for Business
+    // configuration, not from this page. response_type=code keeps the token
+    // exchange server-side (see the redirect-back effect above).
     const oauthUrl = `https://www.facebook.com/${apiVersion}/dialog/oauth?${new URLSearchParams({
       client_id: appId,
       redirect_uri: redirectUri,
-      response_type: "token",
-      scope,
+      response_type: "code",
+      config_id: configId,
+      state,
     })}`;
 
     window.sessionStorage.setItem(OAUTH_PENDING_KEY, brandKey);
+    window.sessionStorage.setItem(OAUTH_STATE_KEY, state);
     window.location.assign(oauthUrl);
   };
 
@@ -177,7 +217,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
   const handleUseSystemUserToken = () => {
     const token = manualToken.trim();
     if (!brandKey || !token) return;
-    startWithToken(brandKey, token, "system_user");
+    startWithToken(brandKey, token);
   };
 
   const resetPending = () => {
@@ -187,10 +227,9 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     setManualToken("");
   };
 
-  // Posts the picked account + token to the real connect endpoint, which
-  // verifies the pair against Graph, exchanges for a long-lived token (user
-  // tokens only — System User tokens are stored exactly as pasted), and
-  // stores it encrypted in meta_ads_credentials.
+  // Manual System User token path: posts the picked account + token to the
+  // real connect endpoint, which verifies the pair against Graph and stores
+  // it encrypted in meta_ads_credentials.
   const handleSaveAccount = async () => {
     if (!pending || !selectedAccountId) return;
     setSaving(true);
@@ -208,11 +247,28 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     }
     resetPending();
     setStatus(result.data);
-    setConnectMessage(
-      pending.tokenType === "system_user"
-        ? "Meta ad account connected with a System User token."
-        : "Meta ad account connected.",
-    );
+    setConnectMessage("Meta ad account connected with a System User token.");
+    onConnectionChange?.();
+  };
+
+  // "Continue with Meta" path: the token is already parked server-side from
+  // the code exchange, this just says which ad account to connect.
+  const handleFinishOauthConnect = async () => {
+    if (!pending || !selectedAccountId) return;
+    setSaving(true);
+    setConnectError("");
+    const result = await connectMetaOauth({
+      brand_key: pending.brandKey,
+      ad_account_id: selectedAccountId,
+    });
+    setSaving(false);
+    if (result.error) {
+      setConnectError(result.data?.error || "Failed to connect the ad account.");
+      return;
+    }
+    resetPending();
+    setStatus(result.data);
+    setConnectMessage("Meta ad account connected via Continue with Meta (System-business token).");
     onConnectionChange?.();
   };
 
@@ -259,8 +315,8 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
       ) : pending ? (
         <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
           <Typography variant="body2" color="text.secondary">
-            {pending.tokenType === "system_user" ? "Token verified." : "Meta login succeeded."} Pick the ad
-            account to connect
+            {pending.viaOauth ? "Continue with Meta succeeded." : "Token verified."} Pick the ad account to
+            connect
             {pickerForOtherBrand ? ` for brand ${pending.brandKey}` : ""}.
           </Typography>
           {pickerForOtherBrand ? (
@@ -301,7 +357,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
             <Button
               variant="contained"
               size="small"
-              onClick={handleSaveAccount}
+              onClick={pending.viaOauth ? handleFinishOauthConnect : handleSaveAccount}
               disabled={saving || connecting || !selectedAccountId}
             >
               {saving ? "Connecting…" : "Connect this account"}
@@ -345,30 +401,47 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
             <Stack direction="row" spacing={1}>
               <Button
                 size="small"
-                variant={connectMode === "system_user" ? "contained" : "outlined"}
-                onClick={() => {
-                  setConnectMode("system_user");
-                  setConnectError("");
-                }}
-              >
-                System User token
-              </Button>
-              <Button
-                size="small"
                 variant={connectMode === "oauth" ? "contained" : "outlined"}
                 onClick={() => {
                   setConnectMode("oauth");
                   setConnectError("");
                 }}
               >
-                Meta login
+                Continue with Meta
+              </Button>
+              <Button
+                size="small"
+                variant={connectMode === "system_user" ? "contained" : "outlined"}
+                onClick={() => {
+                  setConnectMode("system_user");
+                  setConnectError("");
+                }}
+              >
+                Paste a token
               </Button>
             </Stack>
 
             {connectError ? <Alert severity="error">{connectError}</Alert> : null}
             {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
 
-            {connectMode === "system_user" ? (
+            {connectMode === "oauth" ? (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  Opens Meta&apos;s consent dialog. The brand admin logs in, picks which of their ad
+                  account(s) to share, and grants access to just those — Meta returns a non-expiring
+                  System-business token, the same as pasting one manually.
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Until the app has passed App Review for Standard access, this only works for people added
+                  as admins/testers on the app (Limited access tier) — not real brand admins yet.
+                </Typography>
+                <Box>
+                  <Button variant="contained" size="small" onClick={handleConnectWithMeta} disabled={connecting}>
+                    {connecting ? "Working…" : "Continue with Meta"}
+                  </Button>
+                </Box>
+              </>
+            ) : (
               <>
                 <Typography variant="body2" color="text.secondary">
                   Paste a System User access token from Meta Business Settings (System Users → the system
@@ -391,20 +464,6 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
                     disabled={connecting || !manualToken.trim()}
                   >
                     {connecting ? "Verifying…" : "Verify token"}
-                  </Button>
-                </Box>
-              </>
-            ) : (
-              <>
-                <Typography variant="body2" color="text.secondary">
-                  You&apos;ll be sent to Meta to log in, then asked which ad account to connect. This issues
-                  a regular user token, exchanged for a long-lived one (~60 days) — it will need
-                  reconnecting when that expires. Prefer a System User token above for a connection that
-                  doesn&apos;t expire.
-                </Typography>
-                <Box>
-                  <Button variant="contained" size="small" onClick={handleConnectWithMeta} disabled={connecting}>
-                    {connecting ? "Redirecting to Meta…" : "Connect with Meta"}
                   </Button>
                 </Box>
               </>
