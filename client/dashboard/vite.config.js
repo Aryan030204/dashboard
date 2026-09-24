@@ -25,6 +25,9 @@ export default defineConfig({
       workbox: {
         importScripts: ['/firebase-messaging-sw.js'],
         navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^\/api\//,
