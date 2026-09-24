@@ -1,4 +1,4 @@
-jest.mock("axios", () => ({ post: jest.fn() }));
+jest.mock("axios", () => ({ post: jest.fn(), get: jest.fn() }));
 jest.mock("../../../shared/db/models/GoogleAdsCredential.mongo", () => ({
   findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
@@ -28,6 +28,7 @@ const lean = (value) => ({ lean: jest.fn(async () => value) });
 describe("googleAdsCredentials.service (pasted token, one document per brand)", () => {
   beforeEach(() => {
     axios.post.mockReset();
+    axios.get.mockReset();
     GoogleAdsCredential.findOne.mockReset();
     GoogleAdsCredential.findOneAndUpdate.mockReset();
     GoogleAdsCredential.deleteOne.mockReset();
@@ -60,6 +61,7 @@ describe("googleAdsCredentials.service (pasted token, one document per brand)", 
     const status = await service.getStatus("BBB");
     expect(status).toEqual({
       connected: true,
+      customerIds: ["1234567890"],
       customerId: "1234567890",
       loginCustomerId: null,
       tokenSuffix: "…secret",
@@ -77,7 +79,7 @@ describe("googleAdsCredentials.service (pasted token, one document per brand)", 
     );
     const result = await service.saveCredentials({
       brandKey: "bbb",
-      customerId: "123-456-7890",
+      customerIds: ["123-456-7890"],
       loginCustomerId: "987-654-3210",
       token: "  1//0g-refresh-abcdef  ",
       updatedByEmail: "a@b.c",
@@ -91,6 +93,7 @@ describe("googleAdsCredentials.service (pasted token, one document per brand)", 
     expect(update.$set).toMatchObject({
       brand: "tenant-oid",
       brand_id: "BBB",
+      customer_ids: ["1234567890"],
       customer_id: "1234567890",
       login_customer_id: "9876543210",
       token_encrypted: "enc(1//0g-refresh-abcdef)",
@@ -103,11 +106,11 @@ describe("googleAdsCredentials.service (pasted token, one document per brand)", 
   });
 
   test("saveCredentials rejects a missing or malformed customer id", async () => {
-    expect(await service.saveCredentials({ brandKey: "BBB", customerId: "", token: "x" })).toMatchObject({
+    expect(await service.saveCredentials({ brandKey: "BBB", customerIds: [], token: "x" })).toMatchObject({
       success: false,
       error: expect.stringContaining("customer_id is required"),
     });
-    expect(await service.saveCredentials({ brandKey: "BBB", customerId: "12345", token: "x" })).toMatchObject({
+    expect(await service.saveCredentials({ brandKey: "BBB", customerIds: ["12345"], token: "x" })).toMatchObject({
       success: false,
       error: expect.stringContaining("10 digits"),
     });
@@ -115,15 +118,30 @@ describe("googleAdsCredentials.service (pasted token, one document per brand)", 
   });
 
   test("saveCredentials rejects a missing token", async () => {
-    const result = await service.saveCredentials({ brandKey: "BBB", customerId: "1234567890", token: "   " });
+    const result = await service.saveCredentials({ brandKey: "BBB", customerIds: ["1234567890"], token: "   " });
     expect(result).toEqual({ success: false, error: "token is required." });
     expect(GoogleAdsCredential.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   test("saveCredentials requires a brand", async () => {
-    await expect(service.saveCredentials({ brandKey: "", customerId: "1234567890", token: "x" })).rejects.toThrow(
-      "brandKey is required",
+    await expect(
+      service.saveCredentials({ brandKey: "", customerIds: ["1234567890"], token: "x" }),
+    ).rejects.toThrow("brandKey is required");
+  });
+
+  test("saveCredentials accepts more than one customer id and dedupes", async () => {
+    GoogleAdsCredential.findOneAndUpdate.mockReturnValue(
+      lean({ brand_id: "BBB", customer_ids: ["1234567890", "1112223333"], customer_id: "1234567890" }),
     );
+    const result = await service.saveCredentials({
+      brandKey: "BBB",
+      customerIds: ["123-456-7890", "111-222-3333", "1234567890"],
+      token: "rt",
+    });
+    expect(result.success).toBe(true);
+    const [, update] = GoogleAdsCredential.findOneAndUpdate.mock.calls[0];
+    expect(update.$set.customer_ids).toEqual(["1234567890", "1112223333"]);
+    expect(update.$set.customer_id).toBe("1234567890");
   });
 
   test("deleteCredentials removes the brand's document", async () => {
@@ -146,7 +164,13 @@ describe("googleAdsCredentials.service (pasted token, one document per brand)", 
         updatedByEmail: "a@b.c",
       });
 
-      expect(result).toEqual({ success: true });
+      // GOOGLE_ADS_DEVELOPER_TOKEN isn't set in this test, so the best-effort
+      // account listing fails gracefully - the connect itself still succeeds.
+      expect(result).toEqual({
+        success: true,
+        accounts: [],
+        listError: "GOOGLE_ADS_DEVELOPER_TOKEN is not configured on the backend.",
+      });
       expect(axios.post).toHaveBeenCalledWith(
         "https://oauth2.googleapis.com/token",
         expect.objectContaining({ code: "auth-code", client_id: "cid", client_secret: "secret", grant_type: "authorization_code" }),
@@ -195,7 +219,7 @@ describe("googleAdsCredentials.service (pasted token, one document per brand)", 
 
       const result = await service.finalizeOauth({
         brandKey: "bbb",
-        customerId: "123-456-7890",
+        customerIds: ["123-456-7890"],
         updatedByEmail: "a@b.c",
       });
 
@@ -209,7 +233,7 @@ describe("googleAdsCredentials.service (pasted token, one document per brand)", 
 
     test("finalizeOauth fails when there's no pending session for the brand", async () => {
       GoogleOauthPending.findOne.mockReturnValue(lean(null));
-      const result = await service.finalizeOauth({ brandKey: "BBB", customerId: "1234567890" });
+      const result = await service.finalizeOauth({ brandKey: "BBB", customerIds: ["1234567890"] });
       expect(result.success).toBe(false);
       expect(result.error).toContain("expired");
       expect(GoogleAdsCredential.findOneAndUpdate).not.toHaveBeenCalled();
@@ -217,10 +241,27 @@ describe("googleAdsCredentials.service (pasted token, one document per brand)", 
 
     test("finalizeOauth still rejects a malformed customer id, without touching the pending doc's lifetime", async () => {
       GoogleOauthPending.findOne.mockReturnValue(lean({ brand_id: "BBB", refresh_token_encrypted: "enc(rt)" }));
-      const result = await service.finalizeOauth({ brandKey: "BBB", customerId: "123" });
+      const result = await service.finalizeOauth({ brandKey: "BBB", customerIds: ["123"] });
       expect(result).toMatchObject({ success: false, error: expect.stringContaining("10 digits") });
       expect(GoogleAdsCredential.findOneAndUpdate).not.toHaveBeenCalled();
       expect(GoogleOauthPending.deleteOne).toHaveBeenCalledWith({ brand_id: "BBB" });
+    });
+
+    test("finalizeOauth persists more than one customer id from the picker", async () => {
+      GoogleOauthPending.findOne.mockReturnValue(lean({ brand_id: "BBB", refresh_token_encrypted: "enc(rt)" }));
+      GoogleAdsCredential.findOneAndUpdate.mockReturnValue(
+        lean({ brand_id: "BBB", customer_ids: ["1234567890", "1112223333"], customer_id: "1234567890" }),
+      );
+      GoogleOauthPending.deleteOne.mockResolvedValue({});
+
+      const result = await service.finalizeOauth({
+        brandKey: "BBB",
+        customerIds: ["1234567890", "1112223333"],
+      });
+      expect(result.success).toBe(true);
+      expect(result.status.customerIds).toEqual(["1234567890", "1112223333"]);
+      const [, update] = GoogleAdsCredential.findOneAndUpdate.mock.calls[0];
+      expect(update.$set.customer_ids).toEqual(["1234567890", "1112223333"]);
     });
   });
 });

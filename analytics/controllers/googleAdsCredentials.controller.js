@@ -14,9 +14,16 @@ const googleAdsCredentialsController = {
   // The token goes in the body only and is never echoed back.
   async connect(req, res) {
     try {
+      // customer_ids (array, checkbox picker) with customer_id (legacy
+      // single field) accepted as a one-element fallback.
+      const customerIds = Array.isArray(req.body?.customer_ids)
+        ? req.body.customer_ids
+        : req.body?.customer_id
+          ? [req.body.customer_id]
+          : [];
       const result = await googleAdsCredentialsService.saveCredentials({
         brandKey: req.brandKey,
-        customerId: req.body?.customer_id,
+        customerIds,
         loginCustomerId: req.body?.login_customer_id,
         token: req.body?.token,
         updatedByEmail: req.user?.email || null,
@@ -69,7 +76,7 @@ const googleAdsCredentialsController = {
         updatedByEmail: req.user?.email || null,
       });
       if (!result.success) return res.status(400).json({ error: result.error });
-      return res.json({ verified: true });
+      return res.json({ verified: true, accounts: result.accounts, listError: result.listError });
     } catch (error) {
       return handleControllerError(res, error, "google-ads-oauth-exchange failed");
     }
@@ -79,9 +86,14 @@ const googleAdsCredentialsController = {
   // refresh token parked by oauthExchange and stores the real credential.
   async oauthConnect(req, res) {
     try {
+      const customerIds = Array.isArray(req.body?.customer_ids)
+        ? req.body.customer_ids
+        : req.body?.customer_id
+          ? [req.body.customer_id]
+          : [];
       const result = await googleAdsCredentialsService.finalizeOauth({
         brandKey: req.brandKey,
-        customerId: req.body?.customer_id,
+        customerIds,
         loginCustomerId: req.body?.login_customer_id,
         updatedByEmail: req.user?.email || null,
       });

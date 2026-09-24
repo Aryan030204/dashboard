@@ -19,6 +19,10 @@ const { resolveBrandRef } = require("../shared/db/models/Tenant.mongo");
 
 const MAX_TOKEN_LENGTH = 4096;
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_ADS_BASE_URL = "https://googleads.googleapis.com";
+// Same env var + default as the pipeline's own Google Ads calls
+// (workers/pnl_worker.py) - keep them in lockstep.
+const GOOGLE_ADS_API_VERSION = process.env.GOOGLE_ADS_API_VERSION || "v25";
 // Datum's OAuth client, not per-brand - same convention as META_APP_ID and
 // the pipeline's GOOGLE_ADS_CLIENT_ID/SECRET (workers/pnl_worker.py), shared
 // across both repos.
@@ -32,6 +36,26 @@ function normalizeCustomerId(raw) {
   return String(raw || "").replace(/\D/g, "");
 }
 
+// Dedupes and validates a list of raw customer ids (checkbox picker sends an
+// array; the manual-paste fallback still sends one). Any id that isn't 10
+// digits fails the whole batch, same as the single-id path used to.
+function normalizeCustomerIds(rawList) {
+  const list = Array.isArray(rawList) ? rawList : [rawList];
+  const seen = new Set();
+  const ids = [];
+  for (const raw of list) {
+    const id = normalizeCustomerId(raw);
+    if (!id) continue;
+    if (id.length !== 10) return { error: `"${raw}" is not a valid customer id (must be 10 digits).` };
+    if (!seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+  if (ids.length === 0) return { error: "At least one customer_id is required (digits only, dashes optional)." };
+  return { ids };
+}
+
 function maskToken(token) {
   const value = String(token || "");
   return value.length > 6 ? `…${value.slice(-6)}` : "…";
@@ -39,9 +63,15 @@ function maskToken(token) {
 
 function toStatusShape(row) {
   if (!row) return { connected: false };
+  const customerIds = Array.isArray(row.customer_ids) && row.customer_ids.length
+    ? row.customer_ids
+    : row.customer_id
+      ? [row.customer_id]
+      : [];
   return {
     connected: true,
-    customerId: row.customer_id || null,
+    customerIds,
+    customerId: customerIds[0] || null, // back-compat for older frontend builds
     loginCustomerId: row.login_customer_id || null,
     tokenSuffix: row.token_suffix || null,
     authMethod: row.auth_method || "manual",
@@ -60,10 +90,9 @@ async function getStatus(brandKey) {
 
 // Shared by saveCredentials (manual paste) and finalizeOauth: validates the
 // customer id(s), encrypts the token, and upserts the one document per brand.
-async function persistCredential({ key, customerId, loginCustomerId, token, updatedByEmail, authMethod }) {
-  const customer = normalizeCustomerId(customerId);
-  if (!customer) return { success: false, error: "customer_id is required (digits only, dashes optional)." };
-  if (customer.length !== 10) return { success: false, error: "customer_id must be 10 digits, e.g. 123-456-7890." };
+async function persistCredential({ key, customerIds, loginCustomerId, token, updatedByEmail, authMethod }) {
+  const { ids, error } = normalizeCustomerIds(customerIds);
+  if (error) return { success: false, error };
 
   const login = normalizeCustomerId(loginCustomerId);
   if (loginCustomerId && !login) return { success: false, error: "login_customer_id must be digits only." };
@@ -78,7 +107,10 @@ async function persistCredential({ key, customerId, loginCustomerId, token, upda
       $set: {
         brand: await resolveBrandRef(key),
         brand_id: key,
-        customer_id: customer,
+        customer_ids: ids,
+        // Deprecated single field, kept for the pipeline's current
+        // single-account sync - see the schema comment.
+        customer_id: ids[0],
         login_customer_id: login || null,
         token_encrypted: encryptText(secret),
         token_suffix: maskToken(secret),
@@ -96,10 +128,10 @@ async function persistCredential({ key, customerId, loginCustomerId, token, upda
 
 // Validates and stores a refresh token the brand pasted directly. Fallback
 // for a brand that already has one; replaces any previous credential.
-async function saveCredentials({ brandKey, customerId, loginCustomerId, token, updatedByEmail }) {
+async function saveCredentials({ brandKey, customerIds, loginCustomerId, token, updatedByEmail }) {
   const key = normalizeBrandKey(brandKey);
   if (!key) throw new Error("brandKey is required");
-  return persistCredential({ key, customerId, loginCustomerId, token, updatedByEmail, authMethod: "manual" });
+  return persistCredential({ key, customerIds, loginCustomerId, token, updatedByEmail, authMethod: "manual" });
 }
 
 // ---- OAuth ("Connect with Google") -----------------------------------------
@@ -131,11 +163,91 @@ async function exchangeCodeForTokens(code, redirectUri) {
   }
 }
 
+// Refresh-token -> short-lived access token, for the two calls below only
+// (listing accounts right after connecting). Same grant the pipeline's own
+// google_access_token() uses one step later in workers/pnl_worker.py.
+async function refreshAccessToken(refreshToken) {
+  const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new OauthConfigError("GOOGLE_ADS_CLIENT_ID / GOOGLE_ADS_CLIENT_SECRET are not configured on the backend.");
+  }
+  const response = await axios.post(GOOGLE_OAUTH_TOKEN_URL, {
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
+  });
+  const accessToken = response.data?.access_token;
+  if (!accessToken) throw new Error("Google token refresh returned no access token.");
+  return accessToken;
+}
+
+// Backs the account picker: every customer id (and manager account) the
+// login can see, then a light self-query per id for a display name/currency
+// so the checkbox list isn't just bare numbers. Best-effort per id - one
+// account the query fails for (e.g. no serving data yet) is dropped rather
+// than failing the whole list, since the id itself is still connectable.
+async function listAccessibleCustomers(refreshToken) {
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+  if (!developerToken) return { success: false, error: "GOOGLE_ADS_DEVELOPER_TOKEN is not configured on the backend." };
+
+  let accessToken;
+  try {
+    accessToken = await refreshAccessToken(refreshToken);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+
+  const headers = { Authorization: `Bearer ${accessToken}`, "developer-token": developerToken };
+
+  let resourceNames;
+  try {
+    const response = await axios.get(
+      `${GOOGLE_ADS_BASE_URL}/${GOOGLE_ADS_API_VERSION}/customers:listAccessibleCustomers`,
+      { headers, timeout: 15000 },
+    );
+    resourceNames = response.data?.resourceNames || [];
+  } catch (error) {
+    const message = error.response?.data?.error?.message || error.message || "Could not list Google Ads accounts";
+    return { success: false, error: message };
+  }
+
+  const ids = resourceNames.map((name) => normalizeCustomerId(name.split("/").pop())).filter(Boolean);
+  const query =
+    "SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager FROM customer LIMIT 1";
+
+  const accounts = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const response = await axios.post(
+          `${GOOGLE_ADS_BASE_URL}/${GOOGLE_ADS_API_VERSION}/customers/${id}/googleAds:search`,
+          { query },
+          { headers, timeout: 15000 },
+        );
+        const customer = response.data?.results?.[0]?.customer;
+        return {
+          id,
+          name: customer?.descriptiveName || id,
+          currency: customer?.currencyCode || null,
+          isManager: Boolean(customer?.manager),
+        };
+      } catch {
+        // Id is still valid/connectable - just show it without the extras.
+        return { id, name: id, currency: null, isManager: null };
+      }
+    }),
+  );
+
+  return { success: true, accounts };
+}
+
 // Step 1 of the picker: exchanges the code Google just redirected back with,
-// and parks the refresh token against the brand - never sent to the browser.
-// `prompt=consent` on the frontend's authorization URL guarantees Google
-// hands back a refresh token every time (without it, a brand re-authorizing
-// without first revoking access would get none).
+// lists the account(s) the resulting refresh token can see (so the frontend
+// can show a checkbox picker), and parks the token against the brand - never
+// sent to the browser. `prompt=consent` on the frontend's authorization URL
+// guarantees Google hands back a refresh token every time (without it, a
+// brand re-authorizing without first revoking access would get none).
 async function startOauth({ brandKey, code, redirectUri, updatedByEmail }) {
   const key = normalizeBrandKey(brandKey);
   if (!key) throw new Error("brandKey is required");
@@ -171,13 +283,22 @@ async function startOauth({ brandKey, code, redirectUri, updatedByEmail }) {
     { upsert: true, setDefaultsOnInsert: true },
   );
 
-  return { success: true };
+  // Best-effort: the refresh token is already safely parked above either
+  // way, so a listing failure (e.g. developer token not yet approved) just
+  // means the frontend falls back to letting the brand type a customer id,
+  // not a failed connect.
+  const listResult = await listAccessibleCustomers(tokens.refresh_token);
+  return {
+    success: true,
+    accounts: listResult.success ? listResult.accounts : [],
+    listError: listResult.success ? null : listResult.error,
+  };
 }
 
-// Step 2 of the picker: the brand has typed in which customer id to connect;
-// read back the refresh token parked by startOauth and persist the real
-// credential. The pending document is removed either way.
-async function finalizeOauth({ brandKey, customerId, loginCustomerId, updatedByEmail }) {
+// Step 2 of the picker: the brand has picked which customer id(s) to
+// connect; read back the refresh token parked by startOauth and persist the
+// real credential. The pending document is removed either way.
+async function finalizeOauth({ brandKey, customerIds, loginCustomerId, updatedByEmail }) {
   const key = normalizeBrandKey(brandKey);
   if (!key) throw new Error("brandKey is required");
 
@@ -192,7 +313,7 @@ async function finalizeOauth({ brandKey, customerId, loginCustomerId, updatedByE
   const refreshToken = decryptText(pending.refresh_token_encrypted);
   const result = await persistCredential({
     key,
-    customerId,
+    customerIds,
     loginCustomerId,
     token: refreshToken,
     updatedByEmail,

@@ -1534,12 +1534,13 @@ export async function getGoogleAdsStatus(args = {}) {
 }
 
 // brand_key goes in the query string (see connectMetaAds); the token goes in
-// the body only.
-export async function connectGoogleAds({ brand_key, customer_id, login_customer_id, token }) {
+// the body only. customer_ids is an array - one or more customer ids picked
+// (or typed, on the manual-paste fallback).
+export async function connectGoogleAds({ brand_key, customer_ids, login_customer_id, token }) {
   const brandKey = normalizeBrandKey(brand_key);
   return doPost(`/pnl/google-ads/connect${qs({ brand_key: brandKey })}`, {
     brand_key: brandKey,
-    customer_id,
+    customer_ids,
     login_customer_id: login_customer_id || null,
     token,
   });
@@ -1555,7 +1556,10 @@ export async function getGoogleOauthConfig(args = {}) {
 }
 
 // Exchanges the authorization code Google just redirected back with for a
-// refresh token, parked server-side against the brand. Returns { verified }.
+// refresh token, parked server-side against the brand. Returns
+// { verified, accounts, listError } - accounts is every customer id the
+// login can see (for the checkbox picker), empty if listing failed
+// (listError explains why; the brand can still type an id manually).
 export async function exchangeGoogleOauthCode({ brand_key, code, redirect_uri }) {
   const brandKey = normalizeBrandKey(brand_key);
   return doPost(`/pnl/google-ads/oauth/exchange${qs({ brand_key: brandKey })}`, {
@@ -1565,13 +1569,13 @@ export async function exchangeGoogleOauthCode({ brand_key, code, redirect_uri })
   });
 }
 
-// Final step: the brand picked which customer id to connect. Reads the
+// Final step: the brand picked which customer id(s) to connect. Reads the
 // refresh token parked by exchangeGoogleOauthCode and stores it for real.
-export async function connectGoogleOauth({ brand_key, customer_id, login_customer_id }) {
+export async function connectGoogleOauth({ brand_key, customer_ids, login_customer_id }) {
   const brandKey = normalizeBrandKey(brand_key);
   return doPost(`/pnl/google-ads/oauth/connect${qs({ brand_key: brandKey })}`, {
     brand_key: brandKey,
-    customer_id,
+    customer_ids,
     login_customer_id: login_customer_id || null,
   });
 }

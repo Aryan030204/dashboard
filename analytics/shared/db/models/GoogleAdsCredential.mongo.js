@@ -19,10 +19,16 @@ const googleAdsCredentialSchema = new mongoose.Schema(
   {
     brand: { type: mongoose.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     brand_id: { type: String, required: true, unique: true },
-    // Google Ads customer id spend is pulled for. Digits only, no dashes.
-    customer_id: { type: String, required: true },
-    // Optional manager (MCC) customer id when the account is reached through
-    // a manager account. Digits only.
+    // Google Ads customer id(s) spend is pulled for. Digits only, no dashes.
+    // A brand can authorize more than one ad account during "Connect with
+    // Google" (checkbox picker) or the manual paste fallback.
+    customer_ids: { type: [String], default: [] },
+    // Deprecated: kept as customer_ids[0] so the pipeline's P&L worker
+    // (workers/pnl_worker.py, still single-account) keeps working until it's
+    // updated to sync every id in customer_ids.
+    customer_id: { type: String, default: null },
+    // Optional manager (MCC) customer id when the account(s) are reached
+    // through a manager account. Digits only. Applies to every id above.
     login_customer_id: { type: String, default: null },
     token_encrypted: { type: String, required: true },
     // Last few characters of the token, so the dashboard can show which token

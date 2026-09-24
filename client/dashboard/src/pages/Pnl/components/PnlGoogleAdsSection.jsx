@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Box, Button, Card, Chip, CircularProgress, Stack, TextField, Typography } from "@mui/material";
 import dayjs from "dayjs";
+import SearchableSelect from "../../../components/ui/SearchableSelect.jsx";
 import {
   connectGoogleAds,
   connectGoogleOauth,
@@ -16,6 +17,22 @@ const OAUTH_STATE_KEY = "google_oauth_pending_state";
 function formatCustomerId(id) {
   const digits = String(id || "").replace(/\D/g, "");
   return digits.length === 10 ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}` : digits;
+}
+
+function describeAccount(account) {
+  const bits = [formatCustomerId(account.id)];
+  if (account.currency) bits.push(account.currency);
+  if (account.isManager) bits.push("Manager (MCC)");
+  return bits.join(" · ");
+}
+
+// Splits a manually typed fallback (accounts didn't list) into candidate
+// customer ids - commas, whitespace, or newlines.
+function splitTypedIds(raw) {
+  return String(raw || "")
+    .split(/[,\s]+/)
+    .map((part) => part.replace(/\D/g, ""))
+    .filter(Boolean);
 }
 
 function randomState() {
@@ -39,11 +56,15 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
 
   // Set once the OAuth code exchange has verified a refresh token for the
   // brand (parked server-side): the brand still needs to say which customer
-  // id it's for before anything is finalized.
+  // id(s) it's for before anything is finalized.
   const [pending, setPending] = useState(null); // { brandKey }
-  const [customerId, setCustomerId] = useState("");
+  const [accounts, setAccounts] = useState([]); // every account the login can see (checkbox picker)
+  const [accountsListError, setAccountsListError] = useState(""); // listing failed - fall back to typing
+  const [customerIds, setCustomerIds] = useState([]); // picked (or typed) ids to connect
+  const [typedCustomerIds, setTypedCustomerIds] = useState(""); // fallback free-text entry
   const [loginCustomerId, setLoginCustomerId] = useState("");
   const [manualToken, setManualToken] = useState("");
+  const [manualCustomerId, setManualCustomerId] = useState(""); // paste-a-refresh-token tab only
   const [saving, setSaving] = useState(false);
 
   const [disconnecting, setDisconnecting] = useState(false);
@@ -101,8 +122,12 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
           setConnectError(result.data?.error || "Failed to verify the Google login.");
           return;
         }
+        const listedAccounts = Array.isArray(result.data?.accounts) ? result.data.accounts : [];
         setPending({ brandKey: pendingBrand });
-        setCustomerId("");
+        setAccounts(listedAccounts);
+        setAccountsListError(listedAccounts.length === 0 ? result.data?.listError || "" : "");
+        setCustomerIds(listedAccounts.length === 1 ? [listedAccounts[0].id] : []);
+        setTypedCustomerIds("");
         setLoginCustomerId("");
       })
       .catch(() => {
@@ -144,42 +169,56 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
 
   const resetPending = () => {
     setPending(null);
-    setCustomerId("");
+    setAccounts([]);
+    setAccountsListError("");
+    setCustomerIds([]);
+    setTypedCustomerIds("");
     setLoginCustomerId("");
     setManualToken("");
+    setManualCustomerId("");
     setConnectError("");
   };
 
+  // Ids actually being submitted: the checkbox picker's selection, or the
+  // typed fallback when the account list couldn't be fetched.
+  const effectiveCustomerIds = accounts.length > 0 ? customerIds : splitTypedIds(typedCustomerIds);
+
   // Finishes the OAuth path: the refresh token is already parked server-side
-  // from the code exchange above, this just says which customer id it's for.
+  // from the code exchange above, this just says which customer id(s) it's for.
   const handleFinishOauthConnect = async () => {
-    if (!pending) return;
+    if (!pending || effectiveCustomerIds.length === 0) return;
     setSaving(true);
     setConnectError("");
     const result = await connectGoogleOauth({
       brand_key: pending.brandKey,
-      customer_id: customerId.trim(),
+      customer_ids: effectiveCustomerIds,
       login_customer_id: loginCustomerId.trim() || null,
     });
     setSaving(false);
     if (result.error) {
-      setConnectError(result.data?.error || "Failed to connect this customer id.");
+      setConnectError(result.data?.error || "Failed to connect these customer ids.");
       return;
     }
     resetPending();
     setStatus(result.data);
-    setConnectMessage("Google Ads account connected.");
+    setConnectMessage(
+      effectiveCustomerIds.length > 1
+        ? `${effectiveCustomerIds.length} Google Ads accounts connected.`
+        : "Google Ads account connected.",
+    );
     onConnectionChange?.();
   };
 
   // Fallback for a brand that already has a refresh token and pastes it
   // directly - same persistence as the OAuth path, minus the consent screen.
+  // No account listing here (nothing to exchange it against yet), so it
+  // stays a single typed customer id.
   const handleManualSave = async () => {
     setSaving(true);
     setConnectError("");
     const result = await connectGoogleAds({
       brand_key: brandKey,
-      customer_id: customerId.trim(),
+      customer_ids: [manualCustomerId.trim()],
       login_customer_id: loginCustomerId.trim() || null,
       token: manualToken.trim(),
     });
@@ -205,8 +244,13 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
   };
 
   const pickerForOtherBrand = pending && brandKey && pending.brandKey !== brandKey;
-  const canFinishOauth = customerId.replace(/\D/g, "").length === 10;
-  const canManualSave = customerId.replace(/\D/g, "").length === 10 && manualToken.trim().length > 0;
+  const canFinishOauth = effectiveCustomerIds.length > 0;
+  const canManualSave = manualCustomerId.replace(/\D/g, "").length === 10 && manualToken.trim().length > 0;
+  const accountOptions = accounts.map((account) => ({
+    id: account.id,
+    label: account.name,
+    detail: describeAccount(account),
+  }));
 
   return (
     <Card variant="outlined" sx={{ p: 2.5 }}>
@@ -240,7 +284,7 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
       ) : pending ? (
         <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
           <Typography variant="body2" color="text.secondary">
-            Google login verified. Enter this brand&apos;s Customer ID to finish connecting
+            Google login verified. Pick which of this brand&apos;s Google Ads account(s) to connect
             {pickerForOtherBrand ? ` for brand ${pending.brandKey}` : ""}.
           </Typography>
           {pickerForOtherBrand ? (
@@ -250,15 +294,36 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
             </Alert>
           ) : null}
           {connectError ? <Alert severity="error">{connectError}</Alert> : null}
-          <TextField
-            size="small"
-            label="Customer id"
-            placeholder="123-456-7890"
-            value={customerId}
-            onChange={(event) => setCustomerId(event.target.value)}
-            helperText="Shown at the top right of Google Ads. Dashes optional."
-            autoComplete="off"
-          />
+          {accounts.length > 0 ? (
+            <SearchableSelect
+              label="Ad accounts"
+              options={accountOptions}
+              value={customerIds}
+              onChange={setCustomerIds}
+              multiple
+              size="small"
+              sx={{ width: "100%" }}
+              selectSx={{ width: "100%" }}
+            />
+          ) : (
+            <>
+              {accountsListError ? (
+                <Alert severity="warning">
+                  Couldn&apos;t list your Google Ads accounts automatically ({accountsListError}). Type the
+                  customer id(s) below instead — separate multiple with a comma.
+                </Alert>
+              ) : null}
+              <TextField
+                size="small"
+                label="Customer id(s)"
+                placeholder="123-456-7890, 987-654-3210"
+                value={typedCustomerIds}
+                onChange={(event) => setTypedCustomerIds(event.target.value)}
+                helperText="Shown at the top right of Google Ads. Dashes optional, comma-separate for more than one."
+                autoComplete="off"
+              />
+            </>
+          )}
           <TextField
             size="small"
             label="Manager (MCC) customer id — optional"
@@ -285,10 +350,15 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
       ) : status?.connected ? (
         <Stack spacing={1}>
           {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
-          <Typography variant="body2">
-            Customer <strong>{formatCustomerId(status.customerId)}</strong>
-            {status.loginCustomerId ? ` · via manager ${formatCustomerId(status.loginCustomerId)}` : ""}
-            {status.tokenSuffix ? ` · token ${status.tokenSuffix}` : ""}
+          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+            {(status.customerIds?.length ? status.customerIds : [status.customerId]).filter(Boolean).map((id) => (
+              <Chip key={id} label={formatCustomerId(id)} size="small" variant="outlined" />
+            ))}
+          </Stack>
+          <Typography variant="body2" color="text.secondary">
+            {status.loginCustomerId ? `Via manager ${formatCustomerId(status.loginCustomerId)}` : ""}
+            {status.loginCustomerId && status.tokenSuffix ? " · " : ""}
+            {status.tokenSuffix ? `Token ${status.tokenSuffix}` : ""}
           </Typography>
           {status.capturedAt ? (
             <Typography variant="caption" color="text.secondary">
@@ -359,8 +429,8 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
                   size="small"
                   label="Customer id"
                   placeholder="123-456-7890"
-                  value={customerId}
-                  onChange={(event) => setCustomerId(event.target.value)}
+                  value={manualCustomerId}
+                  onChange={(event) => setManualCustomerId(event.target.value)}
                   helperText="Shown at the top right of Google Ads. Dashes optional."
                   autoComplete="off"
                 />
