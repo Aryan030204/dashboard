@@ -1459,6 +1459,10 @@ export async function getPnlSummary(args = {}) {
     filters: json?.filters || {},
     metaAdSpend: json?.metaAdSpend || null,
     googleAdSpend: json?.googleAdSpend || null,
+    // { days, expectedDays, previousDays } - how many dates in the range the
+    // worker has actually built rows for, so the page can tell "nothing was
+    // earned" apart from "nothing has been synced yet".
+    coverage: json?.coverage || null,
     error: json?.__error,
   };
 }

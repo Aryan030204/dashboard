@@ -3,6 +3,7 @@ const { encryptText, decryptText } = require("../shared/utils/crypto");
 const GoogleAdsCredential = require("../shared/db/models/GoogleAdsCredential.mongo");
 const GoogleOauthPending = require("../shared/db/models/GoogleOauthPending.mongo");
 const { resolveBrandRef } = require("../shared/db/models/Tenant.mongo");
+const { triggerPnlBackfill } = require("../shared/utils/pipelineClient");
 
 // Google Ads connector for the P&L page. Two ways in, one storage shape:
 //   - OAuth ("Connect with Google"): startOauth exchanges the authorization
@@ -123,7 +124,13 @@ async function persistCredential({ key, customerIds, loginCustomerId, token, upd
     { upsert: true, new: true, setDefaultsOnInsert: true },
   ).lean();
 
-  return { success: true, status: toStatusShape(row) };
+  // Pull the last 30 days of Google spend into the P&L worker now instead of
+  // waiting for its nightly schedule to notice the new credentials. Awaited
+  // only so the connect response can tell the brand a rebuild is running -
+  // it never throws, so it still can't fail the connect itself.
+  const sync = await triggerPnlBackfill(key);
+
+  return { success: true, status: { ...toStatusShape(row), sync } };
 }
 
 // Validates and stores a refresh token the brand pasted directly. Fallback

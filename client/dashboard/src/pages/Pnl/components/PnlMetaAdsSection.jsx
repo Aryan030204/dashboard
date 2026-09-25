@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import dayjs from "dayjs";
 import SearchableSelect from "../../../components/ui/SearchableSelect.jsx";
+import { syncNotice } from "../pnlFormat.js";
 import {
   connectMetaAds,
   connectMetaOauth,
@@ -244,7 +245,11 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     }
     resetPending();
     setStatus(result.data);
-    setConnectMessage("Meta ad account(s) connected with a System User token.");
+    setConnectMessage(
+      ["Meta ad account(s) connected with a System User token.", syncNotice(result.data?.sync)]
+        .filter(Boolean)
+        .join(" "),
+    );
     onConnectionChange?.();
   };
 
@@ -265,7 +270,11 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     }
     resetPending();
     setStatus(result.data);
-    setConnectMessage("Meta ad account(s) connected via Continue with Meta (System-business token).");
+    setConnectMessage(
+      ["Meta ad account(s) connected via Continue with Meta (System-business token).", syncNotice(result.data?.sync)]
+        .filter(Boolean)
+        .join(" "),
+    );
     onConnectionChange?.();
   };
 

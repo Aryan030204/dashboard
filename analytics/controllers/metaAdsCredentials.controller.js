@@ -39,7 +39,7 @@ const metaAdsCredentialsController = {
       }
 
       const status = await metaAdsCredentialsService.getStatus(req.brandKey);
-      return res.json(status);
+      return res.json({ ...status, sync: result.sync });
     } catch (error) {
       return handleControllerError(res, error, "meta-ads-connect failed");
     }
@@ -149,7 +149,7 @@ const metaAdsCredentialsController = {
         return res.status(400).json({ error: result.error });
       }
       const status = await metaAdsCredentialsService.getStatus(req.brandKey);
-      return res.json(status);
+      return res.json({ ...status, sync: result.sync });
     } catch (error) {
       return handleControllerError(res, error, "meta-ads-oauth-connect failed");
     }

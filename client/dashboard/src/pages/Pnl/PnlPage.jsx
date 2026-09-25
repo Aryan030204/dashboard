@@ -61,6 +61,20 @@ export default function PnlPage({ brandKey }) {
     setRangeEnd(nextEnd);
   };
 
+  // The worker rebuilds overall_pnl one row per date and only through
+  // yesterday, so a range it hasn't reached yet comes back with every line as
+  // "-" while the previous period still has figures. Without this the table
+  // reads as though the brand earned nothing, so name the gap instead.
+  const coverage = summary?.coverage;
+  const coverageNote =
+    coverage && coverage.days === 0
+      ? `No P&L data has been built for ${summary.start} – ${summary.end} yet, so every line shows "-". ` +
+        (coverage.previousDays > 0
+          ? "The previous period's figures below are unaffected. "
+          : "") +
+        "Connect or reconnect an ad account to rebuild the last 30 days, or wait for tonight's run."
+      : "";
+
   const adSpendNotes = [
     ["Meta", summary?.metaAdSpend],
     ["Google", summary?.googleAdSpend],
@@ -98,6 +112,7 @@ export default function PnlPage({ brandKey }) {
       </Stack>
 
       {error ? <Alert severity="error">{error}</Alert> : null}
+      {!loading && coverageNote ? <Alert severity="info">{coverageNote}</Alert> : null}
       {!loading
         ? adSpendNotes.map((note) => (
             <Alert key={note} severity="warning">

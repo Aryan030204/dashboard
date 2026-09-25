@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Box, Button, Card, Chip, CircularProgress, Stack, TextField, Typography } from "@mui/material";
 import dayjs from "dayjs";
 import SearchableSelect from "../../../components/ui/SearchableSelect.jsx";
+import { syncNotice } from "../pnlFormat.js";
 import {
   connectGoogleAds,
   connectGoogleOauth,
@@ -201,11 +202,11 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
     }
     resetPending();
     setStatus(result.data);
-    setConnectMessage(
+    const connected =
       effectiveCustomerIds.length > 1
         ? `${effectiveCustomerIds.length} Google Ads accounts connected.`
-        : "Google Ads account connected.",
-    );
+        : "Google Ads account connected.";
+    setConnectMessage([connected, syncNotice(result.data?.sync)].filter(Boolean).join(" "));
     onConnectionChange?.();
   };
 
@@ -229,7 +230,9 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
     }
     resetPending();
     setStatus(result.data);
-    setConnectMessage("Google Ads token saved. Spend shows once the next sync has run.");
+    setConnectMessage(
+      ["Google Ads token saved.", syncNotice(result.data?.sync) || "Spend shows once the next sync has run."].join(" "),
+    );
     onConnectionChange?.();
   };
 

@@ -46,6 +46,16 @@ export function formatAmountOrMissing(formatAmount, value) {
   return isMissingValue(value) ? MISSING : formatAmount(value);
 }
 
+// Connecting an ad account kicks the P&L worker off for the brand's last 30
+// days (see analytics' pipelineClient). The rebuild runs well after the
+// response comes back, so the figures on screen are still the pre-connect
+// ones until it lands — say so instead of leaving the brand staring at a
+// table that hasn't moved. `sync` is absent on older backends.
+export function syncNotice(sync) {
+  if (!sync?.syncing) return "";
+  return "Spend sync in progress — reload the page in a few minutes to see the updated figures.";
+}
+
 export const SECTION_LABELS = {
   revenue: "Revenue",
   grossMargin: "Gross Margin",

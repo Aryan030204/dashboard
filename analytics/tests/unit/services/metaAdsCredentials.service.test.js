@@ -50,7 +50,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
       updatedByEmail: "a@b.c",
     });
 
-    expect(result).toEqual({ success: true });
+    expect(result).toMatchObject({ success: true });
     expect(axios.get.mock.calls[0][0]).toContain("/act_1");
     const [filter, update, options] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ brand_id: "BBB" });
@@ -80,7 +80,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
       tokenType: "system_user",
     });
 
-    expect(result).toEqual({ success: true });
+    expect(result).toMatchObject({ success: true });
     expect(axios.get).toHaveBeenCalledTimes(2);
     const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
     expect(update.$set.ad_account_ids).toEqual(["act_1", "act_2"]);
@@ -108,7 +108,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
       accessToken: "EAAB-token",
     });
 
-    expect(result).toEqual({ success: true });
+    expect(result).toMatchObject({ success: true });
     expect(axios.get).toHaveBeenCalledTimes(2);
     const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
     expect(update.$set.token_type).toBe("user");
@@ -129,7 +129,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
       tokenType: "system_user",
     });
 
-    expect(result).toEqual({ success: true });
+    expect(result).toMatchObject({ success: true });
     // Only verifyToken's call — the exchange endpoint is never hit for system_user.
     expect(axios.get).toHaveBeenCalledTimes(1);
     const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
@@ -325,7 +325,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
         updatedByEmail: "a@b.c",
       });
 
-      expect(result).toEqual({ success: true });
+      expect(result).toMatchObject({ success: true });
       const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
       expect(update.$set.access_token_encrypted).toBe("enc(SYSTEM-BUSINESS-TOKEN)");
       expect(update.$set.token_type).toBe("system_user");
@@ -346,7 +346,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
 
       const result = await service.finalizeOauth({ brandKey: "BBB", adAccountIds: ["act_1", "act_2"] });
 
-      expect(result).toEqual({ success: true });
+      expect(result).toMatchObject({ success: true });
       const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
       expect(update.$set.ad_account_ids).toEqual(["act_1", "act_2"]);
       expect(update.$set.ad_account_id).toBe("act_1");

@@ -3,6 +3,7 @@ const { encryptText, decryptText } = require("../shared/utils/crypto");
 const MetaAdsCredential = require("../shared/db/models/MetaAdsCredential.mongo");
 const MetaOauthPending = require("../shared/db/models/MetaOauthPending.mongo");
 const { resolveBrandRef } = require("../shared/db/models/Tenant.mongo");
+const { triggerPnlBackfill } = require("../shared/utils/pipelineClient");
 
 // Credentials live in Mongo (meta_ads_credentials, one document per brand),
 // alongside the Google Ads ones and the brand's total_config, so the
@@ -185,7 +186,13 @@ async function saveCredentials({ brandKey, adAccountIds, accessToken, updatedByE
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 
-  return { success: true };
+  // Pull the last 30 days of Meta spend into the P&L worker now instead of
+  // waiting for its nightly schedule to notice the new credentials. Awaited
+  // only so the connect response can tell the brand a rebuild is running -
+  // it never throws, so it still can't fail the connect itself.
+  const sync = await triggerPnlBackfill(key);
+
+  return { success: true, sync };
 }
 
 function toAdAccountIds(row) {
