@@ -6,15 +6,12 @@ import {
   Card,
   Chip,
   CircularProgress,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import dayjs from "dayjs";
+import SearchableSelect from "../../../components/ui/SearchableSelect.jsx";
 import {
   connectMetaAds,
   connectMetaOauth,
@@ -62,7 +59,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
   // token lives only in memory — a refresh mid-pick means starting over.
   const [pending, setPending] = useState(null); // { brandKey, accessToken, tokenType, viaOauth }
   const [adAccounts, setAdAccounts] = useState([]);
-  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [selectedAccountIds, setSelectedAccountIds] = useState([]);
   const [saving, setSaving] = useState(false);
 
   // Manual System User token paste path: verify the token by listing the ad
@@ -72,7 +69,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
   const startWithToken = (forBrandKey, accessToken) => {
     setPending({ brandKey: forBrandKey, accessToken, tokenType: "system_user", viaOauth: false });
     setAdAccounts([]);
-    setSelectedAccountId("");
+    setSelectedAccountIds([]);
     setConnecting(true);
     setConnectError("");
     setConnectMessage("");
@@ -92,7 +89,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
           return;
         }
         setAdAccounts(accounts);
-        setSelectedAccountId(accounts.length === 1 ? accounts[0].id : "");
+        setSelectedAccountIds(accounts.length === 1 ? [accounts[0].id] : []);
       })
       .catch(() => {
         setConnecting(false);
@@ -168,7 +165,7 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
         const accounts = Array.isArray(result.data?.accounts) ? result.data.accounts : [];
         setPending({ brandKey: pendingBrand, viaOauth: true });
         setAdAccounts(accounts);
-        setSelectedAccountId(accounts.length === 1 ? accounts[0].id : "");
+        setSelectedAccountIds(accounts.length === 1 ? [accounts[0].id] : []);
       })
       .catch(() => {
         setConnecting(false);
@@ -223,52 +220,52 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
   const resetPending = () => {
     setPending(null);
     setAdAccounts([]);
-    setSelectedAccountId("");
+    setSelectedAccountIds([]);
     setManualToken("");
   };
 
-  // Manual System User token path: posts the picked account + token to the
-  // real connect endpoint, which verifies the pair against Graph and stores
-  // it encrypted in meta_ads_credentials.
+  // Manual System User token path: posts the picked account(s) + token to
+  // the real connect endpoint, which verifies each pair against Graph and
+  // stores them encrypted in meta_ads_credentials.
   const handleSaveAccount = async () => {
-    if (!pending || !selectedAccountId) return;
+    if (!pending || selectedAccountIds.length === 0) return;
     setSaving(true);
     setConnectError("");
     const result = await connectMetaAds({
       brand_key: pending.brandKey,
-      ad_account_id: selectedAccountId,
+      ad_account_ids: selectedAccountIds,
       access_token: pending.accessToken,
       token_type: pending.tokenType,
     });
     setSaving(false);
     if (result.error) {
-      setConnectError(result.data?.error || "Failed to connect the ad account.");
+      setConnectError(result.data?.error || "Failed to connect the ad account(s).");
       return;
     }
     resetPending();
     setStatus(result.data);
-    setConnectMessage("Meta ad account connected with a System User token.");
+    setConnectMessage("Meta ad account(s) connected with a System User token.");
     onConnectionChange?.();
   };
 
   // "Continue with Meta" path: the token is already parked server-side from
-  // the code exchange, this just says which ad account to connect.
+  // the code exchange, this just says which ad account(s) to connect.
   const handleFinishOauthConnect = async () => {
-    if (!pending || !selectedAccountId) return;
+    if (!pending || selectedAccountIds.length === 0) return;
     setSaving(true);
     setConnectError("");
     const result = await connectMetaOauth({
       brand_key: pending.brandKey,
-      ad_account_id: selectedAccountId,
+      ad_account_ids: selectedAccountIds,
     });
     setSaving(false);
     if (result.error) {
-      setConnectError(result.data?.error || "Failed to connect the ad account.");
+      setConnectError(result.data?.error || "Failed to connect the ad account(s).");
       return;
     }
     resetPending();
     setStatus(result.data);
-    setConnectMessage("Meta ad account connected via Continue with Meta (System-business token).");
+    setConnectMessage("Meta ad account(s) connected via Continue with Meta (System-business token).");
     onConnectionChange?.();
   };
 
@@ -282,6 +279,11 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
   };
 
   const pickerForOtherBrand = pending && brandKey && pending.brandKey !== brandKey;
+  const adAccountOptions = adAccounts.map((account) => ({
+    id: account.id,
+    label: account.name,
+    detail: describeAccount(account),
+  }));
 
   return (
     <Card variant="outlined" sx={{ p: 2.5 }}>
@@ -315,8 +317,8 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
       ) : pending ? (
         <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
           <Typography variant="body2" color="text.secondary">
-            {pending.viaOauth ? "Continue with Meta succeeded." : "Token verified."} Pick the ad account to
-            connect
+            {pending.viaOauth ? "Continue with Meta succeeded." : "Token verified."} Pick which of this
+            brand&apos;s ad account(s) to connect
             {pickerForOtherBrand ? ` for brand ${pending.brandKey}` : ""}.
           </Typography>
           {pickerForOtherBrand ? (
@@ -332,35 +334,25 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
               <Typography variant="body2">Loading your ad accounts…</Typography>
             </Stack>
           ) : (
-            <FormControl size="small" fullWidth>
-              <InputLabel id="meta-ad-account-label">Ad account</InputLabel>
-              <Select
-                labelId="meta-ad-account-label"
-                label="Ad account"
-                value={selectedAccountId}
-                onChange={(event) => setSelectedAccountId(event.target.value)}
-              >
-                {adAccounts.map((account) => (
-                  <MenuItem key={account.id} value={account.id}>
-                    <Stack spacing={0}>
-                      <Typography variant="body2">{account.name}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {describeAccount(account)}
-                      </Typography>
-                    </Stack>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <SearchableSelect
+              label="Ad accounts"
+              options={adAccountOptions}
+              value={selectedAccountIds}
+              onChange={setSelectedAccountIds}
+              multiple
+              size="small"
+              sx={{ width: "100%" }}
+              selectSx={{ width: "100%" }}
+            />
           )}
           <Stack direction="row" spacing={1}>
             <Button
               variant="contained"
               size="small"
               onClick={pending.viaOauth ? handleFinishOauthConnect : handleSaveAccount}
-              disabled={saving || connecting || !selectedAccountId}
+              disabled={saving || connecting || selectedAccountIds.length === 0}
             >
-              {saving ? "Connecting…" : "Connect this account"}
+              {saving ? "Connecting…" : "Connect these accounts"}
             </Button>
             <Button size="small" onClick={resetPending} disabled={saving}>
               Cancel
@@ -371,7 +363,8 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
         <Stack spacing={1}>
           {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
           <Typography variant="body2">
-            Ad account <strong>{status.adAccountId}</strong>
+            Ad account{status.adAccountIds?.length > 1 ? "s" : ""}{" "}
+            <strong>{(status.adAccountIds?.length ? status.adAccountIds : [status.adAccountId]).join(", ")}</strong>
           </Typography>
           {status.lastVerifiedAt ? (
             <Typography variant="caption" color="text.secondary">

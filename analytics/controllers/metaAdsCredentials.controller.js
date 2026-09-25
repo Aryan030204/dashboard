@@ -13,7 +13,13 @@ const metaAdsCredentialsController = {
 
   async connect(req, res) {
     try {
-      const adAccountId = req.body?.ad_account_id ? String(req.body.ad_account_id).trim() : "";
+      // ad_account_ids (array, checkbox picker) with ad_account_id (legacy
+      // single field) accepted as a one-element fallback.
+      const adAccountIds = Array.isArray(req.body?.ad_account_ids)
+        ? req.body.ad_account_ids
+        : req.body?.ad_account_id
+          ? [req.body.ad_account_id]
+          : [];
       const accessToken = req.body?.access_token ? String(req.body.access_token).trim() : "";
       const rawTokenType = req.body?.token_type ? String(req.body.token_type).trim() : "user";
       if (rawTokenType !== "user" && rawTokenType !== "system_user") {
@@ -22,7 +28,7 @@ const metaAdsCredentialsController = {
 
       const result = await metaAdsCredentialsService.saveCredentials({
         brandKey: req.brandKey,
-        adAccountId,
+        adAccountIds,
         accessToken,
         tokenType: rawTokenType,
         updatedByEmail: req.user?.email || null,
@@ -122,17 +128,21 @@ const metaAdsCredentialsController = {
     }
   },
 
-  // Third leg: the brand picked which ad account to connect. Reads the token
-  // parked by oauthExchange and stores the real credential.
+  // Third leg: the brand picked which ad account(s) to connect. Reads the
+  // token parked by oauthExchange and stores the real credential.
   async oauthConnect(req, res) {
     try {
-      const adAccountId = req.body?.ad_account_id ? String(req.body.ad_account_id).trim() : "";
-      if (!adAccountId) {
-        return res.status(400).json({ error: "ad_account_id is required" });
+      const adAccountIds = Array.isArray(req.body?.ad_account_ids)
+        ? req.body.ad_account_ids
+        : req.body?.ad_account_id
+          ? [req.body.ad_account_id]
+          : [];
+      if (adAccountIds.length === 0) {
+        return res.status(400).json({ error: "ad_account_ids is required" });
       }
       const result = await metaAdsCredentialsService.finalizeOauth({
         brandKey: req.brandKey,
-        adAccountId,
+        adAccountIds,
         updatedByEmail: req.user?.email || null,
       });
       if (!result.success) {

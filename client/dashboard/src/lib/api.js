@@ -1470,11 +1470,11 @@ export async function getMetaAdsStatus(args = {}) {
 // brand_key goes in the query string on every write below (not just the JSON
 // body): the gateway resolves brand context from query args/headers only, so
 // a body-only brand_key silently falls back to the caller's primary brand.
-export async function connectMetaAds({ brand_key, ad_account_id, access_token, token_type }) {
+export async function connectMetaAds({ brand_key, ad_account_ids, access_token, token_type }) {
   const brandKey = normalizeBrandKey(brand_key);
   return doPost(`/pnl/meta-ads/connect${qs({ brand_key: brandKey })}`, {
     brand_key: brandKey,
-    ad_account_id,
+    ad_account_ids,
     access_token,
     token_type: token_type || "user",
   });
@@ -1514,11 +1514,11 @@ export async function exchangeMetaOauthCode({ brand_key, code, redirect_uri }) {
 
 // Final step of "Continue with Meta": the brand picked which ad account to
 // connect. Reads the token parked by exchangeMetaOauthCode and stores it.
-export async function connectMetaOauth({ brand_key, ad_account_id }) {
+export async function connectMetaOauth({ brand_key, ad_account_ids }) {
   const brandKey = normalizeBrandKey(brand_key);
   return doPost(`/pnl/meta-ads/oauth/connect${qs({ brand_key: brandKey })}`, {
     brand_key: brandKey,
-    ad_account_id,
+    ad_account_ids,
   });
 }
 

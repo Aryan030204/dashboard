@@ -15,6 +15,13 @@ const metaAdsCredentialSchema = new mongoose.Schema(
   {
     brand: { type: mongoose.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     brand_id: { type: String, required: true, unique: true },
+    // Ad account id(s) (act_<id>) this token is used for. A brand can grant
+    // more than one during "Continue with Meta" or the manual paste fallback
+    // (checkbox picker) - same shape as GoogleAdsCredential.customer_ids.
+    ad_account_ids: { type: [String], default: [] },
+    // Deprecated: kept as ad_account_ids[0] so the pipeline's P&L worker
+    // (workers/pnl_worker.py, still single-account) keeps working until it's
+    // updated to sync every id in ad_account_ids.
     ad_account_id: { type: String, required: true }, // act_<id>
     access_token_encrypted: { type: String, required: true },
     // "system_user" tokens never go through the fb_exchange_token dance in

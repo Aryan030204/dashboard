@@ -21,6 +21,26 @@ function normalizeAdAccountId(rawId) {
   return id.startsWith("act_") ? id : `act_${id}`;
 }
 
+// Dedupes and normalizes a list of raw ad account ids (checkbox picker sends
+// an array; the manual-paste fallback used to send one). Blanks dropped,
+// order preserved - mirrors normalizeCustomerIds in
+// googleAdsCredentials.service.js.
+function normalizeAdAccountIds(rawList) {
+  const list = Array.isArray(rawList) ? rawList : rawList ? [rawList] : [];
+  const seen = new Set();
+  const ids = [];
+  for (const raw of list) {
+    const trimmed = String(raw || "").trim();
+    if (!trimmed) continue;
+    const id = normalizeAdAccountId(trimmed);
+    if (!seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
 // Verifies an ad account id + token pair actually works before we save it,
 // so a brand gets immediate feedback instead of a silent failure later on
 // the P&L page.
@@ -117,18 +137,22 @@ function normalizeTokenType(rawType) {
   return rawType === "system_user" ? "system_user" : "user";
 }
 
-async function saveCredentials({ brandKey, adAccountId, accessToken, updatedByEmail, tokenType }) {
+async function saveCredentials({ brandKey, adAccountIds, accessToken, updatedByEmail, tokenType }) {
   const key = normalizeBrandKey(brandKey);
   if (!key) throw new Error("brandKey is required");
-  if (!adAccountId || !accessToken) {
-    return { success: false, error: "Ad account ID and access token are both required." };
+  const ids = normalizeAdAccountIds(adAccountIds);
+  if (ids.length === 0 || !accessToken) {
+    return { success: false, error: "At least one ad account ID and an access token are both required." };
   }
 
   const normalizedTokenType = normalizeTokenType(tokenType);
 
-  const verification = await verifyToken(adAccountId, accessToken);
-  if (!verification.valid) {
-    return { success: false, error: `Meta rejected these credentials: ${verification.error}` };
+  for (const id of ids) {
+    // eslint-disable-next-line no-await-in-loop -- small list, sequential is fine
+    const verification = await verifyToken(id, accessToken);
+    if (!verification.valid) {
+      return { success: false, error: `Meta rejected these credentials for ${id}: ${verification.error}` };
+    }
   }
 
   // System User tokens are generated directly in Business Settings and are
@@ -146,7 +170,10 @@ async function saveCredentials({ brandKey, adAccountId, accessToken, updatedByEm
       $set: {
         brand: await resolveBrandRef(key),
         brand_id: key,
-        ad_account_id: normalizeAdAccountId(adAccountId),
+        ad_account_ids: ids,
+        // Deprecated single field, kept for the pipeline's current
+        // single-account sync - see the schema comment.
+        ad_account_id: ids[0],
         access_token_encrypted: encryptText(exchanged.accessToken),
         token_type: normalizedTokenType,
         token_expires_at: exchanged.expiresAt,
@@ -161,13 +188,23 @@ async function saveCredentials({ brandKey, adAccountId, accessToken, updatedByEm
   return { success: true };
 }
 
+function toAdAccountIds(row) {
+  return Array.isArray(row.ad_account_ids) && row.ad_account_ids.length
+    ? row.ad_account_ids
+    : row.ad_account_id
+      ? [row.ad_account_id]
+      : [];
+}
+
 async function getCredentials(brandKey) {
   const key = normalizeBrandKey(brandKey);
   if (!key) return null;
   const row = await MetaAdsCredential.findOne({ brand_id: key }).lean();
   if (!row) return null;
+  const adAccountIds = toAdAccountIds(row);
   return {
-    adAccountId: row.ad_account_id,
+    adAccountIds,
+    adAccountId: adAccountIds[0] || null,
     accessToken: decryptText(row.access_token_encrypted),
     expiresAt: row.token_expires_at,
   };
@@ -178,9 +215,11 @@ async function getStatus(brandKey) {
   if (!key) return { connected: false };
   const row = await MetaAdsCredential.findOne({ brand_id: key }).lean();
   if (!row) return { connected: false };
+  const adAccountIds = toAdAccountIds(row);
   return {
     connected: true,
-    adAccountId: row.ad_account_id,
+    adAccountIds,
+    adAccountId: adAccountIds[0] || null, // back-compat for older frontend builds
     tokenType: row.token_type || "user",
     expiresAt: row.token_expires_at || null,
     lastVerifiedAt: row.last_verified_at || null,
@@ -293,17 +332,18 @@ async function startOauth({ brandKey, code, redirectUri, updatedByEmail }) {
   return { success: true, accounts: listResult.accounts };
 }
 
-// Step 2 of the picker: the brand has picked which ad account to connect;
+// Step 2 of the picker: the brand has picked which ad account(s) to connect;
 // read back the token parked by startOauth and persist the real credential
 // the same way saveCredentials does for a pasted System User token - a
 // "Continue with Meta" login scoped to a Facebook Login for Business
 // configuration hands back the same kind of non-expiring System-business
 // token, so it's stored the same way (token_type "system_user", no exchange).
 // The pending document is removed either way.
-async function finalizeOauth({ brandKey, adAccountId, updatedByEmail }) {
+async function finalizeOauth({ brandKey, adAccountIds, updatedByEmail }) {
   const key = normalizeBrandKey(brandKey);
   if (!key) throw new Error("brandKey is required");
-  if (!adAccountId) return { success: false, error: "ad_account_id is required." };
+  const ids = normalizeAdAccountIds(adAccountIds);
+  if (ids.length === 0) return { success: false, error: "ad_account_ids is required." };
 
   const pending = await MetaOauthPending.findOne({ brand_id: key }).lean();
   if (!pending) {
@@ -316,7 +356,7 @@ async function finalizeOauth({ brandKey, adAccountId, updatedByEmail }) {
   const accessToken = decryptText(pending.access_token_encrypted);
   const result = await saveCredentials({
     brandKey: key,
-    adAccountId,
+    adAccountIds: ids,
     accessToken,
     tokenType: "system_user",
     updatedByEmail,

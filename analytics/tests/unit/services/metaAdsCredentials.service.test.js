@@ -45,7 +45,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
 
     const result = await service.saveCredentials({
       brandKey: "bbb",
-      adAccountId: "1",
+      adAccountIds: ["1"],
       accessToken: "EAAB-token",
       updatedByEmail: "a@b.c",
     });
@@ -57,6 +57,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
     expect(update.$set).toMatchObject({
       brand: "tenant-oid",
       brand_id: "BBB",
+      ad_account_ids: ["act_1"],
       ad_account_id: "act_1",
       access_token_encrypted: "enc(EAAB-token)",
       last_error: null,
@@ -64,6 +65,33 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
     });
     expect(update.$set).not.toHaveProperty("access_token");
     expect(options).toMatchObject({ upsert: true });
+  });
+
+  test("saveCredentials accepts multiple ad account ids, verifying and storing each", async () => {
+    axios.get
+      .mockResolvedValueOnce({ data: { id: "act_1", name: "Brand 1" } })
+      .mockResolvedValueOnce({ data: { id: "act_2", name: "Brand 2" } });
+    MetaAdsCredential.findOneAndUpdate.mockResolvedValue({});
+
+    const result = await service.saveCredentials({
+      brandKey: "bbb",
+      adAccountIds: ["1", "act_2", "1"],
+      accessToken: "EAAB-token",
+      tokenType: "system_user",
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(axios.get).toHaveBeenCalledTimes(2);
+    const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
+    expect(update.$set.ad_account_ids).toEqual(["act_1", "act_2"]);
+    expect(update.$set.ad_account_id).toBe("act_1");
+  });
+
+  test("saveCredentials refuses when no ad account ids are given", async () => {
+    const result = await service.saveCredentials({ brandKey: "BBB", adAccountIds: [], accessToken: "x" });
+    expect(result.success).toBe(false);
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(MetaAdsCredential.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   test("saveCredentials defaults to token_type 'user' and exchanges via META_APP_ID/SECRET when configured", async () => {
@@ -76,7 +104,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
 
     const result = await service.saveCredentials({
       brandKey: "bbb",
-      adAccountId: "1",
+      adAccountIds: ["1"],
       accessToken: "EAAB-token",
     });
 
@@ -96,7 +124,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
 
     const result = await service.saveCredentials({
       brandKey: "bbb",
-      adAccountId: "1",
+      adAccountIds: ["1"],
       accessToken: "SYSTEM-USER-TOKEN",
       tokenType: "system_user",
     });
@@ -116,7 +144,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
 
     await service.saveCredentials({
       brandKey: "bbb",
-      adAccountId: "1",
+      adAccountIds: ["1"],
       accessToken: "tok",
       tokenType: "not-a-real-type",
     });
@@ -127,7 +155,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
 
   test("saveCredentials refuses a token Meta rejects and writes nothing", async () => {
     axios.get.mockRejectedValue({ response: { data: { error: { message: "Invalid OAuth access token." } } } });
-    const result = await service.saveCredentials({ brandKey: "BBB", adAccountId: "1", accessToken: "bad" });
+    const result = await service.saveCredentials({ brandKey: "BBB", adAccountIds: ["1"], accessToken: "bad" });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Invalid OAuth access token.");
     expect(MetaAdsCredential.findOneAndUpdate).not.toHaveBeenCalled();
@@ -148,8 +176,26 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
     );
     const status = await service.getStatus("bbb");
     expect(MetaAdsCredential.findOne).toHaveBeenCalledWith({ brand_id: "BBB" });
-    expect(status).toMatchObject({ connected: true, adAccountId: "act_1", lastError: "Meta insights: token expired" });
+    expect(status).toMatchObject({
+      connected: true,
+      adAccountId: "act_1",
+      adAccountIds: ["act_1"],
+      lastError: "Meta insights: token expired",
+    });
     expect(JSON.stringify(status)).not.toContain("secret");
+  });
+
+  test("getStatus surfaces every ad_account_ids entry for a multi-account document", async () => {
+    MetaAdsCredential.findOne.mockReturnValue(
+      lean({
+        brand_id: "BBB",
+        ad_account_ids: ["act_1", "act_2"],
+        ad_account_id: "act_1",
+        access_token_encrypted: "enc(secret)",
+      }),
+    );
+    const status = await service.getStatus("BBB");
+    expect(status).toMatchObject({ adAccountIds: ["act_1", "act_2"], adAccountId: "act_1" });
   });
 
   test("getStatus surfaces token_type, defaulting to 'user' for older documents without it", async () => {
@@ -178,7 +224,12 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
     MetaAdsCredential.findOne.mockReturnValue(
       lean({ ad_account_id: "act_1", access_token_encrypted: "enc(secret)", token_expires_at: null }),
     );
-    expect(await service.getCredentials("BBB")).toEqual({ adAccountId: "act_1", accessToken: "secret", expiresAt: null });
+    expect(await service.getCredentials("BBB")).toEqual({
+      adAccountIds: ["act_1"],
+      adAccountId: "act_1",
+      accessToken: "secret",
+      expiresAt: null,
+    });
   });
 
   test("recordError and deleteCredentials address the brand's document", async () => {
@@ -270,7 +321,7 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
 
       const result = await service.finalizeOauth({
         brandKey: "bbb",
-        adAccountId: "act_1",
+        adAccountIds: ["act_1"],
         updatedByEmail: "a@b.c",
       });
 
@@ -279,21 +330,40 @@ describe("metaAdsCredentials.service storage (Mongo, one document per brand)", (
       expect(update.$set.access_token_encrypted).toBe("enc(SYSTEM-BUSINESS-TOKEN)");
       expect(update.$set.token_type).toBe("system_user");
       expect(update.$set.token_expires_at).toBeNull();
+      expect(update.$set.ad_account_ids).toEqual(["act_1"]);
       expect(MetaOauthPending.deleteOne).toHaveBeenCalledWith({ brand_id: "BBB" });
+    });
+
+    test("finalizeOauth accepts multiple ad account ids", async () => {
+      MetaOauthPending.findOne.mockReturnValue(
+        lean({ brand_id: "BBB", access_token_encrypted: "enc(SYSTEM-BUSINESS-TOKEN)" }),
+      );
+      axios.get
+        .mockResolvedValueOnce({ data: { id: "act_1", name: "Brand 1" } })
+        .mockResolvedValueOnce({ data: { id: "act_2", name: "Brand 2" } });
+      MetaAdsCredential.findOneAndUpdate.mockResolvedValue({});
+      MetaOauthPending.deleteOne.mockResolvedValue({});
+
+      const result = await service.finalizeOauth({ brandKey: "BBB", adAccountIds: ["act_1", "act_2"] });
+
+      expect(result).toEqual({ success: true });
+      const [, update] = MetaAdsCredential.findOneAndUpdate.mock.calls[0];
+      expect(update.$set.ad_account_ids).toEqual(["act_1", "act_2"]);
+      expect(update.$set.ad_account_id).toBe("act_1");
     });
 
     test("finalizeOauth fails when there's no pending session for the brand", async () => {
       MetaOauthPending.findOne.mockReturnValue(lean(null));
-      const result = await service.finalizeOauth({ brandKey: "BBB", adAccountId: "act_1" });
+      const result = await service.finalizeOauth({ brandKey: "BBB", adAccountIds: ["act_1"] });
       expect(result.success).toBe(false);
       expect(result.error).toContain("expired");
       expect(MetaAdsCredential.findOneAndUpdate).not.toHaveBeenCalled();
       expect(MetaOauthPending.deleteOne).not.toHaveBeenCalled();
     });
 
-    test("finalizeOauth requires an ad_account_id", async () => {
-      const result = await service.finalizeOauth({ brandKey: "BBB", adAccountId: "" });
-      expect(result).toEqual({ success: false, error: "ad_account_id is required." });
+    test("finalizeOauth requires at least one ad account id", async () => {
+      const result = await service.finalizeOauth({ brandKey: "BBB", adAccountIds: [] });
+      expect(result).toEqual({ success: false, error: "ad_account_ids is required." });
       expect(MetaOauthPending.findOne).not.toHaveBeenCalled();
     });
   });
