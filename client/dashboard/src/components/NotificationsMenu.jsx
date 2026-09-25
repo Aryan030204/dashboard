@@ -24,6 +24,7 @@ import {
   Target,
 } from "lucide-react";
 import { doGet, doPut } from "../lib/api";
+import AlertDetailDialog from "./AlertDetailDialog";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 
@@ -36,6 +37,7 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [visibleCount, setVisibleCount] = useState(5);
+  const [selectedAlert, setSelectedAlert] = useState(null);
   const hasOpenedRef = useRef(false);
 
   const fetchNotifications = async () => {
@@ -284,13 +286,10 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
               }
 
               const handleItemClick = () => {
-                /* Navigation disabled while panel is hidden
-                if (notif._id) {
-                  localStorage.setItem("selected_notification_id", notif._id);
-                }
-                if (onTabChange) onTabChange("notifications-log");
+                setSelectedAlert(notif);
+                // Close the bell popover so the detail dialog is not stacked
+                // on top of it (this also marks the list as read).
                 handleClose();
-                */
               };
 
               if (notif.is_item_qty_push) {
@@ -309,12 +308,18 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                         display: "flex",
                         alignItems: "flex-start",
                         gap: 2,
+                        cursor: "pointer",
                         bgcolor: notif.read
                           ? "transparent"
                           : darkMode
                             ? "rgba(255,255,255,0.03)"
                             : "rgba(0,0,0,0.02)",
                         transition: "background-color 0.2s",
+                        "&:hover": {
+                          bgcolor: darkMode
+                            ? "rgba(255,255,255,0.07)"
+                            : "rgba(0,0,0,0.04)",
+                        },
                       }}
                     >
                       <Avatar
@@ -408,12 +413,18 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
                       display: "flex",
                       alignItems: "flex-start",
                       gap: 2,
+                      cursor: "pointer",
                       bgcolor: notif.read
                         ? "transparent"
                         : darkMode
                           ? "rgba(255,255,255,0.03)"
                           : "rgba(0,0,0,0.02)",
                       transition: "background-color 0.2s",
+                      "&:hover": {
+                        bgcolor: darkMode
+                          ? "rgba(255,255,255,0.07)"
+                          : "rgba(0,0,0,0.04)",
+                      },
                     }}
                   >
                     <Avatar
@@ -590,6 +601,12 @@ export default function NotificationsMenu({ darkMode, onTabChange }) {
           </Box>
         )}
       </Popover>
+      <AlertDetailDialog
+        open={Boolean(selectedAlert)}
+        notification={selectedAlert}
+        darkMode={darkMode}
+        onClose={() => setSelectedAlert(null)}
+      />
     </>
   );
 }

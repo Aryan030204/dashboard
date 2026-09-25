@@ -762,6 +762,43 @@ app.get("/push/notifications", async (req, res) => {
   }
 });
 
+// Fetch the full stored document for a single alert/notification so the UI can
+// show every field that lives in Mongo, not just the summary used in the list.
+app.get("/push/notifications/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const idCandidates = [id];
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      idCandidates.push(new mongoose.Types.ObjectId(id));
+    }
+    const query = { _id: { $in: idCandidates } };
+
+    const sources = [
+      { collection: "pushnotifications", source: "pushnotifications" },
+      { collection: "item_qty_push", source: "item_qty_push" },
+      {
+        collection: "inventory_notifications",
+        source: "inventory_notifications",
+      },
+    ];
+
+    for (const { collection, source } of sources) {
+      const doc = await mongoose.connection
+        .collection(collection)
+        .findOne(query);
+      if (doc) {
+        return res.json({ notification: doc, source });
+      }
+    }
+
+    res.status(404).json({ error: "Notification not found" });
+  } catch (err) {
+    logger.error("Error fetching notification detail:", err);
+    res.status(500).json({ error: "Failed to fetch notification" });
+  }
+});
+
 app.put("/push/notifications/read", async (req, res) => {
   try {
     const { message_ids } = req.body;
