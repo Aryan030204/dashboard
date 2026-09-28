@@ -214,6 +214,48 @@ describe("productConversionService", () => {
     expect(calls[0].replacements).not.toContain("10:50:00");
   });
 
+  test("falls back to the daily rollup for a compare range outside hourly retention, even when current range includes today", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-09-28T05:20:00Z"));
+
+    const calls = [];
+    const conn = {
+      query: jest.fn().mockImplementation((sql, options = {}) => {
+        calls.push({ sql, replacements: options.replacements || [] });
+        return Promise.resolve([]);
+      }),
+    };
+
+    const service = buildProductConversionService();
+    const normalized = service.normalizeProductConversionRequest({
+      start: "2026-09-22",
+      end: "2026-09-28",
+      compare_start: "2026-09-01",
+      compare_end: "2026-09-10",
+    });
+
+    await service.getProductConversion({
+      ...normalized.spec,
+      conn,
+    });
+
+    const sql = calls[0].sql;
+    // Current period (includes today) still reads the hot hourly table.
+    const sessionsCteSql = sql.slice(sql.indexOf("sessions_60d AS"), sql.indexOf("previous_orders AS"));
+    expect(sessionsCteSql).toContain("FROM hourly_product_sessions");
+
+    // Compare period is well outside the retention window (rows there are
+    // purged/archived), so it must read the full-history daily rollup instead
+    // of silently returning zero rows from the hourly table.
+    const previousSessionsCteSql = sql.slice(sql.indexOf("previous_sessions AS"));
+    expect(previousSessionsCteSql).toContain("FROM mv_product_sessions_by_path_daily");
+    expect(previousSessionsCteSql).not.toContain("hourly_product_sessions");
+    expect(previousSessionsCteSql).not.toContain("AND (date < ? OR hour <= ?)");
+
+    expect(calls[0].replacements).toEqual(
+      expect.arrayContaining(["2026-09-01", "2026-09-10"]),
+    );
+  });
+
   test("keeps full post-processing path for inventory-derived sorting and filtering", async () => {
     const conn = {
       query: jest.fn().mockResolvedValue([

@@ -4,6 +4,14 @@ const {
   buildCompletedHourCutoffContext,
   buildCompletedHourOrderCutoffTime,
 } = require("./metricsFoundation");
+const { shiftDays } = require("../shared/utils/date");
+
+// hourly_product_sessions only retains a rolling window (rows older than
+// this are archived to S3 and purged — see scripts/purge-hourly-product-sessions.js).
+// Same env var/default used there and in duckdbQueryService.getRetentionDays().
+function getHourlySessionsRetentionDays() {
+  return parseInt(process.env.HOURLY_PRODUCT_SESSIONS_RETENTION_DAYS || "7", 10);
+}
 
 // Defensive ceiling for query paths where sorting/filtering happens in JS
 // after the SQL fetch (inventory drr/doh sort, CSV export). These paths
@@ -319,6 +327,36 @@ function buildBaseCte(spec, includeCompare = false) {
     };
   }
 
+  // The previous/compare period can fall well outside hourly_product_sessions'
+  // retention window even when the CURRENT period includes today (the common
+  // case). Reusing currentRangeIncludesToday for previous_sessions' table
+  // choice was the bug: it forced old compare ranges through a table that no
+  // longer has their rows (purged/archived), silently returning 0 sessions
+  // for every landing page instead of falling back to the full-history daily
+  // rollup. Gate it on the compare range's own recency instead.
+  const hourlyRetentionCutoffDate = currentRangeIncludesToday
+    ? shiftDays(cutoffCtx.today, -getHourlySessionsRetentionDays())
+    : null;
+  const previousWithinHourlyRetention =
+    currentRangeIncludesToday &&
+    !!spec.compareEnd &&
+    spec.compareEnd >= hourlyRetentionCutoffDate;
+
+  const ordersReplacements = currentRangeIncludesToday
+    ? [spec.start, spec.end, spec.end, completedOrderCutoffTime]
+    : [spec.start, spec.end];
+  const ciReplacements = [spec.start, spec.end];
+  const sessionsReplacements = currentRangeIncludesToday
+    ? [spec.start, spec.end, spec.end, cutoffCtx.cutoffHour]
+    : [spec.start, spec.end];
+  const previousOrdersReplacements = currentRangeIncludesToday
+    ? [spec.compareStart, spec.compareEnd, spec.compareEnd, completedOrderCutoffTime]
+    : [spec.compareStart, spec.compareEnd];
+  const previousCiReplacements = [spec.compareStart, spec.compareEnd];
+  const previousSessionsReplacements = previousWithinHourlyRetention
+    ? [spec.compareStart, spec.compareEnd, spec.compareEnd, cutoffCtx.cutoffHour]
+    : [spec.compareStart, spec.compareEnd];
+
   return {
     sql: `
       ${baseSql},
@@ -349,52 +387,23 @@ function buildBaseCte(spec, includeCompare = false) {
           SUM(sessions) AS sessions,
           SUM(sessions_with_cart_additions) AS atc
         FROM ${
-          currentRangeIncludesToday
+          previousWithinHourlyRetention
             ? "hourly_product_sessions"
             : "mv_product_sessions_by_path_daily"
         }
         WHERE date >= ? AND date <= ?
-          ${currentRangeIncludesToday ? "AND (date < ? OR hour <= ?)" : ""}
+          ${previousWithinHourlyRetention ? "AND (date < ? OR hour <= ?)" : ""}
         GROUP BY product_id, landing_page_path
       )
     `,
-    replacements: currentRangeIncludesToday
-      ? [
-          spec.start,
-          spec.end,
-          spec.end,
-          completedOrderCutoffTime,
-          spec.start,
-          spec.end,
-          spec.start,
-          spec.end,
-          spec.end,
-          cutoffCtx.cutoffHour,
-          spec.compareStart,
-          spec.compareEnd,
-          spec.compareEnd,
-          completedOrderCutoffTime,
-          spec.compareStart,
-          spec.compareEnd,
-          spec.compareStart,
-          spec.compareEnd,
-          spec.compareEnd,
-          cutoffCtx.cutoffHour,
-        ]
-      : [
-          spec.start,
-          spec.end,
-          spec.start,
-          spec.end,
-          spec.start,
-          spec.end,
-          spec.compareStart,
-          spec.compareEnd,
-          spec.compareStart,
-          spec.compareEnd,
-          spec.compareStart,
-          spec.compareEnd,
-        ],
+    replacements: [
+      ...ordersReplacements,
+      ...ciReplacements,
+      ...sessionsReplacements,
+      ...previousOrdersReplacements,
+      ...previousCiReplacements,
+      ...previousSessionsReplacements,
+    ],
   };
 }
 
