@@ -12,6 +12,8 @@ router.post('/refresh', authController.refresh);
 router.post('/logout', authController.logout);
 router.post('/logout-all-self', authController.logoutAllSelf);
 router.get('/me', authController.me);
+router.get('/client-settings', authController.getClientSettings);
+router.post('/admin/client-settings', authController.adminUpdateClientSettings);
 router.get('/google/start', authController.googleStart);
 router.get('/google/callback', authController.googleCallback);
 router.post('/admin/users', authController.adminUpsertUser);

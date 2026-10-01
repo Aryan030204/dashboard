@@ -1,5 +1,5 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
-import { login, logout, me } from '../../lib/api.js';
+import { login, logout, me, getClientSettings } from '../../lib/api.js';
 
 function normalizeUser(user) {
   if (!user) return null;
@@ -36,6 +36,14 @@ export const logoutUser = createAsyncThunk('auth/logoutUser', async () => {
   return { user: null };
 });
 
+export const fetchClientSettings = createAsyncThunk('auth/fetchClientSettings', async (_, { rejectWithValue }) => {
+  const r = await getClientSettings();
+  // Keep the last-known value on a transient fetch error instead of
+  // flipping the banner off every time a single poll fails.
+  if (r.error) return rejectWithValue(null);
+  return { dashboardBannerEnabled: !!r.dashboardBannerEnabled };
+});
+
 const initialState = {
   user: null,
   expiresAt: null,
@@ -45,6 +53,7 @@ const initialState = {
   loginError: null,
   logoutStatus: 'idle',
   maintenanceMode: false,
+  dashboardBannerEnabled: false,
 };
 
 const authSlice = createSlice({
@@ -115,6 +124,9 @@ const authSlice = createSlice({
       .addCase(logoutUser.rejected, (state) => {
         state.logoutStatus = 'failed';
         state.user = null;
+      })
+      .addCase(fetchClientSettings.fulfilled, (state, action) => {
+        state.dashboardBannerEnabled = !!action.payload?.dashboardBannerEnabled;
       });
   },
 });

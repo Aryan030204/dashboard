@@ -22,6 +22,7 @@ import {
   Package,
   ClipboardList,
   Gauge,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -90,6 +91,7 @@ const NAV_ITEMS = [
         icon: SlidersHorizontal,
       },
       { id: "tenant-setup", label: "Tenant Setup", icon: Store },
+      { id: "client-settings", label: "Client Side Settings", icon: Settings },
       //      { id: 'notifications-log', label: 'Notifications/Alerts', icon: Bell },
     ],
   },

@@ -368,6 +368,28 @@ export async function me() {
   }
 }
 
+export async function getClientSettings() {
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/auth/client-settings`);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { dashboardBannerEnabled: false, error: true };
+    return { dashboardBannerEnabled: !!json?.settings?.dashboardBannerEnabled };
+  } catch {
+    return { dashboardBannerEnabled: false, error: true };
+  }
+}
+
+export async function updateClientSettings({ dashboardBannerEnabled }) {
+  const res = await fetchWithAuth(`${API_BASE}/auth/admin/client-settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dashboard_banner_enabled: !!dashboardBannerEnabled }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: json?.error || "Failed to update settings" };
+  return { dashboardBannerEnabled: !!json?.settings?.dashboardBannerEnabled };
+}
+
 export async function sendHeartbeat(meta = null) {
   try {
     const res = await fetch(`${API_BASE}/activity/heartbeat`, {

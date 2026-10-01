@@ -24,6 +24,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
@@ -44,6 +45,7 @@ import {
   Package,
   ClipboardList,
   Gauge,
+  Settings,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -59,6 +61,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "requests", label: "Requests", icon: ClipboardList },
   { id: "tenant-setup", label: "Tenant Setup", icon: Store },
+  { id: "client-settings", label: "Client Side Settings", icon: Settings },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
   { id: "access", label: "Access", icon: ShieldCheck },
   { id: "traffic-split-config", label: "Traffic Config", icon: Table2 },
@@ -80,6 +83,7 @@ const TAB_ROUTE_MAP = {
   access: "/access-control",
   "traffic-split-config": "/configurations",
   "tenant-setup": "/tenant-setup",
+  "client-settings": "/client-settings",
 };
 
 const ROUTE_TAB_MAP = Object.fromEntries(
@@ -137,6 +141,7 @@ import useSessionHeartbeat from "./hooks/useSessionHeartbeat.js";
 import { useAppDispatch, useAppSelector } from "./state/hooks.js";
 import {
   fetchCurrentUser,
+  fetchClientSettings,
   loginUser,
   logoutUser,
   clearAuthState,
@@ -215,9 +220,14 @@ export default function App() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const globalBrandKey = useAppSelector((state) => state.brand.brand);
-  const { user, initialized, loginStatus, loginError, maintenanceMode } = useAppSelector(
-    (state) => state.auth,
-  );
+  const {
+    user,
+    initialized,
+    loginStatus,
+    loginError,
+    maintenanceMode,
+    dashboardBannerEnabled,
+  } = useAppSelector((state) => state.auth);
   const {
     range,
     compareMode,
@@ -2007,6 +2017,18 @@ export default function App() {
     }
   }, [dispatch]);
 
+  // Poll the global client-settings flag (data-discrepancy banner) so brand
+  // users see it appear/disappear within ~1 minute without a page refresh.
+  // Authors/admins never see the banner, so skip polling for them.
+  useEffect(() => {
+    if (!initialized || !user || user.isAuthor) return undefined;
+    dispatch(fetchClientSettings());
+    const interval = setInterval(() => {
+      dispatch(fetchClientSettings());
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [dispatch, initialized, user]);
+
   useEffect(() => {
     const handleSessionExpired = () => {
       dispatch(clearAuthState());
@@ -2245,6 +2267,7 @@ export default function App() {
       case "access":
       case "notifications-log":
       case "tenant-setup":
+      case "client-settings":
       case "traffic-split-config":
         return (
           <AdminRouteContainer
@@ -2688,6 +2711,46 @@ export default function App() {
                       onSaved={() => setDailyInsightRefreshToken((t) => t + 1)}
                     />
                   )}
+                </Box>
+              )}
+
+              {authorTab === "dashboard" &&
+                !isAuthor &&
+                dashboardBannerEnabled && (
+                <Box
+                  sx={{
+                    width: "100%",
+                    maxWidth: 1200,
+                    mx: "auto",
+                    px: { xs: 1.5, sm: 2.5, md: 4 },
+                    pt: { xs: 1, md: 1.5 },
+                  }}
+                >
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={1}
+                    sx={{
+                      px: 1.5,
+                      py: 0.75,
+                      borderRadius: "10px",
+                      border: "1px solid",
+                      borderColor: darkMode === "dark"
+                        ? "rgba(255,171,64,0.4)"
+                        : "rgba(237,108,2,0.35)",
+                      bgcolor: darkMode === "dark"
+                        ? "rgba(255,171,64,0.08)"
+                        : "rgba(237,108,2,0.06)",
+                    }}
+                  >
+                    <WarningAmberIcon
+                      fontSize="small"
+                      sx={{ color: "warning.main", flexShrink: 0 }}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Datum is facing some issues, data may have some discrepancies.
+                    </Typography>
+                  </Stack>
                 </Box>
               )}
 

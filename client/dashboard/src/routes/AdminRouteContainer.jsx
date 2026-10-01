@@ -13,6 +13,9 @@ const AlertsAdmin = lazy(() => import("../components/AlertsAdmin.jsx"));
 const NotificationsLog = lazy(() => import("../components/NotificationsLog.jsx"));
 const TenantSetupForm = lazy(() => import("../components/TenantSetupForm.jsx"));
 const LogsPanel = lazy(() => import("../components/LogsPanel.jsx"));
+const ClientSideSettingsForm = lazy(
+  () => import("../components/ClientSideSettingsForm.jsx"),
+);
 
 export default function AdminRouteContainer({
   tab,
@@ -97,6 +100,24 @@ export default function AdminRouteContainer({
             <TenantSetupForm onOnboard={(data) => console.log("Onboard:", data)} />
             <LogsPanel />
           </Stack>
+        </Suspense>
+      </MotionDiv>
+    );
+  }
+
+  if (tab === "client-settings" && !isMobile) {
+    return (
+      <MotionDiv
+        key="client-settings"
+        custom={direction}
+        variants={pageVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        style={{ width: "100%" }}
+      >
+        <Suspense fallback={<SectionFallback count={1} />}>
+          <ClientSideSettingsForm />
         </Suspense>
       </MotionDiv>
     );

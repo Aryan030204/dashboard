@@ -5,6 +5,7 @@ const GlobalUser = require('../models/GlobalUser.model');
 const crypto = require('crypto');
 const AdminUserService = require('../services/adminUser.service');
 const AdminDomainRuleService = require('../services/adminDomainRule.service');
+const ClientSettingsService = require('../services/clientSettings.service');
 const {
     recordAuthLogin,
     recordAuthRefresh,
@@ -279,6 +280,36 @@ exports.adminListUsers = async (req, res) => {
         if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
         logger.error('AuthController', 'Admin list users error', { error: err.message });
         return res.status(500).json({ error: 'Failed to list users' });
+    }
+};
+
+exports.getClientSettings = async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) return res.status(401).json({ error: 'Access token required' });
+        TokenService.verifyAccessToken(token);
+
+        const settings = await ClientSettingsService.getSettings();
+        return res.status(200).json({ settings });
+    } catch (err) {
+        logger.error('AuthController', 'Get client settings error', { error: err.message });
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+};
+
+exports.adminUpdateClientSettings = async (req, res) => {
+    try {
+        requireAdminOrAuthor(req);
+        const { dashboard_banner_enabled } = req.body || {};
+        const settings = await ClientSettingsService.updateSettings({
+            dashboardBannerEnabled: dashboard_banner_enabled,
+        });
+        return res.status(200).json({ settings });
+    } catch (err) {
+        if (err.message === 'unauthorized') return res.status(401).json({ error: 'Unauthorized' });
+        if (err.message === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+        logger.error('AuthController', 'Admin update client settings error', { error: err.message });
+        return res.status(500).json({ error: 'Failed to update client settings' });
     }
 };
 
