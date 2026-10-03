@@ -9,6 +9,7 @@
     "import:otp-verified": "node scripts/import-otp-verified.js"
   },
   "dependencies": {
+    "@aws-sdk/client-sqs": "^3.1146.0",
     "@sentry/node": "^10.54.0",
     "amqplib": "^0.10.5",
     "cors": "^2.8.5",
