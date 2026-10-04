@@ -41,6 +41,10 @@ const {
 const app = express();
 app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
+// /track carries full intent payloads (checkout line_items), so it gets a larger
+// limit than the global 100 KB default. Registered before the global parser,
+// which skips parsing when req.body is already set. Other routes are unchanged.
+app.post("/track", express.json({ limit: "256kb" }));
 app.use(express.json());
 initObservability(app);
 app.use(createHealthMonitorReporter({
@@ -240,6 +244,29 @@ const {
 } = require("./controllers/trackController");
 const intentEventQueue = require("./services/intentEventQueue");
 const { SQS_MESSAGE_LIMIT_BYTES } = intentEventQueue;
+const { getIntentModels } = require("./models/intent/connection");
+const { createIntentIngestor } = require("./services/intent/ingest");
+const { createBrandSnapshot } = require("./services/intent/brandSnapshot");
+
+const brandSnapshot = createBrandSnapshot({
+  loadDocs: () =>
+    mongoose.connection
+      .useDb("arch-auth", { useCache: true })
+      .model("PipelineCreds", PipelineCreds.schema)
+      .find({})
+      .lean(),
+  intervalMs: Number(process.env.BRAND_SNAPSHOT_REFRESH_MS) || 60 * 60 * 1000,
+  logger,
+});
+const intentIngest = createIntentIngestor({
+  getModels: getIntentModels,
+  getBrandTimezone: (brand) => brandSnapshot.getBrand(brand)?.store_timezone_iana ?? null,
+  // Seconds, defaults to 30 minutes (same as the Sessions Pipeline).
+  sessionTimeoutMs: (Number(process.env.SESSION_TIMEOUT) || 1800) * 1000,
+  // Out-of-order arrival tolerance (same as the Sessions Pipeline).
+  negativeGapToleranceMs: 30 * 1000,
+  logger,
+});
 
 app.post("/inventory", requirePipelineKey, async (req, res) => {
   try {
@@ -328,13 +355,14 @@ app.post("/inventory", requirePipelineKey, async (req, res) => {
 
 const intentIngestionMode = resolveIntentIngestionMode(process.env.INTENT_EVENT_INGESTION, logger);
 const trackController = buildTrackController({
-  Session,
   OtpVerified,
   AjrsPurchase,
   logger,
   intentEventQueue,
   sqsMessageLimitBytes: SQS_MESSAGE_LIMIT_BYTES,
   ingestionMode: intentIngestionMode,
+  intentIngest,
+  isKnownBrand: (brand) => brandSnapshot.getBrand(brand)?.active === true,
 });
 app.post("/track", trackController.track);
 
@@ -801,6 +829,15 @@ async function start() {
       captureError(err, null, { type: "mongo_connection" });
     });
     logger.info("[alerts-service] Mongo connected");
+
+    if (intentIngestionMode === "mongo") {
+      getIntentModels(); // fail fast if INTENT_MONGO_URI is missing
+      await brandSnapshot.refresh().catch((err) => {
+        logger.error(`[alerts-service] brand snapshot initial load failed: ${err.message}`);
+      });
+      brandSnapshot.startRefresh();
+    }
+
     const port = Number(process.env.PORT || 5005);
     app.listen(port, () => {
       logger.info(`[alerts-service] listening on :${port}`);

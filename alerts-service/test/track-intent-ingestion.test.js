@@ -26,6 +26,11 @@ function makeRes() {
       this.payload = body;
       return this;
     },
+    sendStatus(code) {
+      this.statusCode = code;
+      this.payload = null;
+      return this;
+    },
   };
 }
 
@@ -70,14 +75,40 @@ function makeFakeQueue({ messageId = 'msg-123', error = null } = {}) {
   };
 }
 
-function buildController({ mode, models, queue, limit = SQS_MESSAGE_LIMIT_BYTES }) {
+function buildController({
+  mode,
+  models,
+  queue,
+  limit = SQS_MESSAGE_LIMIT_BYTES,
+  intentIngest = async () => ({ inserted: true, kind: 'event' }),
+  isKnownBrand = () => true,
+}) {
   return buildTrackController({
     ...models,
     logger: silentLogger,
     intentEventQueue: queue,
     sqsMessageLimitBytes: limit,
     ingestionMode: mode,
+    intentIngest,
+    isKnownBrand,
   });
+}
+
+function intentEvent(overrides = {}) {
+  return {
+    event_id: 'evt-1',
+    event_name: 'page_viewed',
+    occurred_at: '2026-09-19T05:56:39.008Z',
+    brand_id: 'bbb_shop',
+    client_id: 'client-1',
+    visitor_id: null,
+    session_id: null,
+    url: 'https://shop.example/',
+    referrer: null,
+    user_agent: 'UA',
+    data: {},
+    ...overrides,
+  };
 }
 
 function normalEvent(overrides = {}) {
@@ -118,48 +149,87 @@ test('unknown mode value falls back to mongo and warns', () => {
   assert.equal(warnings.length, 1);
 });
 
-test('mongo mode: normal event is checked against Session and saved, returns 201', async () => {
+test('mongo mode: valid intent event for a known brand is ingested and returns 204', async () => {
+  const ingested = [];
+  const intentIngest = async (body, brand) => {
+    ingested.push({ body, brand });
+    return { inserted: true, kind: 'event' };
+  };
   const models = makeFakeModels();
   const queue = makeFakeQueue();
-  const controller = buildController({ mode: INTENT_MODES.MONGO, models, queue });
+  const controller = buildController({ mode: INTENT_MODES.MONGO, models, queue, intentIngest });
 
-  const res = await track(controller, normalEvent());
+  const res = await track(controller, intentEvent());
 
-  assert.equal(res.statusCode, 201);
-  assert.equal(res.payload.message, 'Session tracked successfully');
-  assert.deepEqual(models.calls.sessionFindOne, [{ idempotency_key: 'idem-abc' }]);
-  assert.equal(models.calls.sessionSaved.length, 1);
-  assert.equal(models.calls.sessionSaved[0].idempotency_key, 'idem-abc');
+  assert.equal(res.statusCode, 204);
+  assert.equal(ingested.length, 1);
+  assert.equal(ingested[0].brand, 'bbb_shop');
   assert.equal(queue.sent.length, 0);
-});
-
-test('mongo mode: duplicate idempotency_key returns 200 "Event already processed"', async () => {
-  const existing = { idempotency_key: 'idem-abc' };
-  const models = makeFakeModels({ existingSession: existing });
-  const queue = makeFakeQueue();
-  const controller = buildController({ mode: INTENT_MODES.MONGO, models, queue });
-
-  const res = await track(controller, normalEvent());
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.payload.message, 'Event already processed');
-  assert.equal(res.payload.session, existing);
   assert.equal(models.calls.sessionSaved.length, 0);
 });
 
-test('missing idempotency_key returns 400 in mongo mode and sqs mode', async () => {
-  for (const mode of [INTENT_MODES.MONGO, INTENT_MODES.SQS]) {
-    const models = makeFakeModels();
-    const queue = makeFakeQueue();
-    const controller = buildController({ mode, models, queue });
+test('mongo mode: duplicate event is still 204 (no Session writes, no SQS)', async () => {
+  const intentIngest = async () => ({ inserted: false, kind: 'event' });
+  const models = makeFakeModels();
+  const queue = makeFakeQueue();
+  const controller = buildController({ mode: INTENT_MODES.MONGO, models, queue, intentIngest });
 
-    const res = await track(controller, normalEvent({ idempotency_key: undefined }));
+  const res = await track(controller, intentEvent());
 
-    assert.equal(res.statusCode, 400, mode);
-    assert.equal(res.payload.error, 'idempotency_key is required');
-    assert.equal(queue.sent.length, 0);
-    assert.equal(models.calls.sessionSaved.length, 0);
-  }
+  assert.equal(res.statusCode, 204);
+  assert.equal(models.calls.sessionSaved.length, 0);
+  assert.equal(queue.sent.length, 0);
+});
+
+test('mongo mode: unknown or inactive brand_id returns 400 and never ingests', async () => {
+  let called = false;
+  const controller = buildController({
+    mode: INTENT_MODES.MONGO,
+    models: makeFakeModels(),
+    queue: makeFakeQueue(),
+    intentIngest: async () => {
+      called = true;
+      return { inserted: true };
+    },
+    isKnownBrand: () => false,
+  });
+
+  const res = await track(controller, intentEvent({ brand_id: 'nope_shop' }));
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.payload.error, 'unknown or inactive brand_id');
+  assert.equal(called, false);
+});
+
+test('mongo mode: intent payload that fails validation returns 400', async () => {
+  const controller = buildController({
+    mode: INTENT_MODES.MONGO,
+    models: makeFakeModels(),
+    queue: makeFakeQueue(),
+    intentIngest: async () => {
+      const err = new Error('invalid occurred_at');
+      err.status = 400;
+      throw err;
+    },
+  });
+
+  const res = await track(controller, intentEvent({ occurred_at: 'not-a-date' }));
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.payload.error, 'invalid event payload');
+});
+
+test('sqs mode: missing idempotency_key still returns 400 and never queues', async () => {
+  const models = makeFakeModels();
+  const queue = makeFakeQueue();
+  const controller = buildController({ mode: INTENT_MODES.SQS, models, queue });
+
+  const res = await track(controller, normalEvent({ idempotency_key: undefined }));
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.payload.error, 'idempotency_key is required');
+  assert.equal(queue.sent.length, 0);
+  assert.equal(models.calls.sessionSaved.length, 0);
 });
 
 test('sqs mode: normal event returns 202 and sends the complete payload to SQS', async () => {
@@ -296,14 +366,17 @@ test('orderId event still writes AjrsPurchase and not Session, in both modes', a
   }
 });
 
-test('unexpected Mongo error in mongo mode returns 500', async () => {
-  const models = makeFakeModels();
-  models.Session.findOne = async () => {
-    throw new Error('mongo down');
-  };
-  const controller = buildController({ mode: INTENT_MODES.MONGO, models, queue: makeFakeQueue() });
+test('unexpected infrastructure error in mongo mode returns 500', async () => {
+  const controller = buildController({
+    mode: INTENT_MODES.MONGO,
+    models: makeFakeModels(),
+    queue: makeFakeQueue(),
+    intentIngest: async () => {
+      throw new Error('mongo down');
+    },
+  });
 
-  const res = await track(controller, normalEvent());
+  const res = await track(controller, intentEvent());
 
   assert.equal(res.statusCode, 500);
   assert.equal(res.payload.error, 'Failed to track alert');

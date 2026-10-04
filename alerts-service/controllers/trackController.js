@@ -10,13 +10,14 @@ function resolveIntentIngestionMode(rawValue, logger) {
 }
 
 function buildTrackController({
-  Session,
   OtpVerified,
   AjrsPurchase,
   logger,
   intentEventQueue,
   sqsMessageLimitBytes,
   ingestionMode,
+  intentIngest,
+  isKnownBrand,
 }) {
   async function handleRsEvent(sessionData, res) {
     if (sessionData.tags === "RS_Cinema_KP" && sessionData.customer_id) {
@@ -40,8 +41,14 @@ function buildTrackController({
     return res.status(201).json({ message: "Session tracked successfully" });
   }
 
+  // Unchanged. Still sends the raw body; normalization for SQS is the planned
+  // SQS cutover step, not part of this migration.
   async function handleSqsIntentEvent(sessionData, res) {
     const idempotencyKey = sessionData.idempotency_key;
+    if (!idempotencyKey) {
+      return res.status(400).json({ error: "idempotency_key is required" });
+    }
+
     const message = { ...sessionData, ingested_at: new Date().toISOString() };
     const bodyBytes = Buffer.byteLength(JSON.stringify(message), "utf8");
 
@@ -62,15 +69,24 @@ function buildTrackController({
     }
   }
 
+  // Sessions Pipeline behaviour: brand check → normalize → session state →
+  // intent_sessions. Returns 204 for new and duplicate events, as the Sessions
+  // Pipeline did.
   async function handleMongoIntentEvent(sessionData, res) {
-    const existingSession = await Session.findOne({ idempotency_key: sessionData.idempotency_key });
-    if (existingSession) {
-      return res.status(200).json({ message: "Event already processed", session: existingSession });
+    const brandId = sessionData.brand_id;
+    if (!brandId || !isKnownBrand(brandId)) {
+      return res.status(400).json({ error: "unknown or inactive brand_id" });
     }
 
-    const session = new Session(sessionData);
-    await session.save();
-    return res.status(201).json({ message: "Session tracked successfully" });
+    try {
+      await intentIngest(sessionData, brandId);
+    } catch (err) {
+      if (err?.status === 400) {
+        return res.status(400).json({ error: "invalid event payload" });
+      }
+      throw err;
+    }
+    return res.sendStatus(204);
   }
 
   return {
@@ -78,10 +94,6 @@ function buildTrackController({
       try {
         const sessionData = req.body || {};
         const isRSEvent = sessionData.tags === "RS_Cinema_KP" || sessionData.orderId;
-
-        if (!sessionData.idempotency_key && !isRSEvent) {
-          return res.status(400).json({ error: "idempotency_key is required" });
-        }
 
         if (isRSEvent) {
           return await handleRsEvent(sessionData, res);
