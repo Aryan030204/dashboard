@@ -1,19 +1,42 @@
+const https = require("https");
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
 const { NodeHttpHandler } = require("@smithy/node-http-handler");
+const { intFromEnv } = require("./intent/sqsPublisher");
 
 // SQS hard limit for a single message body.
 const SQS_MESSAGE_LIMIT_BYTES = 256 * 1024;
 
+// One long-lived keep-alive agent. maxSockets is kept above the producer's
+// concurrency limit (INTENT_SQS_MAX_CONCURRENCY, default 32), so requests never
+// queue for a socket. The app-level limit is the only queue, and the connect
+// timer never runs while a request waits for a socket.
+let agent = null;
+function buildHttpsAgent() {
+  if (!agent) {
+    agent = new https.Agent({
+      keepAlive: true,
+      maxSockets: intFromEnv("INTENT_SQS_MAX_SOCKETS", 64),
+      maxFreeSockets: intFromEnv("INTENT_SQS_MAX_FREE_SOCKETS", 32),
+    });
+  }
+  return agent;
+}
+
 // Client is created without an explicit identity, so the SDK's default
 // provider chain resolves the EC2 instance role (datum-ec2-sqs-role) via IMDSv2.
+// maxAttempts is 1: retries of transient errors are handled by sqsPublisher, so
+// the SDK does not multiply them.
 let client = null;
 function getClient() {
   if (!client) {
-    // Bounded so a stalled socket fails fast (surfaced as 503) instead of hanging /track.
     client = new SQSClient({
       region: process.env.AWS_REGION || "ap-south-1",
-      maxAttempts: 3,
-      requestHandler: new NodeHttpHandler({ connectionTimeout: 8000, requestTimeout: 10000 }),
+      maxAttempts: 1,
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: 5000,
+        requestTimeout: 8000,
+        httpsAgent: buildHttpsAgent(),
+      }),
     });
   }
   return client;
@@ -44,6 +67,8 @@ async function sendRawMessage(body, { sqs = getClient(), queueUrl = process.env.
 
 module.exports = {
   SQS_MESSAGE_LIMIT_BYTES,
+  getClient,
+  buildHttpsAgent,
   serializeIntentEvent,
   sendIntentEvent,
   sendRawMessage,
