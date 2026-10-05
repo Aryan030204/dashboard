@@ -18,6 +18,7 @@ const {
 } = require("./sqsPublisher");
 
 const SQS_MESSAGE_LIMIT_BYTES = 256 * 1024;
+const SQS_ID_MAX_LENGTH = 100;
 const STATS_INTERVAL_MS = 60000;
 
 function httpError(status, message) {
@@ -103,6 +104,15 @@ function createIntentSqsProducer({
     const problems = validateMessage(message);
     if (problems.length) {
       throw httpError(400, `invalid event payload: ${problems.join("; ")}`);
+    }
+
+    // The intent worker stores these ids in VARCHAR(100) and rejects longer ones as poison.
+    // Checked here, not in normalize.js, so the Mongo and outbox paths keep their behaviour.
+    const longIds = ["event_id", "actor_id", "client_id"].filter(
+      (field) => typeof message[field] === "string" && message[field].length > SQS_ID_MAX_LENGTH,
+    );
+    if (longIds.length) {
+      throw httpError(400, `invalid event payload: ${longIds.join(", ")} longer than ${SQS_ID_MAX_LENGTH} characters`);
     }
 
     const bytes = messageBytes(message);

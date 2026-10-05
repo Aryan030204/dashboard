@@ -115,3 +115,25 @@ test('two requests with null event_id get two different generated ids', async ()
   await producer.publish(pageView({ event_id: null }), 'bbb_shop');
   assert.notEqual(seen[0], seen[1]);
 });
+
+// The shared normalizer is used by the Mongo and outbox paths too, so it keeps accepting
+// these ids. The SQS publish path enforces the worker's VARCHAR(100) limit.
+test('the shared normalizer still accepts a 101-char event_id and client_id (Mongo/outbox unchanged)', () => {
+  const { e } = normalizeIntentBody(pageView({ event_id: 'x'.repeat(101), client_id: 'c'.repeat(101) }));
+  assert.equal(e.event_id.length, 101);
+});
+
+test('SQS publish rejects an id over 100 chars with 400 and sends nothing; 100 chars is accepted', async () => {
+  const sent = [];
+  const producer = createIntentSqsProducer({
+    getBrandTimezone: () => parseIanaTimezone('Asia/Kolkata'),
+    sendRaw: async (body) => { sent.push(body); return 'mid-1'; },
+    queueUrl: QUEUE,
+    logger: SILENT,
+  });
+  await assert.rejects(producer.publish(pageView({ event_id: 'x'.repeat(101) }), 'bbb_shop'), { status: 400 });
+  await assert.rejects(producer.publish(pageView({ event_id: 'e-ok', client_id: 'c'.repeat(101) }), 'bbb_shop'), { status: 400 });
+  assert.equal(sent.length, 0);
+  await producer.publish(pageView({ event_id: 'x'.repeat(100) }), 'bbb_shop');
+  assert.equal(sent.length, 1);
+});
