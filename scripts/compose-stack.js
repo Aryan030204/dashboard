@@ -14,6 +14,7 @@ const BASE_SERVICES = [
   "auth-service",
   "tenant-router",
   "alerts-service",
+  "intent-outbox-relay",
   "merchant-requests-service",
   "daily-insights-service",
   "analytics-service",
