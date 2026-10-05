@@ -12,8 +12,8 @@ function getClient() {
     // Bounded so a stalled socket fails fast (surfaced as 503) instead of hanging /track.
     client = new SQSClient({
       region: process.env.AWS_REGION || "ap-south-1",
-      maxAttempts: 2,
-      requestHandler: new NodeHttpHandler({ connectionTimeout: 3000, requestTimeout: 5000 }),
+      maxAttempts: 3,
+      requestHandler: new NodeHttpHandler({ connectionTimeout: 8000, requestTimeout: 10000 }),
     });
   }
   return client;
