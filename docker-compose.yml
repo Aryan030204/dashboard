@@ -103,6 +103,23 @@ services:
       retries: 5
       start_period: 15s
 
+  intent-outbox-relay:
+    container_name: intent-outbox-relay-main
+    build:
+      context: ./alerts-service
+      dockerfile: Dockerfile
+    command: ["node", "scripts/intent-outbox-relay.js"]
+    env_file:
+      - .env
+      - ./alerts-service/.env
+    environment:
+      NODE_ENV: production
+      SQS_INTENT_QUEUE_URL: https://sqs.ap-south-1.amazonaws.com/923233838659/intent-events
+      AWS_REGION: ap-south-1
+    restart: unless-stopped
+    networks:
+      - saas-net
+
   merchant-requests-service:
     container_name: merchant-requests-service-main
     build:
