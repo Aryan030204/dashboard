@@ -120,7 +120,7 @@ function createIntentSqsProducer({
     const started = Date.now();
     for (let attempt = 1; ; attempt += 1) {
       try {
-        const messageId = await semaphore.run(() => sendRaw(serialized, { queueUrl }));
+        const messageId = await semaphore.run(() => sendRaw(serialized, { queueUrl }), config.sendTimeoutMs);
         counters.sent += 1;
         logger?.info?.(
           `[intent-sqs] accepted type=${message.type} event_id=${message.event_id} brand=${brand} ` +

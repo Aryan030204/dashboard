@@ -144,7 +144,8 @@ test('duplicate requests are not deduplicated: every accepted request is sent', 
 
 test('malformed input: 400 from normalization, nothing sent', async () => {
   const { producer, sent } = makeProducer();
-  await assert.rejects(producer.publish(eventBody({ event_id: undefined }), BRAND), (err) => err.status === 400);
+  // A missing event_id is now generated server-side (see event-id.test.js); a non-string one is still rejected.
+  await assert.rejects(producer.publish(eventBody({ event_id: 12345 }), BRAND), (err) => err.status === 400);
   await assert.rejects(producer.publish(eventBody({ occurred_at: 'not a date' }), BRAND), (err) => err.status === 400);
   assert.equal(sent.length, 0);
 });

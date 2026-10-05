@@ -86,7 +86,11 @@ function buildTrackController({
     track: async (req, res) => {
       try {
         const sessionData = req.body || {};
-        const isRSEvent = sessionData.tags === "RS_Cinema_KP" || sessionData.orderId;
+        // Intent events always carry event_name, and legitimate RS payloads never do.
+        // So a payload with event_name is never routed to the RS Mongo branch, even
+        // if it also carries a top-level orderId.
+        const isIntentEvent = typeof sessionData.event_name === "string" && sessionData.event_name !== "";
+        const isRSEvent = !isIntentEvent && (sessionData.tags === "RS_Cinema_KP" || Boolean(sessionData.orderId));
 
         if (isRSEvent) {
           return await handleRsEvent(sessionData, res);

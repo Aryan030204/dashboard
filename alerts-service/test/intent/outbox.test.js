@@ -330,7 +330,8 @@ test('malformed input is rejected as 400 with no writes', async () => {
   const fake = createFakeIntentDb();
   const ingest = makeIngestor(fake);
 
-  await assert.rejects(ingest(eventBody({ event_id: undefined }), BRAND), (err) => {
+  // A missing event_id is now generated server-side; a non-string one is still rejected.
+  await assert.rejects(ingest(eventBody({ event_id: 12345 }), BRAND), (err) => {
     assert.ok(err instanceof IntentValidationError);
     assert.equal(err.status, 400);
     return true;

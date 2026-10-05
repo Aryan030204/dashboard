@@ -104,6 +104,9 @@ services:
       start_period: 15s
 
   intent-outbox-relay:
+    # Legacy Mongo outbox relay. Not part of the default deployment: the production
+    # intent path is /track -> SQS directly. Start only with: --profile outbox-relay
+    profiles: ["outbox-relay"]
     container_name: intent-outbox-relay-main
     build:
       context: ./alerts-service

@@ -8,7 +8,41 @@ local LIMITS = {
     user = { rate = 1000 / 60, burst = 100 },  -- 1000 req/min
     brand = { rate = 5000 / 60, burst = 500 }, -- 5000 req/min
     admin = { rate = 50 / 60, burst = 10 },    -- 50 req/min/user for admin
+    -- /track is the pixel's event feed. Many shoppers can share one IP (carrier NAT,
+    -- office networks), so the per-IP limit is set as a flood guard, not a
+    -- per-shopper quota. 30,000 req/min per IP with a burst of 3,000. The producer's
+    -- own bounds (concurrency, pending queue) protect SQS beyond this.
+    track = { rate = 30000 / 60, burst = 3000 },
 }
+
+-- CORS headers for gateway-generated responses on /track. The app reflects the
+-- request Origin (cors({ origin: true })), so this does the same. Without it, a 429
+-- looks like a CORS failure in the browser.
+local function set_track_cors_headers()
+    local origin = ngx.var.http_origin
+    if origin and origin ~= "" then
+        ngx.header["Access-Control-Allow-Origin"] = origin
+        ngx.header["Access-Control-Allow-Credentials"] = "true"
+        ngx.header["Vary"] = "Origin"
+    end
+end
+
+-- Per-IP flood guard for /track only. Other routes keep enforce() unchanged.
+function _M.enforce_track()
+    if os.getenv("RATE_LIMIT_DISABLED") == "1" then
+        return
+    end
+
+    local ip = ngx.var.binary_remote_addr
+    if not _M.check_limit(ip, "track") then
+        ngx.status = 429
+        ngx.header["Content-Type"] = "application/json"
+        ngx.header["Retry-After"] = "1"
+        set_track_cors_headers()
+        ngx.say('{"error":"Too many requests"}')
+        ngx.exit(429)
+    end
+end
 
 function _M.check_limit(key, limit_type, custom_rate, custom_burst)
     local rate = custom_rate or LIMITS[limit_type].rate

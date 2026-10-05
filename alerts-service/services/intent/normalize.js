@@ -64,6 +64,21 @@ const ClickEventSchema = z.object({
 
 const safe = (v) => (v === undefined ? null : v);
 
+const MAX_EVENT_ID_LENGTH = 200;
+
+// A supplied event_id is kept exactly as sent. A missing, null or blank one gets a
+// server-generated id (prefix "srv-"), so the browser's event is not lost. Other
+// types and oversized ids are still rejected. Generation happens once per request,
+// before the message is built, so application retries reuse the same id.
+function resolveEventId(raw) {
+  if (raw === undefined || raw === null || (typeof raw === "string" && raw.trim() === "")) {
+    return `srv-${crypto.randomUUID()}`;
+  }
+  if (typeof raw !== "string") throw new IntentValidationError("event_id must be a string");
+  if (raw.length > MAX_EVENT_ID_LENGTH) throw new IntentValidationError("event_id is too long");
+  return raw;
+}
+
 function parseShopifySlug(url) {
   if (!url) return null;
   try {
@@ -112,8 +127,9 @@ function classifyClick(signals) {
 // (status 400) for any invalid input, matching the Sessions Pipeline, where
 // every validation failure returned 400.
 function normalizeIntentBody(body) {
-  const payload = body || {};
+  const source = body || {};
   try {
+    const payload = { ...source, event_id: resolveEventId(source.event_id) };
     if (payload.event_name === "click") {
       const e = ClickEventSchema.parse(payload);
       const when = new Date(e.occurred_at);
@@ -145,6 +161,7 @@ function normalizeIntentBody(body) {
 
 module.exports = {
   IntentValidationError,
+  resolveEventId,
   EventSchema,
   ClickEventSchema,
   normalizeIntentBody,

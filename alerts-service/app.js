@@ -247,21 +247,16 @@ const { createIntentIngestor } = require("./services/intent/ingest");
 const { createOutboxIngestor } = require("./services/intent/outboxIngest");
 const { createIntentSqsProducer } = require("./services/intent/sqsProducer");
 const { sendRawMessage } = require("./services/intentEventQueue");
-const { createBrandSnapshot } = require("./services/intent/brandSnapshot");
+const { createBrandAllowlist } = require("./services/intent/brandAllowlist");
+const { assertIntentConfig } = require("./services/intent/config");
 
-const brandSnapshot = createBrandSnapshot({
-  loadDocs: () =>
-    mongoose.connection
-      .useDb("arch-auth", { useCache: true })
-      .model("PipelineCreds", PipelineCreds.schema)
-      .find({})
-      .lean(),
-  intervalMs: Number(process.env.BRAND_SNAPSHOT_REFRESH_MS) || 60 * 60 * 1000,
-  logger,
-});
+// Brand validation for intent events comes from INTENT_BRANDS_ALLOWLIST and
+// INTENT_BRAND_TIMEZONES. No Mongo read, so /track intent validation does not depend
+// on arch-auth. Startup fails early if the variables are missing or invalid.
+const brandAllowlist = createBrandAllowlist(process.env);
 const intentIngest = createIntentIngestor({
   getModels: getIntentModels,
-  getBrandTimezone: (brand) => brandSnapshot.getBrand(brand)?.store_timezone_iana ?? null,
+  getBrandTimezone: (brand) => brandAllowlist.getBrand(brand)?.store_timezone_iana ?? null,
   // Seconds, defaults to 30 minutes (same as the Sessions Pipeline).
   sessionTimeoutMs: (Number(process.env.SESSION_TIMEOUT) || 1800) * 1000,
   // Out-of-order arrival tolerance (same as the Sessions Pipeline).
@@ -270,7 +265,7 @@ const intentIngest = createIntentIngestor({
 });
 const outboxIngest = createOutboxIngestor({
   getModels: getIntentModels,
-  getBrandTimezone: (brand) => brandSnapshot.getBrand(brand)?.store_timezone_iana ?? null,
+  getBrandTimezone: (brand) => brandAllowlist.getBrand(brand)?.store_timezone_iana ?? null,
   sessionTimeoutMs: (Number(process.env.SESSION_TIMEOUT) || 1800) * 1000,
   negativeGapToleranceMs: 30 * 1000,
   logger,
@@ -369,12 +364,12 @@ const trackController = buildTrackController({
   ingestionMode: intentIngestionMode,
   intentIngest,
   intentSqsPublish: createIntentSqsProducer({
-    getBrandTimezone: (brand) => brandSnapshot.getBrand(brand)?.store_timezone_iana ?? null,
+    getBrandTimezone: (brand) => brandAllowlist.getBrand(brand)?.store_timezone_iana ?? null,
     sendRaw: sendRawMessage,
     queueUrl: process.env.SQS_INTENT_QUEUE_URL,
     logger,
   }).publish,
-  isKnownBrand: (brand) => brandSnapshot.getBrand(brand)?.active === true,
+  isKnownBrand: (brand) => brandAllowlist.isKnownBrand(brand),
 });
 app.post("/track", trackController.track);
 
@@ -835,6 +830,10 @@ app.use(sentryErrorMiddleware);
 // ---- Start ------------------------------------------------------------------
 async function start() {
   try {
+    // Fails the process with a clear message on bad intent/SQS settings, before any
+    // request can be served.
+    assertIntentConfig(process.env, intentIngestionMode);
+
     await mongoose.connect(MONGO_URI, { dbName: MONGO_DB });
     mongoose.connection.on("error", (err) => {
       recordMongoConnectionError();
@@ -845,10 +844,7 @@ async function start() {
     if (intentIngestionMode === "mongo") {
       getIntentModels(); // fail fast if INTENT_MONGO_URI is missing
     }
-    await brandSnapshot.refresh().catch((err) => {
-      logger.error(`[alerts-service] brand snapshot initial load failed: ${err.message}`);
-    });
-    brandSnapshot.startRefresh();
+    logger.info(`[alerts-service] intent brands allow-listed: ${brandAllowlist.listBrands().join(", ")}`);
 
     const port = Number(process.env.PORT || 5005);
     app.listen(port, () => {
