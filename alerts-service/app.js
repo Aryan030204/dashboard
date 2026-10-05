@@ -844,11 +844,11 @@ async function start() {
 
     if (intentIngestionMode === "mongo") {
       getIntentModels(); // fail fast if INTENT_MONGO_URI is missing
-      await brandSnapshot.refresh().catch((err) => {
-        logger.error(`[alerts-service] brand snapshot initial load failed: ${err.message}`);
-      });
-      brandSnapshot.startRefresh();
     }
+    await brandSnapshot.refresh().catch((err) => {
+      logger.error(`[alerts-service] brand snapshot initial load failed: ${err.message}`);
+    });
+    brandSnapshot.startRefresh();
 
     const port = Number(process.env.PORT || 5005);
     app.listen(port, () => {
