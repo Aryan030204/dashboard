@@ -79,7 +79,7 @@ function buildController({
   mode,
   models,
   queue,
-  outboxIngest = async () => ({ status: 'accepted', kind: 'event', event_id: 'evt-1', outbox: ['event:evt-1'] }),
+  intentSqsPublish = async () => ({ event_id: 'evt-1', type: 'event', messageId: 'm-1' }),
   intentIngest = async () => ({ inserted: true, kind: 'event' }),
   isKnownBrand = () => true,
 }) {
@@ -88,7 +88,7 @@ function buildController({
     logger: silentLogger,
     ingestionMode: mode,
     intentIngest,
-    outboxIngest,
+    intentSqsPublish,
     isKnownBrand,
   });
 }
@@ -219,16 +219,15 @@ test('mongo mode: intent payload that fails validation returns 400', async () =>
   assert.equal(res.payload.error, 'invalid event payload');
 });
 
-test('sqs mode: idempotency_key is not required; event_id alone is accepted', async () => {
-  const models = makeFakeModels();
+test('sqs mode: idempotency_key is not required; event_id is published and 202 returned', async () => {
   const seen = [];
   const controller = buildController({
     mode: INTENT_MODES.SQS,
-    models,
+    models: makeFakeModels(),
     queue: makeFakeQueue(),
-    outboxIngest: async (body) => {
-      seen.push(body);
-      return { status: 'accepted', kind: 'event', event_id: body.event_id, outbox: [] };
+    intentSqsPublish: async (body, brand) => {
+      seen.push({ body, brand });
+      return { event_id: body.event_id, type: 'event', messageId: 'm-1' };
     },
   });
 
@@ -237,18 +236,19 @@ test('sqs mode: idempotency_key is not required; event_id alone is accepted', as
   assert.equal(res.statusCode, 202);
   assert.deepEqual(res.payload, { message: 'Event accepted', event_id: 'evt-1' });
   assert.equal(seen.length, 1);
+  assert.equal(seen[0].brand, 'bbb_shop');
 });
 
-test('sqs mode: unknown or inactive brand_id returns 400 and never reaches the outbox', async () => {
-  let called = false;
+test('sqs mode: unknown or inactive brand_id returns 400 and never publishes', async () => {
+  let published = 0;
   const controller = buildController({
     mode: INTENT_MODES.SQS,
     models: makeFakeModels(),
     queue: makeFakeQueue(),
     isKnownBrand: () => false,
-    outboxIngest: async () => {
-      called = true;
-      return { status: 'accepted' };
+    intentSqsPublish: async () => {
+      published += 1;
+      return { event_id: 'evt-1' };
     },
   });
 
@@ -256,29 +256,35 @@ test('sqs mode: unknown or inactive brand_id returns 400 and never reaches the o
 
   assert.equal(res.statusCode, 400);
   assert.equal(res.payload.error, 'unknown or inactive brand_id');
-  assert.equal(called, false);
+  assert.equal(published, 0);
 });
 
-test('sqs mode: duplicate event returns 202 with duplicate flag', async () => {
+test('sqs mode: duplicate requests are not deduplicated; each one is published and returns 202', async () => {
+  let published = 0;
   const controller = buildController({
     mode: INTENT_MODES.SQS,
     models: makeFakeModels(),
     queue: makeFakeQueue(),
-    outboxIngest: async () => ({ status: 'duplicate', kind: 'event', event_id: 'evt-1', outbox: [] }),
+    intentSqsPublish: async () => {
+      published += 1;
+      return { event_id: 'evt-1' };
+    },
   });
 
-  const res = await track(controller, normalEvent());
+  const first = await track(controller, normalEvent());
+  const second = await track(controller, normalEvent());
 
-  assert.equal(res.statusCode, 202);
-  assert.equal(res.payload.duplicate, true);
+  assert.equal(first.statusCode, 202);
+  assert.equal(second.statusCode, 202);
+  assert.equal(published, 2);
 });
 
-test('sqs mode: validation error from the outbox path returns 400', async () => {
+test('sqs mode: invalid payload rejected by the producer returns 400 and never reports success', async () => {
   const controller = buildController({
     mode: INTENT_MODES.SQS,
     models: makeFakeModels(),
     queue: makeFakeQueue(),
-    outboxIngest: async () => {
+    intentSqsPublish: async () => {
       throw Object.assign(new Error('invalid occurred_at'), { status: 400 });
     },
   });
@@ -287,6 +293,29 @@ test('sqs mode: validation error from the outbox path returns 400', async () => 
 
   assert.equal(res.statusCode, 400);
   assert.equal(res.payload.error, 'invalid event payload');
+  assert.equal(res.payload.message, undefined);
+});
+
+test('sqs mode: intent path never calls the Mongo intent ingestor or writes Session', async () => {
+  const models = makeFakeModels();
+  let mongoIngests = 0;
+  const controller = buildController({
+    mode: INTENT_MODES.SQS,
+    models,
+    queue: makeFakeQueue(),
+    intentIngest: async () => {
+      mongoIngests += 1;
+      return { inserted: true, kind: 'event' };
+    },
+    intentSqsPublish: async () => ({ event_id: 'evt-1' }),
+  });
+
+  const res = await track(controller, normalEvent());
+
+  assert.equal(res.statusCode, 202);
+  assert.equal(mongoIngests, 0);
+  assert.equal(models.calls.sessionFindOne.length, 0);
+  assert.equal(models.calls.sessionSaved.length, 0);
 });
 
 test('sqs mode: never queries or writes the Mongo Session collection', async () => {
@@ -305,30 +334,30 @@ test('sqs mode: serialized message contains ingested_at as an ISO timestamp', ()
   assert.match(body.ingested_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 });
 
-test('sqs mode: transaction failure returns 500 and never reports success', async () => {
+test('sqs mode: SQS failure returns 503 and never reports success', async () => {
   const controller = buildController({
     mode: INTENT_MODES.SQS,
     models: makeFakeModels(),
     queue: makeFakeQueue(),
-    outboxIngest: async () => {
-      throw new Error('transaction aborted');
+    intentSqsPublish: async () => {
+      throw Object.assign(new Error('throttled'), { status: 503 });
     },
   });
 
   const res = await track(controller, normalEvent());
 
-  assert.equal(res.statusCode, 500);
+  assert.equal(res.statusCode, 503);
   assert.notEqual(res.statusCode, 202);
   assert.equal(res.payload.message, undefined);
-  assert.equal(res.payload.error, 'Failed to track alert');
+  assert.equal(res.payload.error, 'Failed to queue event');
 });
 
-test('sqs mode: oversize message from the outbox path returns 413', async () => {
+test('sqs mode: oversize message from the producer returns 413', async () => {
   const controller = buildController({
     mode: INTENT_MODES.SQS,
     models: makeFakeModels(),
     queue: makeFakeQueue(),
-    outboxIngest: async () => {
+    intentSqsPublish: async () => {
       throw Object.assign(new Error('too large'), { status: 413 });
     },
   });

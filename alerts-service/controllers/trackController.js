@@ -15,7 +15,7 @@ function buildTrackController({
   logger,
   ingestionMode,
   intentIngest,
-  outboxIngest,
+  intentSqsPublish,
   isKnownBrand,
 }) {
   async function handleRsEvent(sessionData, res) {
@@ -40,24 +40,21 @@ function buildTrackController({
     return res.status(201).json({ message: "Session tracked successfully" });
   }
 
-  // SQS mode: same normalization and state as the Mongo path, recorded in
-  // intent_outbox inside one transaction. The relay sends to SQS later.
-  // Keyed on event_id; idempotency_key is not required from the pixel.
-  async function handleOutboxIntentEvent(sessionData, res) {
+  // SQS mode: normalize, build the contract message and send it to SQS. 202 only
+  // after SendMessage succeeds. No Mongo, no session state, no outbox, no dedupe.
+  async function handleSqsIntentEvent(sessionData, res) {
     const brandId = sessionData.brand_id;
     if (!brandId || !isKnownBrand(brandId)) {
       return res.status(400).json({ error: "unknown or inactive brand_id" });
     }
 
     try {
-      const result = await outboxIngest(sessionData, brandId);
-      if (result.status === "duplicate") {
-        return res.status(202).json({ message: "Event already accepted", event_id: result.event_id, duplicate: true });
-      }
+      const result = await intentSqsPublish(sessionData, brandId);
       return res.status(202).json({ message: "Event accepted", event_id: result.event_id });
     } catch (err) {
       if (err?.status === 400) return res.status(400).json({ error: "invalid event payload" });
       if (err?.status === 413) return res.status(413).json({ error: "Event payload too large" });
+      if (err?.status === 503) return res.status(503).json({ error: "Failed to queue event" });
       throw err;
     }
   }
@@ -93,7 +90,7 @@ function buildTrackController({
         }
 
         if (ingestionMode === INTENT_MODES.SQS) {
-          return await handleOutboxIntentEvent(sessionData, res);
+          return await handleSqsIntentEvent(sessionData, res);
         }
         return await handleMongoIntentEvent(sessionData, res);
       } catch (err) {

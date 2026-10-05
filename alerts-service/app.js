@@ -245,6 +245,8 @@ const {
 const { getIntentModels } = require("./models/intent/connection");
 const { createIntentIngestor } = require("./services/intent/ingest");
 const { createOutboxIngestor } = require("./services/intent/outboxIngest");
+const { createIntentSqsProducer } = require("./services/intent/sqsProducer");
+const { sendRawMessage } = require("./services/intentEventQueue");
 const { createBrandSnapshot } = require("./services/intent/brandSnapshot");
 
 const brandSnapshot = createBrandSnapshot({
@@ -366,7 +368,12 @@ const trackController = buildTrackController({
   logger,
   ingestionMode: intentIngestionMode,
   intentIngest,
-  outboxIngest,
+  intentSqsPublish: createIntentSqsProducer({
+    getBrandTimezone: (brand) => brandSnapshot.getBrand(brand)?.store_timezone_iana ?? null,
+    sendRaw: sendRawMessage,
+    queueUrl: process.env.SQS_INTENT_QUEUE_URL,
+    logger,
+  }).publish,
   isKnownBrand: (brand) => brandSnapshot.getBrand(brand)?.active === true,
 });
 app.post("/track", trackController.track);
@@ -835,7 +842,7 @@ async function start() {
     });
     logger.info("[alerts-service] Mongo connected");
 
-    if (intentIngestionMode === "mongo" || intentIngestionMode === "sqs") {
+    if (intentIngestionMode === "mongo") {
       getIntentModels(); // fail fast if INTENT_MONGO_URI is missing
       await brandSnapshot.refresh().catch((err) => {
         logger.error(`[alerts-service] brand snapshot initial load failed: ${err.message}`);
