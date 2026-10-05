@@ -52,7 +52,10 @@ function buildTrackController({
       const result = await intentSqsPublish(sessionData, brandId);
       return res.status(202).json({ message: "Event accepted", event_id: result.event_id });
     } catch (err) {
-      if (err?.status === 400) return res.status(400).json({ error: "invalid event payload" });
+      if (err?.status === 400) {
+        logger.warn(`[track] rejected intent event brand=${brandId} event_id=${sessionData.event_id ?? "missing"}: ${err.message}`);
+        return res.status(400).json({ error: "invalid event payload" });
+      }
       if (err?.status === 413) return res.status(413).json({ error: "Event payload too large" });
       if (err?.status === 503) return res.status(503).json({ error: "Failed to queue event" });
       throw err;

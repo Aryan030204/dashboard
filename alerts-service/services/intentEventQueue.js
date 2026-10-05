@@ -1,4 +1,5 @@
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
+const { NodeHttpHandler } = require("@smithy/node-http-handler");
 
 // SQS hard limit for a single message body.
 const SQS_MESSAGE_LIMIT_BYTES = 256 * 1024;
@@ -8,7 +9,12 @@ const SQS_MESSAGE_LIMIT_BYTES = 256 * 1024;
 let client = null;
 function getClient() {
   if (!client) {
-    client = new SQSClient({ region: process.env.AWS_REGION || "ap-south-1" });
+    // Bounded so a stalled socket fails fast (surfaced as 503) instead of hanging /track.
+    client = new SQSClient({
+      region: process.env.AWS_REGION || "ap-south-1",
+      maxAttempts: 2,
+      requestHandler: new NodeHttpHandler({ connectionTimeout: 3000, requestTimeout: 5000 }),
+    });
   }
   return client;
 }
