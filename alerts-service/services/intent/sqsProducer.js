@@ -87,6 +87,20 @@ function createIntentSqsProducer({
         `[intent-sqs] SendMessage failed type=${message.type} event_id=${message.event_id} brand=${brand}: ` +
           `${err?.name || "Error"} ${err?.message || ""}`,
       );
+      // Temporary diagnostics: AWS error fields and send context. No body, no credentials.
+      logger?.error?.(
+        `[intent-sqs-debug] ${JSON.stringify({
+          event_id: message.event_id,
+          queueUrl,
+          region: process.env.AWS_REGION || "ap-south-1",
+          messageBytes: bytes,
+          errName: err?.name ?? null,
+          errCode: err?.code ?? null,
+          errFault: err?.$fault ?? null,
+          httpStatusCode: err?.$metadata?.httpStatusCode ?? null,
+          errMessage: err?.message ?? null,
+        })}`,
+      );
       throw httpError(503, "Failed to queue event");
     }
 
