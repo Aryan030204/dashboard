@@ -170,8 +170,35 @@ const slugCacheSchema = new mongoose.Schema(
 
 slugCacheSchema.index({ brand: 1, type: 1, slug: 1 }, { unique: true });
 
+// Transactional outbox: written in the same Mongo transaction as the intent
+// state. A relay (not in this step) claims pending rows and sends them to SQS.
+const intentOutboxSchema = new mongoose.Schema(
+  {
+    message_id: { type: String, required: true }, // <type>:<message_key>, stable
+    brand_id: { type: String, required: true, index: true },
+    type: { type: String, required: true, enum: ["event", "click", "session_snapshot"] },
+    schema_version: { type: Number, required: true, default: 1 },
+    payload: { type: mongoose.Schema.Types.Mixed, required: true },
+    status: { type: String, required: true, enum: ["pending", "claimed", "sent"], default: "pending" },
+    attempts: { type: Number, default: 0 },
+    claimed_by: { type: String, default: null },
+    claimed_until: { type: Date, default: null },
+    sent_at: { type: Date, default: null },
+    next_attempt_at: { type: Date, default: null }, // retry backoff; claimable when missing or <= now
+    last_error: { type: String, default: null },
+    sqs_message_id: { type: String, default: null },
+    created_at: { type: Date, required: true },
+    updated_at: { type: Date, required: true },
+  },
+  { versionKey: false, collection: "intent_outbox" },
+);
+
+intentOutboxSchema.index({ message_id: 1 }, { unique: true });
+intentOutboxSchema.index({ status: 1, created_at: 1 });
+
 module.exports = {
   eventSchema,
+  intentOutboxSchema,
   clickEventSchema,
   actorCursorSchema,
   sessionHistorySchema,

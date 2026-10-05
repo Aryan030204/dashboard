@@ -2,20 +2,20 @@
 // advances the actor cursor when a new document was actually inserted.
 function createMongoSink(models) {
   return {
-    async upsertClick(doc) {
+    async upsertClick(doc, opts = {}) {
       const result = await models.ClickEvent.updateOne(
         { event_id: doc.event_id },
         { $setOnInsert: doc },
-        { upsert: true },
+        { upsert: true, ...opts },
       );
       return result.upsertedCount;
     },
 
-    async upsertEvent(filter, doc) {
+    async upsertEvent(filter, doc, opts = {}) {
       const result = await models.Event.updateOne(
         filter,
         { $setOnInsert: doc },
-        { upsert: true },
+        { upsert: true, ...opts },
       );
       return result.upsertedCount;
     },

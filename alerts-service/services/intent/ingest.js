@@ -1,14 +1,10 @@
-const {
-  normalizeIntentBody,
-  normalizeShopifyId,
-  isFallbackId,
-  synthPid,
-} = require("./normalize");
+const { normalizeIntentBody } = require("./normalize");
 const { buildEventDoc, buildClickDoc } = require("./documents");
 const { toStoreLocalOccurredAt } = require("./timezone");
 const { withActorLock } = require("./actorLock");
 const { createSessionState } = require("./sessionState");
 const { createMongoSink } = require("./sinks/mongo");
+const { enrichFromSlugCache, resolveProductId } = require("./productResolution");
 
 // Pipeline order (matches the Sessions Pipeline):
 //   validate + normalize (no lock, no I/O)
@@ -75,27 +71,10 @@ function createIntentIngestor({
         return { inserted: upserted > 0, kind };
       }
 
-      // Slug enrichment failures never fail the event (as in the Sessions Pipeline).
-      try {
-        if (e.event_name === "page_viewed" && e.slug_info) {
-          const cacheId = `${brand}:${e.slug_info.type}:${e.slug_info.slug}`;
-          const cacheDoc = await models.SlugCache.findById(cacheId)
-            .lean()
-            .catch(() => null);
-          if (cacheDoc && cacheDoc.shopify_id) {
-            e.data = e.data || {};
-            e.data.product_id = normalizeShopifyId(cacheDoc.shopify_id) || e.data.product_id;
-          }
-        }
-      } catch {
-        // swallow
-      }
+      await enrichFromSlugCache(models, brand, e);
 
       const sessionId = timing.session_id;
-      let productId = normalizeShopifyId(e?.data?.product_id ?? null);
-      if (!productId || isFallbackId(productId)) {
-        productId = synthPid(brand, sessionId, e);
-      }
+      const productId = resolveProductId(brand, sessionId, e);
 
       let doc;
       let upserted;

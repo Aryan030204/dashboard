@@ -17,7 +17,7 @@ function createSessionState({
   // session_time_spent is always null for the event being processed. It is only
   // filled in on the previous session's last document when a later event
   // reveals the session has closed.
-  async function resolveSessionTiming(brand, actorId, when) {
+  async function resolveSessionTiming(brand, actorId, when, opts = {}) {
     if (!actorId) {
       return {
         session_id: crypto.randomUUID(),
@@ -29,7 +29,9 @@ function createSessionState({
       };
     }
 
-    const cursor = await ActorCursor.findOne({ brand_id: brand, actor_id: actorId }).lean();
+    let cursorQuery = ActorCursor.findOne({ brand_id: brand, actor_id: actorId });
+    if (opts.session) cursorQuery = cursorQuery.session(opts.session);
+    const cursor = await cursorQuery.lean();
     const gap = cursor ? when - new Date(cursor.last_event_at) : Infinity;
     // Small negative gaps (out-of-order arrival) stay in the same session.
     // Only a gap beyond the timeout, in either direction, starts a new one.
@@ -60,8 +62,13 @@ function createSessionState({
   // Call only after the event was newly inserted (upsertedCount > 0). A failure
   // here is logged and not rethrown, matching the Sessions Pipeline. The event
   // is already stored at this point.
-  async function commitSessionCursor(brand, actorId, timing, when, docRef, eventDoc) {
-    if (!actorId) return;
+  // opts.session: write inside an existing Mongo transaction.
+  // opts.strict: rethrow instead of logging, so the transaction aborts.
+  // Returns the session_history document when a session was closed, else null.
+  async function commitSessionCursor(brand, actorId, timing, when, docRef, eventDoc, opts = {}) {
+    if (!actorId) return null;
+    const sessionOpts = opts.session ? { session: opts.session } : {};
+    let closedSession = null;
 
     if (timing.isNewSession && timing.cursor) {
       const prevSessionStart = new Date(timing.cursor.session_start);
@@ -79,8 +86,10 @@ function createSessionState({
               session_time_spent: prevSessionTimeSpent,
             },
           },
+          sessionOpts,
         );
       } catch (err) {
+        if (opts.strict) throw err;
         logger?.error?.(`[session] failed to close previous session: ${err.message}`);
       }
 
@@ -89,7 +98,7 @@ function createSessionState({
           prevLastEventAt,
           getBrandTimezone(brand),
         );
-        await SessionHistory.create({
+        const historyDoc = {
           brand_id: brand,
           actor_id: actorId,
           session_id: timing.cursor.session_id,
@@ -99,8 +108,15 @@ function createSessionState({
           occurred_at: displayOccurredAt,
           events_seq: timing.cursor.events_seq || {},
           last_ref: timing.cursor.last_ref,
-        });
+        };
+        if (opts.session) {
+          await SessionHistory.create([historyDoc], sessionOpts);
+        } else {
+          await SessionHistory.create(historyDoc);
+        }
+        closedSession = historyDoc;
       } catch (err) {
+        if (opts.strict) throw err;
         logger?.error?.(`[session] failed to write session history: ${err.message}`);
       }
     }
@@ -140,11 +156,14 @@ function createSessionState({
             events_seq: eventsSeq,
           },
         },
-        { upsert: true },
+        { upsert: true, ...sessionOpts },
       );
     } catch (err) {
+      if (opts.strict) throw err;
       logger?.error?.(`[session] failed to update actor cursor: ${err.message}`);
     }
+
+    return closedSession;
   }
 
   return { resolveSessionTiming, commitSessionCursor };

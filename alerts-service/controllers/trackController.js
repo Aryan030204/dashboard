@@ -13,10 +13,9 @@ function buildTrackController({
   OtpVerified,
   AjrsPurchase,
   logger,
-  intentEventQueue,
-  sqsMessageLimitBytes,
   ingestionMode,
   intentIngest,
+  outboxIngest,
   isKnownBrand,
 }) {
   async function handleRsEvent(sessionData, res) {
@@ -41,31 +40,25 @@ function buildTrackController({
     return res.status(201).json({ message: "Session tracked successfully" });
   }
 
-  // Unchanged. Still sends the raw body; normalization for SQS is the planned
-  // SQS cutover step, not part of this migration.
-  async function handleSqsIntentEvent(sessionData, res) {
-    const idempotencyKey = sessionData.idempotency_key;
-    if (!idempotencyKey) {
-      return res.status(400).json({ error: "idempotency_key is required" });
-    }
-
-    const message = { ...sessionData, ingested_at: new Date().toISOString() };
-    const bodyBytes = Buffer.byteLength(JSON.stringify(message), "utf8");
-
-    if (bodyBytes > sqsMessageLimitBytes) {
-      logger.warn(
-        `[track] Intent event ${idempotencyKey} rejected: ${bodyBytes} bytes exceeds SQS limit ${sqsMessageLimitBytes}`,
-      );
-      return res.status(413).json({ error: "Event payload too large" });
+  // SQS mode: same normalization and state as the Mongo path, recorded in
+  // intent_outbox inside one transaction. The relay sends to SQS later.
+  // Keyed on event_id; idempotency_key is not required from the pixel.
+  async function handleOutboxIntentEvent(sessionData, res) {
+    const brandId = sessionData.brand_id;
+    if (!brandId || !isKnownBrand(brandId)) {
+      return res.status(400).json({ error: "unknown or inactive brand_id" });
     }
 
     try {
-      const messageId = await intentEventQueue.sendIntentEvent(sessionData);
-      logger.info(`[track] Intent event ${idempotencyKey} queued to SQS (MessageId=${messageId})`);
-      return res.status(202).json({ message: "Event accepted", event_id: idempotencyKey });
+      const result = await outboxIngest(sessionData, brandId);
+      if (result.status === "duplicate") {
+        return res.status(202).json({ message: "Event already accepted", event_id: result.event_id, duplicate: true });
+      }
+      return res.status(202).json({ message: "Event accepted", event_id: result.event_id });
     } catch (err) {
-      logger.error(`[track] SQS send failed for intent event ${idempotencyKey}: ${err?.name || "Error"} ${err?.message || ""}`);
-      return res.status(503).json({ error: "Failed to queue event" });
+      if (err?.status === 400) return res.status(400).json({ error: "invalid event payload" });
+      if (err?.status === 413) return res.status(413).json({ error: "Event payload too large" });
+      throw err;
     }
   }
 
@@ -100,7 +93,7 @@ function buildTrackController({
         }
 
         if (ingestionMode === INTENT_MODES.SQS) {
-          return await handleSqsIntentEvent(sessionData, res);
+          return await handleOutboxIntentEvent(sessionData, res);
         }
         return await handleMongoIntentEvent(sessionData, res);
       } catch (err) {

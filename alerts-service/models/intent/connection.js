@@ -26,6 +26,7 @@ function getIntentModels() {
     ActorCursor: intentConnection.model("ActorCursor", schemas.actorCursorSchema),
     SessionHistory: intentConnection.model("SessionHistory", schemas.sessionHistorySchema),
     SlugCache: intentConnection.model("SlugCache", schemas.slugCacheSchema),
+    IntentOutbox: intentConnection.model("IntentOutbox", schemas.intentOutboxSchema),
   };
   return intentModels;
 }

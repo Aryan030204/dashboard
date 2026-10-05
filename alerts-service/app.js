@@ -242,10 +242,9 @@ const {
   buildTrackController,
   resolveIntentIngestionMode,
 } = require("./controllers/trackController");
-const intentEventQueue = require("./services/intentEventQueue");
-const { SQS_MESSAGE_LIMIT_BYTES } = intentEventQueue;
 const { getIntentModels } = require("./models/intent/connection");
 const { createIntentIngestor } = require("./services/intent/ingest");
+const { createOutboxIngestor } = require("./services/intent/outboxIngest");
 const { createBrandSnapshot } = require("./services/intent/brandSnapshot");
 
 const brandSnapshot = createBrandSnapshot({
@@ -264,6 +263,13 @@ const intentIngest = createIntentIngestor({
   // Seconds, defaults to 30 minutes (same as the Sessions Pipeline).
   sessionTimeoutMs: (Number(process.env.SESSION_TIMEOUT) || 1800) * 1000,
   // Out-of-order arrival tolerance (same as the Sessions Pipeline).
+  negativeGapToleranceMs: 30 * 1000,
+  logger,
+});
+const outboxIngest = createOutboxIngestor({
+  getModels: getIntentModels,
+  getBrandTimezone: (brand) => brandSnapshot.getBrand(brand)?.store_timezone_iana ?? null,
+  sessionTimeoutMs: (Number(process.env.SESSION_TIMEOUT) || 1800) * 1000,
   negativeGapToleranceMs: 30 * 1000,
   logger,
 });
@@ -358,10 +364,9 @@ const trackController = buildTrackController({
   OtpVerified,
   AjrsPurchase,
   logger,
-  intentEventQueue,
-  sqsMessageLimitBytes: SQS_MESSAGE_LIMIT_BYTES,
   ingestionMode: intentIngestionMode,
   intentIngest,
+  outboxIngest,
   isKnownBrand: (brand) => brandSnapshot.getBrand(brand)?.active === true,
 });
 app.post("/track", trackController.track);
@@ -830,7 +835,7 @@ async function start() {
     });
     logger.info("[alerts-service] Mongo connected");
 
-    if (intentIngestionMode === "mongo") {
+    if (intentIngestionMode === "mongo" || intentIngestionMode === "sqs") {
       getIntentModels(); // fail fast if INTENT_MONGO_URI is missing
       await brandSnapshot.refresh().catch((err) => {
         logger.error(`[alerts-service] brand snapshot initial load failed: ${err.message}`);

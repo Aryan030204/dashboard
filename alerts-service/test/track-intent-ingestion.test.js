@@ -79,17 +79,16 @@ function buildController({
   mode,
   models,
   queue,
-  limit = SQS_MESSAGE_LIMIT_BYTES,
+  outboxIngest = async () => ({ status: 'accepted', kind: 'event', event_id: 'evt-1', outbox: ['event:evt-1'] }),
   intentIngest = async () => ({ inserted: true, kind: 'event' }),
   isKnownBrand = () => true,
 }) {
   return buildTrackController({
     ...models,
     logger: silentLogger,
-    intentEventQueue: queue,
-    sqsMessageLimitBytes: limit,
     ingestionMode: mode,
     intentIngest,
+    outboxIngest,
     isKnownBrand,
   });
 }
@@ -113,6 +112,7 @@ function intentEvent(overrides = {}) {
 
 function normalEvent(overrides = {}) {
   return {
+    brand_id: 'bbb_shop',
     event_id: 'evt-1',
     idempotency_key: 'idem-abc',
     event_type: 'add_to_cart',
@@ -219,34 +219,74 @@ test('mongo mode: intent payload that fails validation returns 400', async () =>
   assert.equal(res.payload.error, 'invalid event payload');
 });
 
-test('sqs mode: missing idempotency_key still returns 400 and never queues', async () => {
+test('sqs mode: idempotency_key is not required; event_id alone is accepted', async () => {
   const models = makeFakeModels();
-  const queue = makeFakeQueue();
-  const controller = buildController({ mode: INTENT_MODES.SQS, models, queue });
+  const seen = [];
+  const controller = buildController({
+    mode: INTENT_MODES.SQS,
+    models,
+    queue: makeFakeQueue(),
+    outboxIngest: async (body) => {
+      seen.push(body);
+      return { status: 'accepted', kind: 'event', event_id: body.event_id, outbox: [] };
+    },
+  });
 
   const res = await track(controller, normalEvent({ idempotency_key: undefined }));
 
-  assert.equal(res.statusCode, 400);
-  assert.equal(res.payload.error, 'idempotency_key is required');
-  assert.equal(queue.sent.length, 0);
-  assert.equal(models.calls.sessionSaved.length, 0);
+  assert.equal(res.statusCode, 202);
+  assert.deepEqual(res.payload, { message: 'Event accepted', event_id: 'evt-1' });
+  assert.equal(seen.length, 1);
 });
 
-test('sqs mode: normal event returns 202 and sends the complete payload to SQS', async () => {
-  const models = makeFakeModels();
-  const queue = makeFakeQueue({ messageId: 'mid-9' });
-  const controller = buildController({ mode: INTENT_MODES.SQS, models, queue });
-  const event = normalEvent();
+test('sqs mode: unknown or inactive brand_id returns 400 and never reaches the outbox', async () => {
+  let called = false;
+  const controller = buildController({
+    mode: INTENT_MODES.SQS,
+    models: makeFakeModels(),
+    queue: makeFakeQueue(),
+    isKnownBrand: () => false,
+    outboxIngest: async () => {
+      called = true;
+      return { status: 'accepted' };
+    },
+  });
 
-  const res = await track(controller, event);
+  const res = await track(controller, normalEvent());
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.payload.error, 'unknown or inactive brand_id');
+  assert.equal(called, false);
+});
+
+test('sqs mode: duplicate event returns 202 with duplicate flag', async () => {
+  const controller = buildController({
+    mode: INTENT_MODES.SQS,
+    models: makeFakeModels(),
+    queue: makeFakeQueue(),
+    outboxIngest: async () => ({ status: 'duplicate', kind: 'event', event_id: 'evt-1', outbox: [] }),
+  });
+
+  const res = await track(controller, normalEvent());
 
   assert.equal(res.statusCode, 202);
-  assert.deepEqual(res.payload, { message: 'Event accepted', event_id: 'idem-abc' });
-  assert.equal(queue.sent.length, 1);
-  for (const [key, value] of Object.entries(event)) {
-    assert.deepEqual(queue.sent[0][key], value, `field ${key} must be preserved`);
-  }
-  assert.equal(queue.sent[0].idempotency_key, 'idem-abc');
+  assert.equal(res.payload.duplicate, true);
+});
+
+test('sqs mode: validation error from the outbox path returns 400', async () => {
+  const controller = buildController({
+    mode: INTENT_MODES.SQS,
+    models: makeFakeModels(),
+    queue: makeFakeQueue(),
+    outboxIngest: async () => {
+      throw Object.assign(new Error('invalid occurred_at'), { status: 400 });
+    },
+  });
+
+  const res = await track(controller, normalEvent());
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.payload.error, 'invalid event payload');
 });
 
 test('sqs mode: never queries or writes the Mongo Session collection', async () => {
@@ -265,30 +305,37 @@ test('sqs mode: serialized message contains ingested_at as an ISO timestamp', ()
   assert.match(body.ingested_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 });
 
-test('sqs mode: SQS failure returns 503 and never reports success', async () => {
-  const models = makeFakeModels();
-  const queue = makeFakeQueue({ error: Object.assign(new Error('throttled'), { name: 'ThrottlingException' }) });
-  const controller = buildController({ mode: INTENT_MODES.SQS, models, queue });
+test('sqs mode: transaction failure returns 500 and never reports success', async () => {
+  const controller = buildController({
+    mode: INTENT_MODES.SQS,
+    models: makeFakeModels(),
+    queue: makeFakeQueue(),
+    outboxIngest: async () => {
+      throw new Error('transaction aborted');
+    },
+  });
 
   const res = await track(controller, normalEvent());
 
-  assert.ok(res.statusCode >= 500 && res.statusCode <= 599, `expected 5xx, got ${res.statusCode}`);
+  assert.equal(res.statusCode, 500);
   assert.notEqual(res.statusCode, 202);
-  assert.notEqual(res.statusCode, 200);
   assert.equal(res.payload.message, undefined);
-  assert.equal(res.payload.error, 'Failed to queue event');
+  assert.equal(res.payload.error, 'Failed to track alert');
 });
 
-test('sqs mode: event over 256 KB returns 413 and SQS is not called', async () => {
-  const models = makeFakeModels();
-  const queue = makeFakeQueue();
-  const controller = buildController({ mode: INTENT_MODES.SQS, models, queue });
-  const huge = normalEvent({ data: { blob: 'x'.repeat(SQS_MESSAGE_LIMIT_BYTES + 10) } });
+test('sqs mode: oversize message from the outbox path returns 413', async () => {
+  const controller = buildController({
+    mode: INTENT_MODES.SQS,
+    models: makeFakeModels(),
+    queue: makeFakeQueue(),
+    outboxIngest: async () => {
+      throw Object.assign(new Error('too large'), { status: 413 });
+    },
+  });
 
-  const res = await track(controller, huge);
+  const res = await track(controller, normalEvent({ data: { blob: 'x'.repeat(SQS_MESSAGE_LIMIT_BYTES + 10) } }));
 
   assert.equal(res.statusCode, 413);
-  assert.equal(queue.sent.length, 0);
 });
 
 test('RS_Cinema_KP event still writes OtpVerified and not Session, in both modes', async () => {

@@ -26,8 +26,19 @@ async function sendIntentEvent(event, { sqs = getClient(), queueUrl = process.en
   return result.MessageId;
 }
 
+// Sends an already-serialized body unchanged. The outbox relay uses this so the
+// stored contract message is published exactly as written (no ingested_at added).
+async function sendRawMessage(body, { sqs = getClient(), queueUrl = process.env.SQS_INTENT_QUEUE_URL } = {}) {
+  if (!queueUrl) throw new Error("SQS_INTENT_QUEUE_URL is not configured");
+  const result = await sqs.send(
+    new SendMessageCommand({ QueueUrl: queueUrl, MessageBody: body }),
+  );
+  return result.MessageId;
+}
+
 module.exports = {
   SQS_MESSAGE_LIMIT_BYTES,
   serializeIntentEvent,
   sendIntentEvent,
+  sendRawMessage,
 };
