@@ -25,8 +25,6 @@ const {
 const Alert = require("./models/alert");
 const AlertChannel = require("./models/alertChannel");
 const BrandAlertChannel = require("./models/brandAlertChannel");
-const OtpVerified = require("./models/otpVerified");
-const AjrsPurchase = require("./models/ajrsPurchase");
 const ItemQtyPush = require("./models/itemQtyPush");
 const { sendToAll } = require("./utils/fcm");
 const PipelineCreds = require("./models/pipelineCreds");
@@ -324,6 +322,7 @@ app.post("/inventory", requirePipelineKey, async (req, res) => {
 // Only payloads with an event_name take this path (see controllers/trackIntent.js).
 // RS and CI payloads fall through to the existing handler below, unchanged.
 const { createIntentTrack } = require("./controllers/trackIntent");
+const { createLegacyTrack } = require("./controllers/trackLegacy");
 const { createKafkaPublisher } = require("./services/intent/kafkaProducer");
 const { createBrandAllowlist } = require("./services/intent/brandAllowlist");
 
@@ -342,63 +341,8 @@ const intentTrack = createIntentTrack({
   logger,
 });
 
-app.post("/track", intentTrack, async (req, res) => {
-  try {
-    const sessionData = req.body;
-    const isRSEvent = sessionData.tags === "RS_Cinema_KP" || sessionData.orderId;
-
-    // Check for idempotency key to prevent duplicates (bypass for custom RS events)
-    if (!sessionData.idempotency_key && !isRSEvent) {
-      return res.status(400).json({ error: "idempotency_key is required" });
-    }
-
-    let existingSession = null;
-    if (sessionData.idempotency_key) {
-      existingSession = await Session.findOne({
-        idempotency_key: sessionData.idempotency_key,
-      });
-    }
-
-    if (existingSession) {
-      return res
-        .status(200)
-        .json({ message: "Event already processed", session: existingSession });
-    }
-
-    // ---- RS Specific Event Handling ----
-    if (isRSEvent) {
-      if (sessionData.tags === "RS_Cinema_KP" && sessionData.customer_id) {
-        const exists = await OtpVerified.findOne({ customer_id: sessionData.customer_id });
-        if (!exists) {
-          const otpVerify = new OtpVerified({ customer_id: sessionData.customer_id });
-          await otpVerify.save();
-          logger.info(`[track] OTP Verified saved for customer: ${sessionData.customer_id}`);
-        }
-      }
-
-      if (sessionData.orderId) {
-        const exists = await AjrsPurchase.findOne({ order_id: sessionData.orderId });
-        if (!exists) {
-          const purchase = new AjrsPurchase({ order_id: sessionData.orderId });
-          await purchase.save();
-          logger.info(`[track] AJRS Purchase saved for order: ${sessionData.orderId}`);
-        }
-      }
-
-      return res.status(201).json({ message: "Session tracked successfully" });
-    }
-
-    // Save new session document
-    const session = new Session(sessionData);
-    await session.save();
-
-    return res.status(201).json({ message: "Session tracked successfully" });
-  } catch (err) {
-
-    logger.error("Error tracking session:", err);
-    res.status(500).json({ error: "Failed to track alert" });
-  }
-});
+// Kafka events are handled above; everything else takes the legacy Mongo handler.
+app.post("/track", intentTrack, createLegacyTrack({ Session, logger }));
 
 // Fully public — no auth, no gateway trust headers, no nginx-level gating.
 // Returns a count of session events matching { event, shop } from either the

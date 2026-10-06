@@ -4,7 +4,7 @@ const express = require('express');
 const cors = require('cors');
 
 const { createIntentTrack, buildIntentMessage, isIntentEvent } = require('../controllers/trackIntent');
-const { topicForEvent, messageKey, TOPICS } = require('../services/intent/topicRouting');
+const { topicForEvent, messageKey, TOPICS, isKafkaEvent, KAFKA_EVENTS } = require('../services/intent/topicRouting');
 const { createKafkaPublisher, readKafkaConfig, KafkaPublishError } = require('../services/intent/kafkaProducer');
 const { createBrandAllowlist } = require('../services/intent/brandAllowlist');
 const { normalizeIntentBody } = require('../services/intent/normalize');
@@ -229,6 +229,76 @@ test('an intent event carrying a top-level orderId goes to Kafka, not the RS han
     assert.equal(r.status, 202);
     assert.equal(s.fallthrough.length, 0);
     assert.equal(s.sent[0].topic, 'intent.checkout');
+  } finally { await s.close(); }
+});
+
+// --- routing by event name (Kafka list vs legacy Mongo) ---
+test('the Kafka list is exactly the agreed one', () => {
+  const agreed = ['checkout_started', 'product_added_to_cart', 'click', 'product_viewed', 'collection_viewed',
+    'checkout_completed', 'page_viewed', 'product_removed_from_cart', 'scroll_depth'];
+  assert.deepEqual([...KAFKA_EVENTS].sort(), [...agreed].sort());
+  for (const n of agreed) assert.equal(isKafkaEvent(n), true, n);
+});
+
+test('legacy names are not Kafka events: checkout_initiated, buy_now, add_to_cart, unknown, non-strings', () => {
+  for (const n of ['checkout_initiated', 'buy_now', 'add_to_cart', 'something_else', '', null, undefined, 5]) {
+    assert.equal(isKafkaEvent(n), false, String(n));
+    assert.equal(isIntentEvent({ event_name: n }), false, String(n));
+  }
+});
+
+test('bucketing: substring rules, first match wins', () => {
+  assert.equal(topicForEvent('checkout_started'), 'intent.checkout');
+  assert.equal(topicForEvent('checkout_completed'), 'intent.checkout');
+  assert.equal(topicForEvent('foo_checkout_bar'), 'intent.checkout');
+  assert.equal(topicForEvent('product_added_to_cart'), 'intent.atc');
+  assert.equal(topicForEvent('add_to_cart'), 'intent.atc');
+  assert.equal(topicForEvent('click'), 'intent.click');
+  for (const other of ['product_viewed', 'collection_viewed', 'page_viewed', 'scroll_depth', 'product_removed_from_cart']) {
+    assert.equal(topicForEvent(other), 'intent.other', other);
+  }
+  assert.equal(topicForEvent('checkout_add_to_cart'), 'intent.checkout');
+  assert.equal(topicForEvent('add_to_cart_click'), 'intent.atc');
+});
+
+test('each Kafka-list event is published to its bucket topic over HTTP', async () => {
+  const s = await start();
+  try {
+    const expected = {
+      checkout_started: 'intent.checkout', checkout_completed: 'intent.checkout',
+      product_added_to_cart: 'intent.atc', product_viewed: 'intent.other', collection_viewed: 'intent.other',
+      page_viewed: 'intent.other', product_removed_from_cart: 'intent.other', scroll_depth: 'intent.other',
+    };
+    for (const [name, topic] of Object.entries(expected)) {
+      const r = await post(s.url, body({ event_id: `id-${name}`, event_name: name, data: {} }));
+      assert.equal(r.status, 202, name);
+      assert.equal(s.sent.at(-1).topic, topic, name);
+    }
+    assert.equal((await post(s.url, click({ event_id: 'id-click' }))).status, 202);
+    assert.equal(s.sent.at(-1).topic, 'intent.click');
+  } finally { await s.close(); }
+});
+
+test('intent-shaped payloads with legacy names fall through to the legacy handler, not Kafka', async () => {
+  const s = await start();
+  try {
+    for (const name of ['checkout_initiated', 'buy_now', 'add_to_cart', 'anything_else']) {
+      assert.equal((await post(s.url, body({ event_name: name }))).status, 201, name); // stub legacy answers 201
+    }
+    assert.equal(s.fallthrough.length, 4);
+    assert.equal(s.sent.length, 0);
+  } finally { await s.close(); }
+});
+
+test('CI payload named like a Kafka event (event_type, no event_name) stays on the legacy handler', async () => {
+  const s = await start();
+  try {
+    for (const t of ['product_added_to_cart', 'product_viewed', 'collection_viewed']) {
+      const r = await post(s.url, { event_id: 'x', idempotency_key: 'k', event_type: t, shop_name: 'bbb', session_id: 's', data: {} });
+      assert.equal(r.status, 201, t);
+    }
+    assert.equal(s.fallthrough.length, 3);
+    assert.equal(s.sent.length, 0);
   } finally { await s.close(); }
 });
 

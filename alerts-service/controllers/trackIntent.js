@@ -8,7 +8,7 @@ const {
   serializeMessage,
   messageBytes,
 } = require("../services/intent/messageContract");
-const { topicForEvent, messageKey } = require("../services/intent/topicRouting");
+const { TOPICS, isKafkaEvent, topicForEvent, messageKey } = require("../services/intent/topicRouting");
 
 const MAX_MESSAGE_BYTES = 256 * 1024;
 const MAX_ID_LENGTH = 100;
@@ -17,12 +17,12 @@ function httpError(status, message) {
   return Object.assign(new Error(message), { status });
 }
 
-// Intent events are the ones that carry an event_name. RS payloads (tags/orderId) and
-// the CI pixel (event_type + idempotency_key) never do, so those keep their existing
-// /track handling. An intent event that also happens to carry an orderId is still an
-// intent event.
+// Only payloads whose event_name is on the Kafka list (topicRouting.KAFKA_EVENTS) take
+// the Kafka path. Everything else, including the CI pixel (it sends event_type, not
+// event_name) and event names such as checkout_initiated, buy_now and add_to_cart,
+// falls through to the legacy Mongo handler.
 function isIntentEvent(body) {
-  return typeof body?.event_name === "string" && body.event_name !== "";
+  return isKafkaEvent(body?.event_name);
 }
 
 // Builds the normalized contract message (schema_version 1). Pure: no I/O.
@@ -56,7 +56,7 @@ function buildIntentMessage(body, brand, brandTimezone) {
   }
 
   let raw = e.data ?? null;
-  if (e.event_name === "product_added_to_cart" || e.event_name === "add_to_cart") {
+  if (topicForEvent(e.event_name) === TOPICS.ATC) {
     raw = { ...(e.data || {}), product_id: resolveProductId(brand, null, e) };
   }
   return buildEventMessage({ ...common, raw });

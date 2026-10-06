@@ -1,3 +1,78 @@
+// DEAD CODE. Nothing imports this file and nothing should.
+//
+// Code that has been removed from the live service but kept for reference lives here.
+// Add new entries with a note on where they came from and why they were removed.
+//
+// ---------------------------------------------------------------------------------------
+// RS event handling, removed from POST /track (app.js).
+//
+// It handled two RS payload shapes before the idempotency check was applied:
+//   - tags === "RS_Cinema_KP" with a customer_id -> ajrs_otpverified collection
+//   - orderId                                    -> ajrsPurchase collection
+// Both returned 201 "Session tracked successfully" and skipped records that already
+// existed. The models and the CSV import script that went with it are below.
+//
+// Original routing in /track:
+//   const isRSEvent = sessionData.tags === "RS_Cinema_KP" || sessionData.orderId;
+//   // the idempotency_key was required only when !isRSEvent
+// ---------------------------------------------------------------------------------------
+async function handleRsEvent({ sessionData, res, logger, OtpVerified, AjrsPurchase }) {
+  if (sessionData.tags === "RS_Cinema_KP" && sessionData.customer_id) {
+    const exists = await OtpVerified.findOne({ customer_id: sessionData.customer_id });
+    if (!exists) {
+      const otpVerify = new OtpVerified({ customer_id: sessionData.customer_id });
+      await otpVerify.save();
+      logger.info(`[track] OTP Verified saved for customer: ${sessionData.customer_id}`);
+    }
+  }
+
+  if (sessionData.orderId) {
+    const exists = await AjrsPurchase.findOne({ order_id: sessionData.orderId });
+    if (!exists) {
+      const purchase = new AjrsPurchase({ order_id: sessionData.orderId });
+      await purchase.save();
+      logger.info(`[track] AJRS Purchase saved for order: ${sessionData.orderId}`);
+    }
+  }
+
+  return res.status(201).json({ message: "Session tracked successfully" });
+}
+
+
+// ---------------------------------------------------------------------------------------
+// RS / AJRS Mongoose models, removed from models/. Wrapped in functions so that loading
+// this file never registers a model.
+// ---------------------------------------------------------------------------------------
+
+// was models/ajrsPurchase.js
+function defineAjrsPurchaseModel(mongoose) {
+  const ajrsPurchaseSchema = new mongoose.Schema({
+    order_id: { type: String, required: true },
+  }, {
+    timestamps: true,
+    collection: 'ajrsPurchase',
+  });
+  return mongoose.model('ajrsPurchase', ajrsPurchaseSchema);
+}
+
+// was models/otpVerified.js
+function defineOtpVerifiedModel(mongoose) {
+  const otpVerifiedSchema = new mongoose.Schema({
+    customer_id: { type: String, required: true },
+  }, {
+    timestamps: true,
+    collection: 'ajrs_otpverified',
+  });
+  return mongoose.model('ajrs_otpverified', otpVerifiedSchema);
+}
+
+// ---------------------------------------------------------------------------------------
+// was scripts/import-otp-verified.js, run with `npm run import:otp-verified` (script
+// removed from package.json). One-off import of verified phone numbers from a CSV export
+// into the ajrs_otpverified collection. Kept verbatim as a comment so it can never run
+// from here. Its require paths ('../models/otpVerified', '../.env') assumed scripts/.
+// ---------------------------------------------------------------------------------------
+/*
 #!/usr/bin/env node
 require('dotenv').config({
   path: require('path').resolve(__dirname, '../.env'),
@@ -133,3 +208,8 @@ run()
   .finally(async () => {
     await mongoose.disconnect();
   });
+*/
+
+// Nothing below is exported or required anywhere. Referenced once only so editors and
+// linters do not flag the definitions above as unused.
+void [handleRsEvent, defineAjrsPurchaseModel, defineOtpVerifiedModel];

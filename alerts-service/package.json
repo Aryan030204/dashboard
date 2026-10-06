@@ -5,8 +5,7 @@
   "type": "commonjs",
   "main": "app.js",
   "scripts": {
-    "start": "nodemon app.js",
-    "import:otp-verified": "node scripts/import-otp-verified.js"
+    "start": "nodemon app.js"
   },
   "dependencies": {
     "@sentry/node": "^10.54.0",
