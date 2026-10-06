@@ -1,6 +1,7 @@
 const dns = require("dns");
 const { monitorEventLoopDelay } = require("perf_hooks");
 const { Kafka, logLevel, CompressionTypes } = require("kafkajs");
+const { createSocketFactory } = require("./kafkaDns");
 
 // One shared Kafka producer for alerts-service. /track success means Kafka acknowledged
 // the message (acks=all).
@@ -87,6 +88,7 @@ function createKafkaPublisher({ config: given = readKafkaConfig(), logger, kafka
       clientId: config.clientId,
       brokers: config.brokers,
       logLevel: logLevel.NOTHING,
+      socketFactory: createSocketFactory(),
       connectionTimeout: config.connectionTimeoutMs,
       requestTimeout: config.sendTimeoutMs,
       retry: { initialRetryTime: 100, maxRetryTime: 1000, retries: 2 },
@@ -264,18 +266,27 @@ function createKafkaPublisher({ config: given = readKafkaConfig(), logger, kafka
     const timer = setInterval(() => {
       const host = config.brokers[0].split(":")[0];
       const t = Date.now();
+      let dnsMs = null; // stays null if the lookup has not returned when the line prints
+      let dnsError = null;
       dns.lookup(host, (err) => {
+        dnsMs = Date.now() - t;
+        dnsError = err ? err.code : null;
+      });
+      // Printed after 1 s whether or not the lookup finished, so a stuck lookup shows up
+      // as dns_ms=null instead of silencing the line.
+      const printer = setTimeout(() => {
         logger?.info?.(
           `[kafka-stats] ${JSON.stringify({
             ...stats(),
             loop_lag_p99_ms: Math.round(loop.percentile(99) / 1e6),
             loop_lag_max_ms: Math.round(loop.max / 1e6),
-            dns_ms: Date.now() - t,
-            dns_error: err ? err.code : null,
+            dns_ms: dnsMs,
+            dns_error: dnsError,
           })}`,
         );
         loop.reset();
-      });
+      }, 1000);
+      printer.unref?.();
     }, statsIntervalMs);
     timer.unref?.();
   }

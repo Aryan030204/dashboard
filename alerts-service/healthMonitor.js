@@ -194,7 +194,14 @@ function detectErrorType(body, statusCode) {
   return statusCode >= 500 ? "application_error" : "client_error";
 }
 
+// A failing endpoint turns every request into one more outbound call. Cap how many are in
+// flight so a burst of errors cannot fill the process's connection and DNS capacity.
+const MAX_IN_FLIGHT_POSTS = 5;
+let inFlightPosts = 0;
+
 function postJson(url, payload, timeoutMs, logger, logKey) {
+  if (inFlightPosts >= MAX_IN_FLIGHT_POSTS) return;
+  inFlightPosts += 1;
   fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -205,6 +212,8 @@ function postJson(url, payload, timeoutMs, logger, logKey) {
         : undefined,
   }).catch((error) => {
     logger.warn?.(`[health-monitor] ${logKey} skipped`, { error: error.message });
+  }).finally(() => {
+    inFlightPosts -= 1;
   });
 }
 
@@ -228,6 +237,10 @@ function createHealthMonitorReporter({ serviceName, baseUrl, logger }) {
     DEFAULT_HEADER_MAX_LENGTH,
   );
   const recentFailures = new Map();
+  // One failure event per route and status code every FAILURE_POST_INTERVAL_MS. Without
+  // this, a route that fails 5 times a second sends 5 events a second.
+  const FAILURE_POST_INTERVAL_MS = 30000;
+  const lastFailurePost = new Map();
 
   function hasRecentFailure(key) {
     const expiresAt = recentFailures.get(key);
@@ -274,6 +287,10 @@ function createHealthMonitorReporter({ serviceName, baseUrl, logger }) {
       if (res.statusCode >= 400) {
         const sanitizedBody = redactValue(responseBody, payloadMaxLength);
         markRecentFailure(routeKey);
+        const failureKey = `${routeKey}|${res.statusCode}`;
+        const lastPost = lastFailurePost.get(failureKey) || 0;
+        if (Date.now() - lastPost < FAILURE_POST_INTERVAL_MS) return;
+        lastFailurePost.set(failureKey, Date.now());
         postJson(`${eventsUrl}/failures`, {
           serviceName,
           baseUrl,
