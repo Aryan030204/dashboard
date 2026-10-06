@@ -392,6 +392,7 @@ app.post("/track", intentTrack, async (req, res) => {
     const session = new Session(sessionData);
     await session.save();
 
+    return res.status(201).json({ message: "Session tracked successfully" });
   } catch (err) {
 
     logger.error("Error tracking session:", err);
