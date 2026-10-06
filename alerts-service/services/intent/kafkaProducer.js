@@ -1,3 +1,5 @@
+const dns = require("dns");
+const { monitorEventLoopDelay } = require("perf_hooks");
 const { Kafka, logLevel, CompressionTypes } = require("kafkajs");
 
 // One shared Kafka producer for alerts-service. /track success means Kafka acknowledged
@@ -50,7 +52,7 @@ function categorize(err) {
 }
 
 // `kafka` and `sleep` are injectable for tests. The default builds a kafkajs client.
-function createKafkaPublisher({ config = readKafkaConfig(), logger, kafka } = {}) {
+function createKafkaPublisher({ config = readKafkaConfig(), logger, kafka, statsIntervalMs = 60000, resetMinIntervalMs = 5000 } = {}) {
   const client =
     kafka ||
     new Kafka({
@@ -62,16 +64,37 @@ function createKafkaPublisher({ config = readKafkaConfig(), logger, kafka } = {}
       retry: { initialRetryTime: 100, maxRetryTime: 1000, retries: 2 },
     });
 
-  const producer = client.producer({ allowAutoTopicCreation: false });
+  let producer = client.producer({ allowAutoTopicCreation: false });
   let connected = false;
+  let lastReset = 0;
   let connecting = null;
   let inFlight = 0;
   let closing = false;
-  const counters = { published: 0, failed: 0, rejectedSaturated: 0 };
+  const counters = { published: 0, failed: 0, rejectedSaturated: 0, resets: 0 };
 
-  producer.on?.(producer.events?.DISCONNECT ?? "producer.disconnect", () => {
+  function watch(p) {
+    p.on?.(p.events?.DISCONNECT ?? "producer.disconnect", () => {
+      if (p === producer) connected = false;
+    });
+  }
+  watch(producer);
+
+  // Throws the producer away and builds a new one. Used when connects keep failing, so a
+  // wedged client state can never outlive the outage that caused it. The old producer is
+  // disconnected in the background and never awaited.
+  function resetProducer(reason) {
+    const now = Date.now();
+    if (closing || now - lastReset < resetMinIntervalMs) return;
+    lastReset = now;
+    const old = producer;
+    producer = client.producer({ allowAutoTopicCreation: false });
+    watch(producer);
     connected = false;
-  });
+    connecting = null;
+    counters.resets += 1;
+    logger?.warn?.(`[kafka] producer rebuilt after repeated failures (${reason})`);
+    Promise.resolve(old.disconnect()).catch(() => {});
+  }
 
   function connect() {
     if (connected) return Promise.resolve();
@@ -138,8 +161,9 @@ function createKafkaPublisher({ config = readKafkaConfig(), logger, kafka } = {}
       return { partition: first.partition ?? null, offset: first.baseOffset ?? first.offset ?? null };
     } catch (err) {
       counters.failed += 1;
-      if (err instanceof KafkaPublishError) throw err;
-      throw new KafkaPublishError(categorize(err), err?.message || "Kafka publish failed");
+      const failure = err instanceof KafkaPublishError ? err : new KafkaPublishError(categorize(err), err?.message || "Kafka publish failed");
+      if (failure.category === "unavailable" || failure.category === "timeout") resetProducer(failure.category);
+      throw failure;
     } finally {
       inFlight -= 1;
     }
@@ -157,6 +181,31 @@ function createKafkaPublisher({ config = readKafkaConfig(), logger, kafka } = {}
 
   function stats() {
     return { ...counters, inFlight, connected };
+  }
+
+  // Every statsIntervalMs: counters, event-loop lag since the last tick, and the time one
+  // DNS lookup of the broker host takes inside THIS process. A blocked event loop or a
+  // saturated DNS threadpool would make every connect time out; this shows whether it is.
+  if (statsIntervalMs > 0) {
+    const loop = monitorEventLoopDelay({ resolution: 20 });
+    loop.enable();
+    const timer = setInterval(() => {
+      const host = config.brokers[0].split(":")[0];
+      const t = Date.now();
+      dns.lookup(host, (err) => {
+        logger?.info?.(
+          `[kafka-stats] ${JSON.stringify({
+            ...stats(),
+            loop_lag_p99_ms: Math.round(loop.percentile(99) / 1e6),
+            loop_lag_max_ms: Math.round(loop.max / 1e6),
+            dns_ms: Date.now() - t,
+            dns_error: err ? err.code : null,
+          })}`,
+        );
+        loop.reset();
+      });
+    }, statsIntervalMs);
+    timer.unref?.();
   }
 
   return { start, publish, shutdown, stats };

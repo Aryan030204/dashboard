@@ -248,7 +248,7 @@ const cfg = (o = {}) => ({ brokers: ['kafka-service:9092'], clientId: 't', sendT
 
 test('producer waits for acknowledgement (acks=all) and returns partition and offset', async () => {
   const { kafka, calls } = fakeKafka();
-  const pub = createKafkaPublisher({ config: cfg(), logger: SILENT, kafka });
+  const pub = createKafkaPublisher({ statsIntervalMs: 0, config: cfg(), logger: SILENT, kafka });
   const ack = await pub.publish({ topic: 'intent.atc', key: 'k', value: '{}' });
   assert.deepEqual(ack, { partition: 2, offset: '7' });
   assert.equal(calls.sends[0].acks, -1);
@@ -258,14 +258,14 @@ test('producer waits for acknowledgement (acks=all) and returns partition and of
 
 test('one shared producer connection is reused across publishes', async () => {
   const { kafka, calls } = fakeKafka();
-  const pub = createKafkaPublisher({ config: cfg({ maxInFlight: 10 }), logger: SILENT, kafka });
+  const pub = createKafkaPublisher({ statsIntervalMs: 0, config: cfg({ maxInFlight: 10 }), logger: SILENT, kafka });
   await Promise.all([1, 2, 3].map(() => pub.publish({ topic: 't', key: 'k', value: 'v' })));
   assert.equal(calls.connects, 1);
 });
 
 test('in-flight cap: beyond maxInFlight fails at once, nothing is queued', async () => {
   const { kafka } = fakeKafka({ send: () => new Promise(() => {}) });
-  const pub = createKafkaPublisher({ config: cfg({ sendTimeoutMs: 500 }), logger: SILENT, kafka });
+  const pub = createKafkaPublisher({ statsIntervalMs: 0, config: cfg({ sendTimeoutMs: 500 }), logger: SILENT, kafka });
   const held = [1, 2].map(() => pub.publish({ topic: 't', key: 'k', value: 'v' }).catch((e) => e));
   await new Promise((r) => setImmediate(r));
   await assert.rejects(pub.publish({ topic: 't', key: 'k', value: 'v' }), (e) => e.category === 'saturated');
@@ -277,7 +277,7 @@ test('in-flight cap: beyond maxInFlight fails at once, nothing is queued', async
 test('a hung send hits the deadline, frees its slot, and the next publish succeeds', async () => {
   let n = 0;
   const { kafka } = fakeKafka({ send: () => (++n === 1 ? new Promise(() => {}) : Promise.resolve([{ partition: 0, baseOffset: '1' }])) });
-  const pub = createKafkaPublisher({ config: cfg({ maxInFlight: 1 }), logger: SILENT, kafka });
+  const pub = createKafkaPublisher({ statsIntervalMs: 0, config: cfg({ maxInFlight: 1 }), logger: SILENT, kafka });
   await assert.rejects(pub.publish({ topic: 't', key: 'k', value: 'v' }), (e) => e.category === 'timeout');
   assert.equal(pub.stats().inFlight, 0);
   assert.equal((await pub.publish({ topic: 't', key: 'k', value: 'v' })).offset, '1');
@@ -287,12 +287,37 @@ test('send failure rejects with a categorized error; connect failure reconnects 
   const { kafka } = fakeKafka({
     connect: async (n) => { if (n === 1) throw new Error('broker down'); },
   });
-  const pub = createKafkaPublisher({ config: cfg(), logger: SILENT, kafka });
+  const pub = createKafkaPublisher({ statsIntervalMs: 0, config: cfg(), logger: SILENT, kafka });
   await assert.rejects(pub.publish({ topic: 't', key: 'k', value: 'v' }), (e) => e instanceof KafkaPublishError);
   assert.equal((await pub.publish({ topic: 't', key: 'k', value: 'v' })).partition, 2);
   const failing = fakeKafka({ send: async () => { const e = new Error('x'); e.name = 'KafkaJSNumberOfRetriesExceeded'; throw e; } });
-  const p2 = createKafkaPublisher({ config: cfg(), logger: SILENT, kafka: failing.kafka });
+  const p2 = createKafkaPublisher({ statsIntervalMs: 0, config: cfg(), logger: SILENT, kafka: failing.kafka });
   await assert.rejects(p2.publish({ topic: 't', key: 'k', value: 'v' }), (e) => e.category === 'unavailable');
+});
+
+test('repeated connection failures rebuild the producer; the new one then publishes', async () => {
+  let built = 0;
+  const makeProducer = (broken) => ({
+    events: { DISCONNECT: 'producer.disconnect' },
+    on() {},
+    connect: async () => { if (broken) throw new Error('Connection timeout'); },
+    disconnect: async () => {},
+    send: async () => [{ partition: 0, baseOffset: '9' }],
+  });
+  const kafka = { producer: () => makeProducer(++built === 1) }; // first producer is wedged
+  const pub = createKafkaPublisher({ statsIntervalMs: 0, resetMinIntervalMs: 0, config: cfg(), logger: SILENT, kafka });
+  await assert.rejects(pub.publish({ topic: 't', key: 'k', value: 'v' }), (e) => e.category === 'unavailable');
+  assert.equal(pub.stats().resets, 1);
+  assert.equal((await pub.publish({ topic: 't', key: 'k', value: 'v' })).offset, '9');
+  assert.equal(built, 2);
+});
+
+test('rebuilds are rate-limited so a long outage does not churn producers', async () => {
+  let built = 0;
+  const kafka = { producer: () => (built++, { events: {}, on() {}, connect: async () => { throw new Error('Connection timeout'); }, disconnect: async () => {}, send: async () => [] }) };
+  const pub = createKafkaPublisher({ statsIntervalMs: 0, resetMinIntervalMs: 60000, config: cfg(), logger: SILENT, kafka });
+  for (let i = 0; i < 5; i++) await pub.publish({ topic: 't', key: 'k', value: 'v' }).catch(() => {});
+  assert.ok(built <= 2, `built ${built}`);
 });
 
 test('config reads KAFKA_BOOTSTRAP_SERVERS with the kafka-service default', () => {
