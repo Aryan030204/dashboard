@@ -3,10 +3,19 @@ const { monitorEventLoopDelay } = require("perf_hooks");
 const { Kafka, logLevel, CompressionTypes } = require("kafkajs");
 
 // One shared Kafka producer for alerts-service. /track success means Kafka acknowledged
-// the message (acks=all). There is no application queue: at most maxInFlight sends are
-// outstanding, and anything beyond that fails immediately, so memory cannot grow while
-// Kafka is slow or down. Every send also has a hard deadline, so a hung broker cannot
-// hold a request open.
+// the message (acks=all).
+//
+// Connection management is separate from the request path:
+//   - A background loop owns connecting. It has its own timeout and backoff, builds a
+//     fresh producer after each failed attempt, and keeps going until Kafka is reachable.
+//     Requests never start, wait on, or cancel a connect, so a slow Kafka boot (after a
+//     host or container restart) cannot be aborted by request deadlines.
+//   - publish() is fast. If the producer is not connected it waits at most connectWaitMs
+//     for the loop, then fails with "unavailable" (503). It never queues.
+//   - After failureThreshold consecutive connection-type send failures the producer is
+//     marked disconnected, and the loop rebuilds and reconnects it.
+// There is no application queue: at most maxInFlight sends are outstanding, and anything
+// beyond that fails immediately, so memory cannot grow. Every send has a hard deadline.
 
 const DEFAULTS = Object.freeze({
   brokers: "kafka-service:9092",
@@ -14,6 +23,11 @@ const DEFAULTS = Object.freeze({
   sendTimeoutMs: 5000,
   maxInFlight: 500,
   connectionTimeoutMs: 3000,
+  connectTimeoutMs: 15000, // hard limit for one producer.connect() attempt
+  connectWaitMs: 1000, // how long a request waits for an in-progress connect
+  failureThreshold: 3,
+  backoffInitialMs: 500,
+  backoffMaxMs: 10000,
 });
 
 function intFromEnv(env, name, fallback) {
@@ -32,6 +46,11 @@ function readKafkaConfig(env = process.env) {
     sendTimeoutMs: intFromEnv(env, "INTENT_KAFKA_SEND_TIMEOUT_MS", DEFAULTS.sendTimeoutMs),
     maxInFlight: intFromEnv(env, "INTENT_KAFKA_MAX_INFLIGHT", DEFAULTS.maxInFlight),
     connectionTimeoutMs: DEFAULTS.connectionTimeoutMs,
+    connectTimeoutMs: DEFAULTS.connectTimeoutMs,
+    connectWaitMs: DEFAULTS.connectWaitMs,
+    failureThreshold: DEFAULTS.failureThreshold,
+    backoffInitialMs: DEFAULTS.backoffInitialMs,
+    backoffMaxMs: DEFAULTS.backoffMaxMs,
   };
 }
 
@@ -51,8 +70,17 @@ function categorize(err) {
   return "unavailable";
 }
 
-// `kafka` and `sleep` are injectable for tests. The default builds a kafkajs client.
-function createKafkaPublisher({ config = readKafkaConfig(), logger, kafka, statsIntervalMs = 60000, resetMinIntervalMs = 5000 } = {}) {
+function withDeadline(promise, ms, makeError) {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(makeError()), ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+// `kafka` is injectable for tests. The default builds a kafkajs client.
+function createKafkaPublisher({ config: given = readKafkaConfig(), logger, kafka, statsIntervalMs = 60000 } = {}) {
+  const config = { ...readKafkaConfig({}), ...given };
   const client =
     kafka ||
     new Kafka({
@@ -64,105 +92,146 @@ function createKafkaPublisher({ config = readKafkaConfig(), logger, kafka, stats
       retry: { initialRetryTime: 100, maxRetryTime: 1000, retries: 2 },
     });
 
-  let producer = client.producer({ allowAutoTopicCreation: false });
+  let producer = null;
   let connected = false;
-  let lastReset = 0;
-  let connecting = null;
+  let looping = false;
+  let loopWake = null; // resolves the current backoff sleep early
+  let consecutiveFailures = 0;
   let inFlight = 0;
   let closing = false;
-  const counters = { published: 0, failed: 0, rejectedSaturated: 0, resets: 0 };
+  const waiters = new Set(); // requests waiting briefly for a connect
+  const counters = { published: 0, failed: 0, rejectedSaturated: 0, rebuilds: 0, connects: 0 };
 
-  function watch(p) {
+  function buildProducer() {
+    const p = client.producer({ allowAutoTopicCreation: false });
     p.on?.(p.events?.DISCONNECT ?? "producer.disconnect", () => {
       if (p === producer) connected = false;
     });
-  }
-  watch(producer);
-
-  // Throws the producer away and builds a new one. Used when connects keep failing, so a
-  // wedged client state can never outlive the outage that caused it. The old producer is
-  // disconnected in the background and never awaited.
-  function resetProducer(reason) {
-    const now = Date.now();
-    if (closing || now - lastReset < resetMinIntervalMs) return;
-    lastReset = now;
-    const old = producer;
-    producer = client.producer({ allowAutoTopicCreation: false });
-    watch(producer);
-    connected = false;
-    connecting = null;
-    counters.resets += 1;
-    logger?.warn?.(`[kafka] producer rebuilt after repeated failures (${reason})`);
-    Promise.resolve(old.disconnect()).catch(() => {});
+    return p;
   }
 
-  function connect() {
-    if (connected) return Promise.resolve();
-    if (!connecting) {
-      connecting = producer
-        .connect()
-        .then(() => {
-          connected = true;
-          logger?.info?.(`[kafka] producer connected brokers=${config.brokers.join(",")}`);
-        })
-        .finally(() => {
-          connecting = null;
-        });
+  function discard(old) {
+    if (old) Promise.resolve(old.disconnect()).catch(() => {});
+  }
+
+  function notifyConnected() {
+    for (const resolve of waiters) resolve(true);
+    waiters.clear();
+  }
+
+  // The connect loop. Runs until connected; restarted by markDisconnected(). Each failed
+  // attempt discards the producer and builds a new one, then backs off (500 ms doubling to
+  // 10 s). Logs are limited to the first failure and every 10th after it.
+  async function connectLoop() {
+    if (looping || closing) return;
+    looping = true;
+    let delay = config.backoffInitialMs;
+    let failures = 0;
+    try {
+      while (!closing && !connected) {
+        if (!producer) producer = buildProducer();
+        const attempt = producer;
+        try {
+          await withDeadline(
+            attempt.connect(),
+            config.connectTimeoutMs,
+            () => new KafkaPublishError("timeout", `connect exceeded ${config.connectTimeoutMs} ms`),
+          );
+          if (attempt === producer) {
+            connected = true;
+            consecutiveFailures = 0;
+            counters.connects += 1;
+            logger?.info?.(`[kafka] producer connected brokers=${config.brokers.join(",")} after ${failures} failed attempt(s)`);
+            notifyConnected();
+          }
+        } catch (err) {
+          failures += 1;
+          if (failures === 1 || failures % 10 === 0) {
+            logger?.error?.(`[kafka] connect attempt ${failures} failed, retrying in ${delay} ms: ${err.message}`);
+          }
+          counters.rebuilds += 1;
+          producer = null;
+          discard(attempt);
+          await new Promise((resolve) => {
+            const timer = setTimeout(resolve, delay);
+            timer.unref?.();
+            loopWake = () => (clearTimeout(timer), resolve());
+          });
+          loopWake = null;
+          delay = Math.min(delay * 2, config.backoffMaxMs);
+        }
+      }
+    } finally {
+      looping = false;
+      if (!closing && !connected) setImmediate(connectLoop);
     }
-    return connecting;
   }
 
-  // Non-blocking at startup: tries once, then keeps retrying in the background until it
-  // connects. Requests that arrive before that connect on demand (and fail with 5xx).
+  function markDisconnected(reason) {
+    if (closing || !connected) return;
+    connected = false;
+    consecutiveFailures = 0;
+    const old = producer;
+    producer = null;
+    counters.rebuilds += 1;
+    logger?.warn?.(`[kafka] marking producer disconnected and rebuilding (${reason})`);
+    discard(old);
+    connectLoop();
+  }
+
   function start() {
-    const attempt = (delayMs) => {
-      connect().catch((err) => {
-        logger?.error?.(`[kafka] initial connect failed, retrying in ${delayMs} ms: ${err.message}`);
-        if (closing) return;
-        const timer = setTimeout(() => attempt(Math.min(delayMs * 2, 15000)), delayMs);
-        timer.unref?.();
-      });
-    };
-    attempt(1000);
+    connectLoop();
   }
 
-  function withDeadline(promise, ms) {
-    let timer;
-    const deadline = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new KafkaPublishError("timeout", `Kafka send exceeded ${ms} ms`)), ms);
+  function waitForConnect(ms) {
+    return new Promise((resolve) => {
+      const done = (value) => (clearTimeout(timer), waiters.delete(done), resolve(value));
+      const timer = setTimeout(() => done(false), ms);
+      timer.unref?.();
+      waiters.add(done);
     });
-    return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
   }
 
   // Resolves with { partition, offset } once Kafka has acknowledged the message.
   async function publish({ topic, key, value }) {
     if (closing) throw new KafkaPublishError("unavailable", "producer is shutting down");
+    if (!connected) {
+      connectLoop(); // no-op if already running
+      if (!(await waitForConnect(config.connectWaitMs))) {
+        counters.failed += 1;
+        throw new KafkaPublishError("unavailable", "kafka producer is not connected");
+      }
+    }
     if (inFlight >= config.maxInFlight) {
       counters.rejectedSaturated += 1;
       throw new KafkaPublishError("saturated", "too many in-flight Kafka sends");
     }
     inFlight += 1;
+    const sending = producer;
     try {
       const results = await withDeadline(
-        (async () => {
-          await connect();
-          return producer.send({
-            topic,
-            acks: -1,
-            timeout: config.sendTimeoutMs,
-            compression: CompressionTypes.None,
-            messages: [{ key, value }],
-          });
-        })(),
+        sending.send({
+          topic,
+          acks: -1,
+          timeout: config.sendTimeoutMs,
+          compression: CompressionTypes.None,
+          messages: [{ key, value }],
+        }),
         config.sendTimeoutMs,
+        () => new KafkaPublishError("timeout", `Kafka send exceeded ${config.sendTimeoutMs} ms`),
       );
       counters.published += 1;
+      consecutiveFailures = 0;
       const first = results?.[0] || {};
       return { partition: first.partition ?? null, offset: first.baseOffset ?? first.offset ?? null };
     } catch (err) {
       counters.failed += 1;
-      const failure = err instanceof KafkaPublishError ? err : new KafkaPublishError(categorize(err), err?.message || "Kafka publish failed");
-      if (failure.category === "unavailable" || failure.category === "timeout") resetProducer(failure.category);
+      const failure =
+        err instanceof KafkaPublishError ? err : new KafkaPublishError(categorize(err), err?.message || "Kafka publish failed");
+      if ((failure.category === "unavailable" || failure.category === "timeout") && sending === producer) {
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= config.failureThreshold) markDisconnected(failure.category);
+      }
       throw failure;
     } finally {
       inFlight -= 1;
@@ -171,21 +240,24 @@ function createKafkaPublisher({ config = readKafkaConfig(), logger, kafka, stats
 
   async function shutdown() {
     closing = true;
+    loopWake?.();
+    notifyConnected();
+    const old = producer;
+    producer = null;
+    connected = false;
     try {
-      await producer.disconnect();
+      if (old) await old.disconnect();
     } catch (err) {
       logger?.warn?.(`[kafka] producer disconnect failed: ${err.message}`);
     }
-    connected = false;
   }
 
   function stats() {
-    return { ...counters, inFlight, connected };
+    return { ...counters, inFlight, connected, consecutiveFailures };
   }
 
   // Every statsIntervalMs: counters, event-loop lag since the last tick, and the time one
-  // DNS lookup of the broker host takes inside THIS process. A blocked event loop or a
-  // saturated DNS threadpool would make every connect time out; this shows whether it is.
+  // DNS lookup of the broker host takes inside THIS process.
   if (statsIntervalMs > 0) {
     const loop = monitorEventLoopDelay({ resolution: 20 });
     loop.enable();

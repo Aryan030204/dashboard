@@ -353,43 +353,6 @@ test('a hung send hits the deadline, frees its slot, and the next publish succee
   assert.equal((await pub.publish({ topic: 't', key: 'k', value: 'v' })).offset, '1');
 });
 
-test('send failure rejects with a categorized error; connect failure reconnects later', async () => {
-  const { kafka } = fakeKafka({
-    connect: async (n) => { if (n === 1) throw new Error('broker down'); },
-  });
-  const pub = createKafkaPublisher({ statsIntervalMs: 0, config: cfg(), logger: SILENT, kafka });
-  await assert.rejects(pub.publish({ topic: 't', key: 'k', value: 'v' }), (e) => e instanceof KafkaPublishError);
-  assert.equal((await pub.publish({ topic: 't', key: 'k', value: 'v' })).partition, 2);
-  const failing = fakeKafka({ send: async () => { const e = new Error('x'); e.name = 'KafkaJSNumberOfRetriesExceeded'; throw e; } });
-  const p2 = createKafkaPublisher({ statsIntervalMs: 0, config: cfg(), logger: SILENT, kafka: failing.kafka });
-  await assert.rejects(p2.publish({ topic: 't', key: 'k', value: 'v' }), (e) => e.category === 'unavailable');
-});
-
-test('repeated connection failures rebuild the producer; the new one then publishes', async () => {
-  let built = 0;
-  const makeProducer = (broken) => ({
-    events: { DISCONNECT: 'producer.disconnect' },
-    on() {},
-    connect: async () => { if (broken) throw new Error('Connection timeout'); },
-    disconnect: async () => {},
-    send: async () => [{ partition: 0, baseOffset: '9' }],
-  });
-  const kafka = { producer: () => makeProducer(++built === 1) }; // first producer is wedged
-  const pub = createKafkaPublisher({ statsIntervalMs: 0, resetMinIntervalMs: 0, config: cfg(), logger: SILENT, kafka });
-  await assert.rejects(pub.publish({ topic: 't', key: 'k', value: 'v' }), (e) => e.category === 'unavailable');
-  assert.equal(pub.stats().resets, 1);
-  assert.equal((await pub.publish({ topic: 't', key: 'k', value: 'v' })).offset, '9');
-  assert.equal(built, 2);
-});
-
-test('rebuilds are rate-limited so a long outage does not churn producers', async () => {
-  let built = 0;
-  const kafka = { producer: () => (built++, { events: {}, on() {}, connect: async () => { throw new Error('Connection timeout'); }, disconnect: async () => {}, send: async () => [] }) };
-  const pub = createKafkaPublisher({ statsIntervalMs: 0, resetMinIntervalMs: 60000, config: cfg(), logger: SILENT, kafka });
-  for (let i = 0; i < 5; i++) await pub.publish({ topic: 't', key: 'k', value: 'v' }).catch(() => {});
-  assert.ok(built <= 2, `built ${built}`);
-});
-
 test('config reads KAFKA_BOOTSTRAP_SERVERS with the kafka-service default', () => {
   assert.deepEqual(readKafkaConfig({}).brokers, ['kafka-service:9092']);
   assert.deepEqual(readKafkaConfig({ KAFKA_BOOTSTRAP_SERVERS: 'a:1, b:2' }).brokers, ['a:1', 'b:2']);
