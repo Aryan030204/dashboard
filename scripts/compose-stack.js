@@ -18,6 +18,8 @@ const BASE_SERVICES = [
   "daily-insights-service",
   "analytics-service",
   "sessions-service",
+  "kafka-service",
+  "kafka-init",
 ];
 
 function parseDotEnv(filePath) {

@@ -96,6 +96,7 @@ services:
     restart: unless-stopped
     networks:
       - saas-net
+      - pipeline-net
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:5005/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
@@ -200,6 +201,66 @@ services:
       start_period: 10s
 
 
+  # ---- Kafka (infrastructure only; single broker, KRaft, internal network only) ----
+  # No host ports are published. Clients reach it as kafka-service:9092 on pipeline-net.
+  kafka-service:
+    image: apache/kafka:${KAFKA_IMAGE_TAG:-3.9.1}
+    container_name: kafka-service-main
+    hostname: kafka-service
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-service:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-service:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms512m -Xmx512m}
+    expose:
+      - "9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    mem_limit: ${KAFKA_MEM_LIMIT:-1g}
+    restart: unless-stopped
+    networks:
+      - pipeline-net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # One-shot: creates the topics in kafka-service/topics.conf once the broker is healthy,
+  # then exits 0. Safe on every `up` (existing topics are left as they are).
+  kafka-init:
+    image: apache/kafka:${KAFKA_IMAGE_TAG:-3.9.1}
+    container_name: kafka-init-main
+    depends_on:
+      kafka-service:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-service:9092}
+      KAFKA_REPLICATION_FACTOR: ${KAFKA_REPLICATION_FACTOR:-1}
+    volumes:
+      - ./kafka-service/topics.conf:/config/topics.conf:ro
+      - ./kafka-service/init-topics.sh:/config/init-topics.sh:ro
+    entrypoint: ["sh", "/config/init-topics.sh"]
+    restart: "no"
+    networks:
+      - pipeline-net
+
+volumes:
+  kafka-data:
+    name: kafka-data-main
+
 networks:
   saas-net:
     name: saas-net-main
@@ -207,4 +268,8 @@ networks:
 
   # 🔥 ADD THIS
   shared-net:
+    external: true
+
+  # Created outside compose (also used by intent-pipeline): docker network create pipeline-net
+  pipeline-net:
     external: true

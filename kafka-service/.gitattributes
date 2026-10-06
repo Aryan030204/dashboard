@@ -1,0 +1,2 @@
+*.sh text eol=lf
+topics.conf text eol=lf
