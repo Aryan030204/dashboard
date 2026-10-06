@@ -41,10 +41,6 @@ const {
 const app = express();
 app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
-// /track carries full intent payloads (checkout line_items), so it gets a larger
-// limit than the global 100 KB default. Registered before the global parser,
-// which skips parsing when req.body is already set. Other routes are unchanged.
-app.post("/track", express.json({ limit: "256kb" }));
 app.use(express.json());
 initObservability(app);
 app.use(createHealthMonitorReporter({
@@ -238,38 +234,6 @@ app.use(
   alertsRouter,
 );
 const Session = require("./models/session");
-const {
-  buildTrackController,
-  resolveIntentIngestionMode,
-} = require("./controllers/trackController");
-const { getIntentModels } = require("./models/intent/connection");
-const { createIntentIngestor } = require("./services/intent/ingest");
-const { createOutboxIngestor } = require("./services/intent/outboxIngest");
-const { createIntentSqsProducer } = require("./services/intent/sqsProducer");
-const { sendRawMessage } = require("./services/intentEventQueue");
-const { createBrandAllowlist } = require("./services/intent/brandAllowlist");
-const { assertIntentConfig } = require("./services/intent/config");
-
-// Brand validation for intent events comes from INTENT_BRANDS_ALLOWLIST and
-// INTENT_BRAND_TIMEZONES. No Mongo read, so /track intent validation does not depend
-// on arch-auth. Startup fails early if the variables are missing or invalid.
-const brandAllowlist = createBrandAllowlist(process.env);
-const intentIngest = createIntentIngestor({
-  getModels: getIntentModels,
-  getBrandTimezone: (brand) => brandAllowlist.getBrand(brand)?.store_timezone_iana ?? null,
-  // Seconds, defaults to 30 minutes (same as the Sessions Pipeline).
-  sessionTimeoutMs: (Number(process.env.SESSION_TIMEOUT) || 1800) * 1000,
-  // Out-of-order arrival tolerance (same as the Sessions Pipeline).
-  negativeGapToleranceMs: 30 * 1000,
-  logger,
-});
-const outboxIngest = createOutboxIngestor({
-  getModels: getIntentModels,
-  getBrandTimezone: (brand) => brandAllowlist.getBrand(brand)?.store_timezone_iana ?? null,
-  sessionTimeoutMs: (Number(process.env.SESSION_TIMEOUT) || 1800) * 1000,
-  negativeGapToleranceMs: 30 * 1000,
-  logger,
-});
 
 app.post("/inventory", requirePipelineKey, async (req, res) => {
   try {
@@ -356,22 +320,62 @@ app.post("/inventory", requirePipelineKey, async (req, res) => {
   }
 });
 
-const intentIngestionMode = resolveIntentIngestionMode(process.env.INTENT_EVENT_INGESTION, logger);
-const trackController = buildTrackController({
-  OtpVerified,
-  AjrsPurchase,
-  logger,
-  ingestionMode: intentIngestionMode,
-  intentIngest,
-  intentSqsPublish: createIntentSqsProducer({
-    getBrandTimezone: (brand) => brandAllowlist.getBrand(brand)?.store_timezone_iana ?? null,
-    sendRaw: sendRawMessage,
-    queueUrl: process.env.SQS_INTENT_QUEUE_URL,
-    logger,
-  }).publish,
-  isKnownBrand: (brand) => brandAllowlist.isKnownBrand(brand),
+app.post("/track", async (req, res) => {
+  try {
+    const sessionData = req.body;
+    const isRSEvent = sessionData.tags === "RS_Cinema_KP" || sessionData.orderId;
+
+    // Check for idempotency key to prevent duplicates (bypass for custom RS events)
+    if (!sessionData.idempotency_key && !isRSEvent) {
+      return res.status(400).json({ error: "idempotency_key is required" });
+    }
+
+    let existingSession = null;
+    if (sessionData.idempotency_key) {
+      existingSession = await Session.findOne({
+        idempotency_key: sessionData.idempotency_key,
+      });
+    }
+
+    if (existingSession) {
+      return res
+        .status(200)
+        .json({ message: "Event already processed", session: existingSession });
+    }
+
+    // ---- RS Specific Event Handling ----
+    if (isRSEvent) {
+      if (sessionData.tags === "RS_Cinema_KP" && sessionData.customer_id) {
+        const exists = await OtpVerified.findOne({ customer_id: sessionData.customer_id });
+        if (!exists) {
+          const otpVerify = new OtpVerified({ customer_id: sessionData.customer_id });
+          await otpVerify.save();
+          logger.info(`[track] OTP Verified saved for customer: ${sessionData.customer_id}`);
+        }
+      }
+
+      if (sessionData.orderId) {
+        const exists = await AjrsPurchase.findOne({ order_id: sessionData.orderId });
+        if (!exists) {
+          const purchase = new AjrsPurchase({ order_id: sessionData.orderId });
+          await purchase.save();
+          logger.info(`[track] AJRS Purchase saved for order: ${sessionData.orderId}`);
+        }
+      }
+
+      return res.status(201).json({ message: "Session tracked successfully" });
+    }
+
+    // Save new session document
+    const session = new Session(sessionData);
+    await session.save();
+
+  } catch (err) {
+
+    logger.error("Error tracking session:", err);
+    res.status(500).json({ error: "Failed to track alert" });
+  }
 });
-app.post("/track", trackController.track);
 
 // Fully public — no auth, no gateway trust headers, no nginx-level gating.
 // Returns a count of session events matching { event, shop } from either the
@@ -830,22 +834,12 @@ app.use(sentryErrorMiddleware);
 // ---- Start ------------------------------------------------------------------
 async function start() {
   try {
-    // Fails the process with a clear message on bad intent/SQS settings, before any
-    // request can be served.
-    assertIntentConfig(process.env, intentIngestionMode);
-
     await mongoose.connect(MONGO_URI, { dbName: MONGO_DB });
     mongoose.connection.on("error", (err) => {
       recordMongoConnectionError();
       captureError(err, null, { type: "mongo_connection" });
     });
     logger.info("[alerts-service] Mongo connected");
-
-    if (intentIngestionMode === "mongo") {
-      getIntentModels(); // fail fast if INTENT_MONGO_URI is missing
-    }
-    logger.info(`[alerts-service] intent brands allow-listed: ${brandAllowlist.listBrands().join(", ")}`);
-
     const port = Number(process.env.PORT || 5005);
     app.listen(port, () => {
       logger.info(`[alerts-service] listening on :${port}`);
