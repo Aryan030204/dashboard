@@ -17,6 +17,7 @@
     "firebase-admin": "^13.6.1",
     "helmet": "^7.0.0",
     "ioredis": "^5.4.1",
+    "kafkajs": "^2.2.4",
     "mongoose": "^8.6.3",
     "mysql2": "^3.22.0",
     "prom-client": "^15.1.3",

@@ -320,7 +320,29 @@ app.post("/inventory", requirePipelineKey, async (req, res) => {
   }
 });
 
-app.post("/track", async (req, res) => {
+// ---- Intent events: /track -> Kafka -------------------------------------------
+// Only payloads with an event_name take this path (see controllers/trackIntent.js).
+// RS and CI payloads fall through to the existing handler below, unchanged.
+const { createIntentTrack } = require("./controllers/trackIntent");
+const { createKafkaPublisher } = require("./services/intent/kafkaProducer");
+const { createBrandAllowlist } = require("./services/intent/brandAllowlist");
+
+// A bad allow-list must not take the alert features down with it: log loudly and let
+// intent events answer 503 until INTENT_BRANDS_ALLOWLIST / INTENT_BRAND_TIMEZONES are fixed.
+let intentBrandAllowlist = null;
+try {
+  intentBrandAllowlist = createBrandAllowlist(process.env);
+} catch (err) {
+  logger.error(`[alerts-service] intent brand allow-list invalid: ${err.message}`);
+}
+const kafkaPublisher = createKafkaPublisher({ logger });
+const intentTrack = createIntentTrack({
+  publisher: kafkaPublisher,
+  brandAllowlist: intentBrandAllowlist,
+  logger,
+});
+
+app.post("/track", intentTrack, async (req, res) => {
   try {
     const sessionData = req.body;
     const isRSEvent = sessionData.tags === "RS_Cinema_KP" || sessionData.orderId;
@@ -840,6 +862,7 @@ async function start() {
       captureError(err, null, { type: "mongo_connection" });
     });
     logger.info("[alerts-service] Mongo connected");
+    kafkaPublisher.start(); // non-blocking; /track answers 503 until Kafka connects
     const port = Number(process.env.PORT || 5005);
     app.listen(port, () => {
       logger.info(`[alerts-service] listening on :${port}`);
@@ -884,6 +907,12 @@ async function start() {
     console.error("Failed to start alerts-service", err);
     process.exit(1);
   }
+}
+
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.once(signal, () => {
+    kafkaPublisher.shutdown().finally(() => process.exit(0));
+  });
 }
 
 if (require.main === module) {
