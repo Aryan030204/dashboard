@@ -30,12 +30,13 @@ const sessionSchema = new mongoose.Schema(
     // cart as an array, while single-product events (e.g. add_to_cart) send
     // one plain value — Mixed accepts either without a cast error dropping
     // the whole event.
-    variantId: { type: mongoose.Schema.Types.Mixed },
+    variantId: { type: mongoose.Schema.Types.Mixed, default: null },
     shop_name: { type: String },
-    cart_token: { type: String },
-    checkout_token: { type: String },
-    user_agent: { type: String },
-    url: { type: String },
+    client_id: {type: String, default: null},
+    cart_token: { type: String, default: null },
+    checkout_token: { type: String, default: null },
+    user_agent: { type: String, default: null },
+    url: { type: String, default: null },
     data: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   {
