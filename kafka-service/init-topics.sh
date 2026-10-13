@@ -21,7 +21,8 @@ until "${KAFKA_BIN}/kafka-broker-api-versions.sh" --bootstrap-server "${BOOTSTRA
   sleep 2
 done
 
-while read -r topic partitions retention_ms retention_bytes _; do
+# `|| [ -n ... ]` keeps the last line when the file has no trailing newline.
+while read -r topic partitions retention_ms retention_bytes _ || [ -n "${topic:-}" ]; do
   case "${topic}" in
     ''|'#'*) continue ;;
   esac

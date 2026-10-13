@@ -1,0 +1,133 @@
+# Shared infrastructure stack. Deployed once, as `dash-infra`, by scripts/swarm.sh.
+#
+#   edge   Traefik — the only published port. Routes to a version stack by
+#          Host (v2.<anything>) or by the X-App-Version header; everything
+#          else goes to the version that `scripts/swarm.sh promote` marked as latest.
+#   kafka  One broker shared by every version (it holds the only on-disk state).
+#
+# Interpolated by scripts/swarm.sh: EDGE_PORT, LATEST_VERSION, KAFKA_*.
+
+services:
+  edge:
+    image: traefik:${TRAEFIK_IMAGE_TAG:-v3.6}
+    command:
+      - --entrypoints.web.address=:8081
+      - --providers.swarm=true
+      - --providers.swarm.exposedByDefault=false
+      - --providers.swarm.network=dash-edge
+      - --providers.swarm.refreshSeconds=5
+      - --ping=true
+      - --ping.entrypoint=web
+      - --accesslog=true
+      - --log.level=INFO
+    ports:
+      - target: 8081
+        published: ${EDGE_PORT:-8081}
+        protocol: tcp
+        mode: ingress
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - dash-edge
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping", "--ping.entrypoint=web", "--entrypoints.web.address=:8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        traefik.enable: "true"
+        # The "latest" pointer. Lowest priority, so per-version routers win.
+        # `scripts/swarm.sh promote <ver>` swaps this label in place (no restart).
+        traefik.http.routers.latest.rule: PathPrefix(`/`)
+        traefik.http.routers.latest.priority: "1"
+        traefik.http.routers.latest.entrypoints: web
+        traefik.http.routers.latest.service: gw-${LATEST_VERSION:?LATEST_VERSION is required}@swarm
+        traefik.http.routers.latest.middlewares: ver-${LATEST_VERSION}@swarm
+        # Traefik needs a port for this container even though nothing routes to it.
+        traefik.http.services.edge-noop.loadbalancer.server.port: "8081"
+
+  kafka-service:
+    image: apache/kafka:${KAFKA_IMAGE_TAG:-3.9.1}
+    hostname: kafka-service
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-service:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-service:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms512m -Xmx512m}
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - dash-pipeline
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    deploy:
+      # Pinned to one node: the data volume is node-local.
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          memory: ${KAFKA_MEM_LIMIT:-1g}
+
+  # One-shot topic creation (same script as compose). Swarm has no depends_on,
+  # so it retries on failure until the broker is reachable, then exits 0.
+  kafka-init:
+    image: apache/kafka:${KAFKA_IMAGE_TAG:-3.9.1}
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka-service:9092
+      KAFKA_REPLICATION_FACTOR: ${KAFKA_REPLICATION_FACTOR:-1}
+    configs:
+      - source: kafka-topics
+        target: /config/topics.conf
+      - source: kafka-init-script
+        target: /config/init-topics.sh
+    entrypoint: ["sh", "/config/init-topics.sh"]
+    networks:
+      - dash-pipeline
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+
+configs:
+  # Configs are immutable; the name carries a content hash so edits roll out.
+  kafka-topics:
+    name: dash-kafka-topics-${KAFKA_TOPICS_HASH:-0}
+    file: ../kafka-service/topics.conf
+  kafka-init-script:
+    name: dash-kafka-init-${KAFKA_INIT_HASH:-0}
+    file: ../kafka-service/init-topics.sh
+
+volumes:
+  kafka-data:
+    name: dash-kafka-data
+
+networks:
+  # Traefik <-> each version's api-gateway.
+  dash-edge:
+    name: dash-edge
+    driver: overlay
+    attachable: true
+  # Kafka <-> each version's alerts-service. Attachable so standalone
+  # containers (e.g. the intent pipeline) can join it too.
+  dash-pipeline:
+    name: dash-pipeline
+    driver: overlay
+    attachable: true

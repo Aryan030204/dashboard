@@ -1,0 +1,30 @@
+# Optional add-on to swarm/app.yml, mirroring docker-compose.health-monitor.yml.
+# scripts/swarm.sh includes it when HEALTH_MONITOR is enabled in .env (the
+# default, same toggle as scripts/compose-stack.js).
+
+services:
+  health-monitor-service:
+    image: ${IMAGE_PREFIX:-dashboard}/health-monitor-service:${VERSION:?VERSION is required}
+    env_file: [../.env, ../health-monitor-service/.env]
+    environment:
+      NODE_ENV: production
+      APP_VERSION: ${VERSION}
+      HEALTH_MONITOR_PORT: 4015
+      # Find this version's containers by their swarm service labels.
+      DOCKER_STACK_NAMESPACE: dash-${VERSION}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [app]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4015/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      # The docker socket only shows containers on the local node.
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s

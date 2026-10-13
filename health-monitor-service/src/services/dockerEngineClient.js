@@ -25,7 +25,19 @@ function decodeDockerLogStream(buffer) {
   return decoded;
 }
 
-function createDockerEngineClient({ socketPath }) {
+// Under Docker Swarm there are no compose labels; tasks carry
+// com.docker.swarm.service.name=<stack>_<service> instead.
+function buildServiceLabelFilter(serviceName, stackNamespace) {
+  if (stackNamespace) {
+    return `com.docker.swarm.service.name=${stackNamespace}_${serviceName}`;
+  }
+  return `com.docker.compose.service=${serviceName}`;
+}
+
+function createDockerEngineClient({
+  socketPath,
+  stackNamespace = process.env.DOCKER_STACK_NAMESPACE || "",
+}) {
   function request(pathname) {
     return new Promise((resolve, reject) => {
       const req = http.request(
@@ -55,7 +67,7 @@ function createDockerEngineClient({ socketPath }) {
   async function listContainersByService(serviceName) {
     const filters = encodeURIComponent(
       JSON.stringify({
-        label: [`com.docker.compose.service=${serviceName}`],
+        label: [buildServiceLabelFilter(serviceName, stackNamespace)],
       }),
     );
     const response = await request(`/containers/json?filters=${filters}`);
@@ -82,4 +94,4 @@ function createDockerEngineClient({ socketPath }) {
   };
 }
 
-module.exports = { createDockerEngineClient, decodeDockerLogStream };
+module.exports = { createDockerEngineClient, decodeDockerLogStream, buildServiceLabelFilter };

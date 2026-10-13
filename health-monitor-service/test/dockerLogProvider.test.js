@@ -50,3 +50,12 @@ test("docker log provider surfaces timeouts cleanly", async () => {
 
   await assert.rejects(() => provider.getRecentLogs("alerts-service"), /timed out/);
 });
+
+test("docker engine client filters by compose label by default and swarm label under a stack", () => {
+  const { buildServiceLabelFilter } = require("../src/services/dockerEngineClient");
+  assert.equal(buildServiceLabelFilter("alerts-service", ""), "com.docker.compose.service=alerts-service");
+  assert.equal(
+    buildServiceLabelFilter("alerts-service", "dash-v2"),
+    "com.docker.swarm.service.name=dash-v2_alerts-service",
+  );
+});

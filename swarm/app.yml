@@ -1,0 +1,158 @@
+# One copy of the application, deployed as stack `dash-<VERSION>` by
+# scripts/swarm.sh. Every version gets its own private overlay network, so the
+# hostnames hardcoded across the services (auth-service, tenant-router,
+# health-monitor-service, ...) resolve to *this* version's containers only.
+#
+# Only api-gateway joins dash-edge (Traefik) and only alerts-service joins
+# dash-pipeline (Kafka); both networks come from swarm/infra.yml.
+#
+# Interpolated by scripts/swarm.sh: VERSION, IMAGE_PREFIX.
+
+x-node-health: &node-health
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 20s
+
+x-deploy: &deploy
+  replicas: 1
+  update_config:
+    order: start-first
+    failure_action: rollback
+  restart_policy:
+    condition: any
+    delay: 5s
+
+x-common-env: &common-env
+  NODE_ENV: production
+  APP_VERSION: ${VERSION:?VERSION is required}
+
+services:
+  api-gateway:
+    image: ${IMAGE_PREFIX:-dashboard}/api-gateway:${VERSION}
+    env_file: [../.env, ../api-gateway/.env]
+    environment:
+      <<: *common-env
+    networks: [app, dash-edge]
+    healthcheck:
+      <<: *node-health
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:18080/health || exit 1"]
+    deploy:
+      <<: *deploy
+      # List form: compose only interpolates ${VERSION} in values, not map keys.
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.gw-${VERSION}.loadbalancer.server.port=18080
+        # Pick this version explicitly: v2.localhost / v2.dashboard.example.com ...
+        - traefik.http.routers.gw-${VERSION}-host.rule=HostRegexp(`^${VERSION}\..+`)
+        - traefik.http.routers.gw-${VERSION}-host.priority=100
+        - traefik.http.routers.gw-${VERSION}-host.entrypoints=web
+        - traefik.http.routers.gw-${VERSION}-host.service=gw-${VERSION}
+        - traefik.http.routers.gw-${VERSION}-host.middlewares=ver-${VERSION}
+        # ... or with a header on any host: X-App-Version: v2
+        - traefik.http.routers.gw-${VERSION}-hdr.rule=Header(`X-App-Version`, `${VERSION}`)
+        - traefik.http.routers.gw-${VERSION}-hdr.priority=110
+        - traefik.http.routers.gw-${VERSION}-hdr.entrypoints=web
+        - traefik.http.routers.gw-${VERSION}-hdr.service=gw-${VERSION}
+        - traefik.http.routers.gw-${VERSION}-hdr.middlewares=ver-${VERSION}
+        # Every response says which version served it.
+        - traefik.http.middlewares.ver-${VERSION}.headers.customresponseheaders.X-App-Version=${VERSION}
+
+  auth-service:
+    image: ${IMAGE_PREFIX:-dashboard}/auth-service:${VERSION}
+    env_file: [../.env, ../api-gateway/.env]
+    environment:
+      <<: *common-env
+      PORT: 3001
+    networks: [app]
+    healthcheck:
+      <<: *node-health
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3001/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+    deploy: *deploy
+
+  tenant-router:
+    image: ${IMAGE_PREFIX:-dashboard}/tenant-router:${VERSION}
+    env_file: [../.env, ../tenant-router/.env]
+    environment:
+      <<: *common-env
+      PORT: 3004
+    networks: [app]
+    healthcheck:
+      <<: *node-health
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3004/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+    deploy: *deploy
+
+  alerts-service:
+    image: ${IMAGE_PREFIX:-dashboard}/alerts-service:${VERSION}
+    env_file: [../.env, ../alerts-service/.env]
+    environment:
+      <<: *common-env
+      PORT: 5005
+      KAFKA_BOOTSTRAP_SERVERS: kafka-service:9092
+    networks: [app, dash-pipeline]
+    healthcheck:
+      <<: *node-health
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:5005/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+    deploy: *deploy
+
+  merchant-requests-service:
+    image: ${IMAGE_PREFIX:-dashboard}/merchant-requests-service:${VERSION}
+    env_file: [../.env, ../merchant-requests-service/.env]
+    environment:
+      <<: *common-env
+      PORT: 4020
+    networks: [app]
+    healthcheck:
+      <<: *node-health
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4020/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+    deploy: *deploy
+
+  daily-insights-service:
+    image: ${IMAGE_PREFIX:-dashboard}/daily-insights-service:${VERSION}
+    env_file: [../.env, ../daily-insights-service/.env]
+    environment:
+      <<: *common-env
+      PORT: 4030
+      # Compose used container_name aliases (tenant-router-main); swarm has none.
+      TENANT_ROUTER_URL: http://tenant-router:3004
+    networks: [app]
+    healthcheck:
+      <<: *node-health
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4030/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+    deploy: *deploy
+
+  analytics-service:
+    image: ${IMAGE_PREFIX:-dashboard}/analytics-service:${VERSION}
+    env_file: [../.env, ../analytics/.env]
+    environment:
+      <<: *common-env
+      PORT: 3006
+      TENANT_ROUTER_URL: http://tenant-router:3004
+    networks: [app]
+    healthcheck:
+      <<: *node-health
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3006/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+    deploy: *deploy
+
+  sessions-service:
+    image: ${IMAGE_PREFIX:-dashboard}/sessions-service:${VERSION}
+    env_file: [../.env, ../sessions-service/.env]
+    environment:
+      <<: *common-env
+      PORT: 4010
+      SESSION_WINDOW_MINUTES: 30
+    networks: [app]
+    healthcheck:
+      <<: *node-health
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4010/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+    deploy: *deploy
+
+networks:
+  # Explicit per-version name: this network is what keeps versions apart.
+  app:
+    name: dash-${VERSION}-app
+    driver: overlay
+  dash-edge:
+    external: true
+  dash-pipeline:
+    external: true
