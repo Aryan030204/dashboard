@@ -19,7 +19,9 @@
 #      EDGE_PORT (default 8081), HEALTH_MONITOR (else read from .env, default on),
 #      WAIT_TIMEOUT (health wait, default 300s), DRAIN_SECONDS (release: grace period
 #      before the previous version is removed, default 30), KEEP_PREVIOUS=true (release: keep it).
-set -euo pipefail
+set -Eeuo pipefail
+# Never exit silently: name the command that failed.
+trap 'printf "[swarm] error: \"%s\" failed (line %s)\n" "$BASH_COMMAND" "$LINENO" >&2' ERR
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SWARM_DIR="$ROOT_DIR/swarm"
@@ -71,16 +73,17 @@ stack_deploy() {
     esac
   done
   # compose emits `name:` (unknown to swarm) and quotes published ports.
-  docker compose -p "$stack" "${files[@]}" config 2> >(grep -vE 'only (appl|honored)' >&2) |
+  docker compose -p "$stack" "${files[@]}" config 2> >({ grep -vE 'only (appl|honored)' || true; } >&2) |
     sed -e '/^name:/d' -e 's/^\( *published: \)"\([0-9]*\)"$/\1\2/' |
     docker stack deploy --detach=true --prune "${opts[@]}" -c - "$stack" >/dev/null
 }
 
 stack_exists() { docker stack ls --format '{{.Name}}' | grep -qx "$1"; }
 
+# Empty when dash-infra doesn't exist yet (first release on a host).
 current_latest() {
-  docker service inspect "$EDGE_SERVICE" \
-    --format '{{index .Spec.Labels "traefik.http.routers.latest.service"}}' 2>/dev/null |
+  { docker service inspect "$EDGE_SERVICE" \
+      --format '{{index .Spec.Labels "traefik.http.routers.latest.service"}}' 2>/dev/null || true; } |
     sed -n 's/^gw-\(.*\)@swarm$/\1/p'
 }
 
@@ -91,7 +94,7 @@ wait_for_stack() {
     # One-shot jobs (kafka-init) finish with 0 running replicas; skip them.
     local pending
     pending="$(docker service ls --filter "label=com.docker.stack.namespace=$stack" \
-      --format '{{.Name}} {{.Replicas}}' | grep -v '_kafka-init ' | awk '{split($2,r,"/"); if (r[1] != r[2]) print $1" "$2}')"
+      --format '{{.Name}} {{.Replicas}}' | { grep -v '_kafka-init ' || true; } | awk '{split($2,r,"/"); if (r[1] != r[2]) print $1" "$2}')"
     [[ -z "$pending" ]] && { log "$stack is up"; return 0; }
     if (( SECONDS > deadline )); then
       log "$stack did not converge; still pending:"; sed 's/^/  /' <<<"$pending" >&2
@@ -176,7 +179,11 @@ cmd_promote() {
     --label-add "traefik.http.routers.latest.service=gw-$version@swarm" \
     --label-add "traefik.http.routers.latest.middlewares=ver-$version@swarm" \
     "$EDGE_SERVICE" >/dev/null
-  log "latest: ${previous:-none} -> $version (Traefik picks it up within ~5s)"
+  if [[ "$previous" == "$version" ]]; then
+    log "latest is $version"
+  else
+    log "latest: ${previous:-none} -> $version (Traefik picks it up within ~5s)"
+  fi
 }
 
 cmd_release() {
