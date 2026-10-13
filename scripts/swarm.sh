@@ -248,5 +248,5 @@ case "${1:-}" in
   rm)      shift; cmd_rm "$@" ;;
   ls)      cmd_ls ;;
   infra)   cmd_infra ;;
-  *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; exit 1 ;;
 esac
