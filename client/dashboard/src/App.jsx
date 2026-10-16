@@ -46,6 +46,7 @@ import {
   ClipboardList,
   Gauge,
   Settings,
+  Target,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -54,6 +55,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
   { id: "product-conversion", label: "Product Funnel", icon: Filter },
   { id: "daily-funnel", label: "Conversion Funnel", icon: Table2 },
+  { id: "intent-funnel", label: "Intent Funnel", icon: Target },
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "web-vitals", label: "Web Vitals", icon: Gauge },
@@ -74,6 +76,7 @@ const TAB_ROUTE_MAP = {
   "session-analytics": "/session-analytics",
   "product-conversion": "/funnels",
   "daily-funnel": "/daily-funnel",
+  "intent-funnel": "/intent-funnel",
   bundles: "/bundles",
   inventory: "/inventory",
   "web-vitals": "/web-vitals",
@@ -174,6 +177,7 @@ import AdminRouteContainer from "./routes/AdminRouteContainer.jsx";
 import AuthRouteContainer from "./routes/AuthRouteContainer.jsx";
 import BundlesRouteContainer from "./routes/BundlesRouteContainer.jsx";
 import DailyFunnelRouteContainer from "./routes/DailyFunnelRouteContainer.jsx";
+import IntentFunnelRouteContainer from "./routes/IntentFunnelRouteContainer.jsx";
 import DashboardRouteContainer from "./routes/DashboardRouteContainer.jsx";
 import InventoryRouteContainer from "./routes/InventoryRouteContainer.jsx";
 import MerchantRequestsRouteContainer from "./routes/MerchantRequestsRouteContainer.jsx";
@@ -605,6 +609,11 @@ export default function App() {
     return hasPermission("daily_funnel_panel");
   }, [hasPermission, isAuthor]);
 
+  const canAccessIntentFunnelPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("intent_funnel_panel");
+  }, [hasPermission, isAuthor]);
+
   const canAccessUtmFunnelTable = useMemo(() => {
     if (isAuthor) return true;
     return hasPermission("utm_funnel_table");
@@ -651,6 +660,7 @@ export default function App() {
     if (canAccessOverallSnapshotPanel) tabs.unshift("overall-snapshot");
     if (canAccessSessionAnalyticsPanel) tabs.push("session-analytics");
     if (canAccessDailyFunnelPanel) tabs.push("daily-funnel");
+    if (canAccessIntentFunnelPanel) tabs.push("intent-funnel");
     if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
@@ -660,6 +670,7 @@ export default function App() {
   }, [
     canAccessOverallSnapshotPanel,
     canAccessDailyFunnelPanel,
+    canAccessIntentFunnelPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
@@ -702,6 +713,16 @@ export default function App() {
       return;
     }
     if (authorTab === "daily-funnel" && !canAccessDailyFunnelPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
+    if (authorTab === "intent-funnel" && !canAccessIntentFunnelPanel) {
       navigate(
         {
           pathname: TAB_ROUTE_MAP[defaultLandingTab],
@@ -755,6 +776,7 @@ export default function App() {
     defaultLandingTab,
     canAccessOverallSnapshotPanel,
     canAccessDailyFunnelPanel,
+    canAccessIntentFunnelPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
@@ -2218,6 +2240,15 @@ export default function App() {
             canAccessPercentBasisToggle={isAuthor}
           />
         );
+      case "intent-funnel":
+        return (
+          <IntentFunnelRouteContainer
+            hasBrand={hasBrand}
+            activeBrandKey={activeBrandKey}
+            start={start}
+            end={end}
+          />
+        );
       case "inventory":
         return (
           <InventoryRouteContainer
@@ -2544,6 +2575,28 @@ export default function App() {
                             </Tooltip>
                           ) : null
                         }
+                      />
+                    </Box>
+                  )}
+
+                  {authorTab === "intent-funnel" && hasBrand && (
+                    <Box
+                      sx={{
+                        mb: { xs: 0.5, md: 1 },
+                        maxWidth: "100%",
+                        overflowX: "auto",
+                        "&::-webkit-scrollbar": { display: "none" },
+                      }}
+                    >
+                      <UnifiedFilterBar
+                        range={normalizedRange}
+                        onRangeChange={handleRangeChange}
+                        brandKey=""
+                        brands={[]}
+                        onBrandChange={() => {}}
+                        isAuthor={false}
+                        dataRestrictionConfig={dataRestrictionConfig}
+                        hideAllExceptDate
                       />
                     </Box>
                   )}

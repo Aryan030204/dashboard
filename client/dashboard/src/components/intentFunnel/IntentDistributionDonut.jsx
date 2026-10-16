@@ -1,0 +1,109 @@
+import { Box, Typography, useTheme } from "@mui/material";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { SectionCard } from "./shared.jsx";
+import {
+  INTENT_COLORS,
+  INTENT_LABELS,
+  formatCount,
+  formatPct,
+} from "./intentFunnelUtils.js";
+
+export default function IntentDistributionDonut({ distribution }) {
+  const theme = useTheme();
+  const items = distribution?.items || [];
+  const total = distribution?.total || 0;
+
+  return (
+    <SectionCard
+      title="Intent Distribution"
+      info="Share of scored users classified as high, medium or low intent. Sessions that are still being scored or were excluded are not included."
+    >
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row", lg: "column", xl: "row" },
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 2,
+        }}
+      >
+        <Box sx={{ position: "relative", width: 190, height: 190, flexShrink: 0 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={items}
+                dataKey="users"
+                nameKey="level"
+                innerRadius={58}
+                outerRadius={88}
+                paddingAngle={1}
+                stroke="none"
+              >
+                {items.map((item) => (
+                  <Cell key={item.level} fill={INTENT_COLORS[item.level]} />
+                ))}
+              </Pie>
+              <Tooltip
+                formatter={(value, name) => [
+                  formatCount(value),
+                  INTENT_LABELS[name] || name,
+                ]}
+                contentStyle={{
+                  background: theme.palette.background.paper,
+                  border: `1px solid ${theme.palette.divider}`,
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          <Box
+            sx={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+            }}
+          >
+            <Typography sx={{ fontWeight: 700, fontSize: 20, lineHeight: 1.1 }}>
+              {formatCount(total)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Users
+            </Typography>
+          </Box>
+        </Box>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+          {items.map((item) => (
+            <Box
+              key={item.level}
+              sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}
+            >
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  mt: 0.6,
+                  borderRadius: "50%",
+                  bgcolor: INTENT_COLORS[item.level],
+                  flexShrink: 0,
+                }}
+              />
+              <Box>
+                <Typography variant="body2" sx={{ lineHeight: 1.2 }}>
+                  {INTENT_LABELS[item.level]}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {formatCount(item.users)} ({formatPct(item.pct)})
+                </Typography>
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+    </SectionCard>
+  );
+}

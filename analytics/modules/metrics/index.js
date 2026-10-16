@@ -27,6 +27,8 @@ const { buildTrendController } = require('./trendController');
 const { buildSplitController } = require('./splitController');
 const { buildSummaryController } = require('./summaryController');
 const { buildProductController } = require('./productController');
+const { buildIntentFunnelController } = require('./intentFunnelController');
+const { buildIntentFunnelService } = require('../../services/intentFunnelService');
 
 function buildMetricsRouter(sequelize) {
   const router = express.Router();
@@ -55,6 +57,9 @@ function buildMetricsRouter(sequelize) {
     },
   });
   const product = buildProductController({ pageService });
+  const intentFunnel = buildIntentFunnelController({
+    intentFunnelService: buildIntentFunnelService(),
+  });
 
   const apiKeyAuth = createApiKeyAuthMiddleware(sequelize, ['metrics:read']);
   const protectedBrand = [requireTrustedPrincipal, brandContext];
@@ -99,6 +104,7 @@ function buildMetricsRouter(sequelize) {
   router.get('/hourly-trend', ...protectedBrand, trend.hourlyTrend);
   router.get('/daily-trend', ...protectedBrand, trend.dailyTrend);
   router.get('/daily-funnel', requirePermission('daily_funnel_panel'), brandContext, trend.dailyFunnel);
+  router.get('/intent-funnel', requirePermission('intent_funnel_panel'), brandContext, intentFunnel.getIntentFunnel);
   router.get('/monthly-trend', ...protectedBrand, trend.monthlyTrend);
   router.get('/hourly-product-sessions/export', requireTrustedAuthor, brandContext, product.hourlyProductSessionsExport);
   router.get('/product-types', authOrApiKey, ensureBrandDb, product.productTypes);

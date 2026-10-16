@@ -1368,6 +1368,23 @@ export async function getDailyFunnel(args = {}) {
   };
 }
 
+// Intent Funnel page: one aggregated payload (KPIs, funnel, trend, distribution,
+// conversion, top products, path exploration). Returns { error, data, aborted }.
+export async function getIntentFunnel(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      sort: args.sort,
+      intent: args.intent,
+      path_start: args.pathStart,
+      path_top: args.pathTop,
+    },
+    args,
+  );
+  return doGet("/metrics/intent-funnel", params, options);
+}
+
 export async function getWebVitalsSnapshot(args = {}) {
   const params = appendBrandKey({ date: args.date }, args);
   const json = await getJSON("/web-vitals/snapshot", params);
