@@ -24,6 +24,14 @@ const PRODUCT_SORTS = Object.freeze({
   checkouts: "checkouts",
 });
 
+// ORDER BY expression per sort key (the keys are PRODUCT_SORTS values). The request only
+// ever picks a key from the whitelist; these strings are constants and never carry input.
+const PRODUCT_SORT_SQL = Object.freeze({
+  views: "SUM(product_views)",
+  addToCart: "SUM(add_to_cart_count)",
+  checkouts: "SUM(checkout_started_count)",
+});
+
 // Real first events seen in behavioral_path_daily.sequence.
 const PATH_STARTS = Object.freeze([
   "page_viewed",
@@ -41,6 +49,8 @@ const PRODUCT_RESULT_LIMIT = 10;
 const PRODUCT_SCAN_LIMIT = 500;
 const CHECKOUT_PRODUCT_SCAN_LIMIT = 5000;
 const PRODUCT_QUERY_TIMEOUT_MS = 20000;
+// The two session queries scan intent_sessions for the current and the previous period.
+const CORE_QUERY_TIMEOUT_MS = 30000;
 const MAX_RANGE_DAYS = 366;
 
 const EVENT_LABELS = Object.freeze({
@@ -141,7 +151,7 @@ function buildTotalsQuery({ prevStart, curStart, endExclusive }) {
   });
   params.push(prevStart, endExclusive);
   const sql = `
-    SELECT
+    SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
       ${outer.join(",\n      ")}
     FROM (
       SELECT
@@ -175,7 +185,7 @@ function buildBucketQuery({ prevStart, curStart, endExclusive }) {
   });
   params.push(prevStart, endExclusive);
   const sql = `
-    SELECT
+    SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
       intent_bucket,
       ${cols.join(",\n      ")}
     FROM intent_sessions
@@ -203,6 +213,48 @@ function buildTrendQuery({ start, end }) {
   };
 }
 
+// Top products straight from the pipeline's daily rollup (product_behavior_daily): per-day
+// views, add-to-carts and checkouts per product, with cart-list checkouts already attributed
+// to each product. One indexed query, ordered and limited in SQL, so a sort on any column
+// ranks every product (not only the most viewed ones). Refreshed by the pipeline every 15
+// minutes.
+function buildProductRollupQuery({ start, end, sortKey }) {
+  const orderExpr = PRODUCT_SORT_SQL[sortKey] || PRODUCT_SORT_SQL.views;
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${PRODUCT_QUERY_TIMEOUT_MS}) */
+        product_id,
+        MAX(product_title) AS title,
+        SUM(product_views) AS views,
+        SUM(add_to_cart_count) AS add_to_cart,
+        SUM(checkout_started_count) AS checkouts
+      FROM product_behavior_daily
+      WHERE summary_date >= ? AND summary_date <= ?
+      GROUP BY product_id
+      ORDER BY ${orderExpr} DESC, views DESC
+      LIMIT ${PRODUCT_RESULT_LIMIT}
+    `,
+    params: [start, end],
+  };
+}
+
+function rollupProducts(rows) {
+  return (rows || []).map((row) => {
+    const id = String(row.product_id);
+    const views = num(row.views);
+    const checkouts = num(row.checkouts);
+    return {
+      id,
+      name: row.title ? String(row.title) : `Product ${id}`,
+      views,
+      addToCart: num(row.add_to_cart),
+      checkouts,
+      cvr: safePct(checkouts, views),
+    };
+  });
+}
+
+// Fallback for brand databases without the rollup table: the raw-event scans.
 function buildProductViewsQuery({ start, endExclusive }) {
   return {
     sql: `
@@ -447,8 +499,10 @@ function buildFunnel(totals) {
       label: step.label,
       users,
       sessions,
-      pct: safePct(users, base.users),
-      sessionsPct: safePct(sessions, base.sessions),
+      // add-to-cart / checkout visitors are not guaranteed to be a subset of product-view
+      // visitors, so cap at 100 rather than show an impossible share
+      pct: Math.min(100, safePct(users, base.users)),
+      sessionsPct: Math.min(100, safePct(sessions, base.sessions)),
     };
   });
 }
@@ -462,9 +516,11 @@ function buildDistribution(totals, buckets) {
   const userSum = items.reduce((sum, item) => sum + item.users, 0);
   const sessionSum = items.reduce((sum, item) => sum + item.sessions, 0);
   return {
-    // distinct scored visitors in the range
-    total: num(totals?.cur_scored_users),
-    totalSessions: num(totals?.cur_scored_sessions),
+    // total is the sum of the segments, so the donut always adds up. A visitor with sessions
+    // in two buckets counts once in each; the distinct figure is uniqueScoredUsers.
+    total: userSum,
+    totalSessions: sessionSum,
+    uniqueScoredUsers: num(totals?.cur_scored_users),
     items: items.map((item) => ({
       ...item,
       pct: safePct(item.users, userSum),
@@ -580,7 +636,9 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         distribution: "intent_sessions",
         conversion: "intent_sessions",
         trend: "intent_daily_summary",
-        topProducts: "behavioral_events",
+        // refreshed by the pipeline every 15 minutes; raw behavioral_events only as a
+        // fallback for databases without the rollup table
+        topProducts: "product_behavior_daily",
         paths: "behavioral_path_daily",
       },
       // behavioral_path_daily has no intent bucket and cannot be joined to
@@ -612,7 +670,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
           kpis: [],
           funnel: [],
           trend: [],
-          distribution: { total: 0, totalSessions: 0, items: [] },
+          distribution: { total: 0, totalSessions: 0, uniqueScoredUsers: 0, items: [] },
           conversionRates: [],
           topProducts: [],
           paths: emptyPaths(),
@@ -621,13 +679,25 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       throw err;
     }
 
-    const [trendRes, viewsRes, checkoutsRes, pathsRes, pathsTotalRes] = await Promise.all([
+    const [trendRes, rollupRes, pathsRes, pathsTotalRes] = await Promise.all([
       selectOptional(conn, buildTrendQuery({ start, end }), "trend", meta, brandKey),
-      selectOptional(conn, buildProductViewsQuery({ start, endExclusive }), "topProducts", meta, brandKey),
-      selectOptional(conn, buildProductCheckoutsQuery({ start, endExclusive }), "topProducts", meta, brandKey),
+      selectOptional(conn, buildProductRollupQuery({ start, end, sortKey }), "topProducts", meta, brandKey),
       selectOptional(conn, buildPathsQuery({ start, end, pathStart }), "paths", meta, brandKey),
       selectOptional(conn, buildPathsTotalQuery({ start, end, pathStart }), "paths", meta, brandKey),
     ]);
+
+    // Brand databases without the rollup table fall back to scanning the raw events.
+    let topProducts = rollupRes.ok ? rollupProducts(rollupRes.rows) : [];
+    if (!rollupRes.ok && meta.sections.topProducts?.reason === "table_missing") {
+      delete meta.sections.topProducts;
+      meta.sources.topProducts = "behavioral_events";
+      const [viewsRes, checkoutsRes] = await Promise.all([
+        selectOptional(conn, buildProductViewsQuery({ start, endExclusive }), "topProducts", meta, brandKey),
+        selectOptional(conn, buildProductCheckoutsQuery({ start, endExclusive }), "topProducts", meta, brandKey),
+      ]);
+      topProducts =
+        viewsRes.ok && checkoutsRes.ok ? mergeProducts(viewsRes.rows, checkoutsRes.rows, sortKey) : [];
+    }
 
     const totals = core[0]?.[0] || {};
     const buckets = {};
@@ -647,10 +717,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       })),
       distribution: buildDistribution(totals, buckets),
       conversionRates: buildConversion(buckets),
-      topProducts:
-        viewsRes.ok && checkoutsRes.ok
-          ? mergeProducts(viewsRes.rows, checkoutsRes.rows, sortKey)
-          : [],
+      topProducts,
       paths: pathsRes.ok
         ? {
             ...buildPaths(pathsRes.rows, { topN }),
@@ -672,11 +739,14 @@ module.exports = {
   PATH_TOP_MIN,
   PATH_TOP_MAX,
   MAX_RANGE_DAYS,
+  isQueryTimeout,
   // exported for unit tests
   _internal: {
     buildTotalsQuery,
     buildBucketQuery,
     buildTrendQuery,
+    buildProductRollupQuery,
+    rollupProducts,
     buildProductViewsQuery,
     buildProductCheckoutsQuery,
     buildPathsQuery,

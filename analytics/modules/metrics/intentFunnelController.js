@@ -8,6 +8,7 @@ const {
   PATH_TOP_MIN,
   PATH_TOP_MAX,
   MAX_RANGE_DAYS,
+  isQueryTimeout,
 } = require('../../services/intentFunnelService');
 
 function badRequest(res, error) {
@@ -18,6 +19,10 @@ function buildIntentFunnelController({ intentFunnelService }) {
   return {
     getIntentFunnel: async (req, res) => {
       try {
+        // The range normalizer defaults a missing end to start, so "both" is checked here.
+        if (!req.query.start || !req.query.end) {
+          return badRequest(res, 'Both start and end dates are required');
+        }
         const normalized = normalizeMetricRequest(req, { requireBoth: true });
         if (!normalized.ok) {
           return res.status(normalized.status).json(normalized.body);
@@ -67,6 +72,9 @@ function buildIntentFunnelController({ intentFunnelService }) {
           }),
         );
       } catch (e) {
+        if (isQueryTimeout(e)) {
+          return res.status(504).json({ error: 'Intent data took too long. Try a shorter date range.' });
+        }
         return handleControllerError(res, e, 'intent-funnel failed');
       }
     },

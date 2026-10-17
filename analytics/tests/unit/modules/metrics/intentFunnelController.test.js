@@ -71,18 +71,23 @@ describe("intentFunnelController", () => {
     );
   });
 
+  test("an invalid date is rejected before any query runs", async () => {
+    const res = createRes();
+    await controller.getIntentFunnel(createReq({ start: "not-a-date" }), res);
+    expect(res.statusCode).toBe(400);
+    expect(service.getIntentFunnel).not.toHaveBeenCalled();
+  });
+
   test.each([
-    ["invalid date", { start: "not-a-date" }],
-    ["missing end handled as single day", {}],
-  ])("date validation: %s", async (label, query) => {
+    ["only start", { end: undefined }],
+    ["only end", { start: undefined }],
+    ["empty end", { end: "" }],
+  ])("both dates are required: %s is rejected, not treated as a single day", async (_label, query) => {
     const res = createRes();
     await controller.getIntentFunnel(createReq(query), res);
-    if (label === "invalid date") {
-      expect(res.statusCode).toBe(400);
-      expect(service.getIntentFunnel).not.toHaveBeenCalled();
-    } else {
-      expect(res.statusCode).toBe(200);
-    }
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: "Both start and end dates are required" });
+    expect(service.getIntentFunnel).not.toHaveBeenCalled();
   });
 
   test("start after end is rejected", async () => {
@@ -127,6 +132,20 @@ describe("intentFunnelController", () => {
     await controller.getIntentFunnel(createReq({}, { brandDb: undefined }), res);
     expect(res.statusCode).toBe(500);
     expect(service.getIntentFunnel).not.toHaveBeenCalled();
+  });
+
+  test("a query timeout answers 504 with a hint to shorten the range, without internals", async () => {
+    service.getIntentFunnel.mockRejectedValue(
+      Object.assign(new Error("Query execution was interrupted, maximum statement execution time exceeded"), {
+        code: "ER_QUERY_TIMEOUT",
+        errno: 3024,
+      }),
+    );
+    const res = createRes();
+    await controller.getIntentFunnel(createReq(), res);
+    expect(res.statusCode).toBe(504);
+    expect(res.body).toEqual({ error: "Intent data took too long. Try a shorter date range." });
+    expect(JSON.stringify(res.body)).not.toMatch(/statement|interrupted/i);
   });
 
   test("database failures return a generic error without SQL or internals", async () => {

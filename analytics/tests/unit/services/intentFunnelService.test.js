@@ -61,8 +61,27 @@ const DEFAULT_BUCKETS = [
   },
 ];
 
+const ROLLUP_ROWS = [
+  { product_id: "111", title: "Serum", views: "500", add_to_cart: "50", checkouts: "15" },
+  { product_id: "222", title: "Cleanser", views: "300", add_to_cart: "90", checkouts: "5" },
+  { product_id: "333", title: null, views: "0", add_to_cart: "0", checkouts: "0" },
+];
+
+// Emulates "ORDER BY <expr> DESC, views DESC LIMIT n" from the query text.
+function sortedRollup(rows, sql) {
+  const column = sql.includes("ORDER BY SUM(add_to_cart_count)")
+    ? "add_to_cart"
+    : sql.includes("ORDER BY SUM(checkout_started_count)")
+      ? "checkouts"
+      : "views";
+  return [...rows]
+    .sort((a, b) => Number(b[column]) - Number(a[column]) || Number(b.views) - Number(a.views))
+    .slice(0, 10);
+}
+
 function makeConn(overrides = {}) {
   const handlers = {
+    rollup: (sql) => sortedRollup(ROLLUP_ROWS, sql),
     totals: () => [DEFAULT_TOTALS],
     buckets: () => DEFAULT_BUCKETS,
     trend: () => [
@@ -92,6 +111,7 @@ function makeConn(overrides = {}) {
       return sql.includes("GROUP BY sequence_hash") ? handlers.paths(sql, options) : handlers.pathsTotal(sql, options);
     }
     if (sql.includes("FROM intent_daily_summary")) return handlers.trend(sql, options);
+    if (sql.includes("FROM product_behavior_daily")) return handlers.rollup(sql, options);
     if (sql.includes("event_name = 'checkout_started'")) return handlers.productCheckouts(sql, options);
     if (sql.includes("FROM behavioral_events")) return handlers.productViews(sql, options);
     if (sql.includes("GROUP BY intent_bucket")) return handlers.buckets(sql, options);
@@ -166,8 +186,9 @@ describe("intentFunnelService", () => {
     const trendCall = conn.query.mock.calls.find(([sql]) => sql.includes("intent_daily_summary"));
     expect(trendCall[1].replacements).toEqual(["2026-10-10", "2026-10-12"]);
 
-    const eventsCall = conn.query.mock.calls.find(([sql]) => sql.includes("FROM behavioral_events"));
-    expect(eventsCall[1].replacements).toEqual(["2026-10-10", "2026-10-13"]);
+    // the product rollup is keyed by day, so it takes the same inclusive range as the trend
+    const productCall = conn.query.mock.calls.find(([sql]) => sql.includes("FROM product_behavior_daily"));
+    expect(productCall[1].replacements).toEqual(["2026-10-10", "2026-10-12"]);
   });
 
   test("high / medium / low KPIs, distribution and conversion come from the intent buckets", async () => {
@@ -179,7 +200,10 @@ describe("intentFunnelService", () => {
     expect(byId.low).toMatchObject({ value: 28, sessions: 30 });
     expect(byId.high.delta).toBeCloseTo(125); // 4 -> 9 users
 
+    // total is the sum of the segments (9 + 18 + 28); the distinct figure is separate
     expect(out.distribution.total).toBe(55);
+    expect(out.distribution.totalSessions).toBe(60);
+    expect(out.distribution.uniqueScoredUsers).toBe(55);
     expect(out.distribution.items.map((i) => i.level)).toEqual(["high", "medium", "low"]);
     const pctSum = out.distribution.items.reduce((sum, i) => sum + i.pct, 0);
     expect(pctSum).toBeCloseTo(100);
@@ -211,6 +235,7 @@ describe("intentFunnelService", () => {
       totals: () => [totalsRow()],
       buckets: () => [],
       trend: () => [],
+      rollup: () => [],
       productViews: () => [],
       productCheckouts: () => [],
       paths: () => [],
@@ -239,29 +264,37 @@ describe("intentFunnelService", () => {
   });
 
   describe("top products", () => {
-    test("merges checkouts, attributes multi-product checkouts to each product and sorts by views", async () => {
-      const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn() });
+    const MISSING = Object.assign(new Error("no table"), { code: "ER_NO_SUCH_TABLE", errno: 1146 });
+
+    test("reads the daily rollup: one query, ranked in SQL, result shape unchanged", async () => {
+      const conn = makeConn();
+      const out = await newService().getIntentFunnel({ ...SPEC, conn });
       expect(out.topProducts.map((p) => p.id)).toEqual(["111", "222", "333"]);
-      const serum = out.topProducts[0];
-      expect(serum).toMatchObject({ name: "Serum", views: 500, addToCart: 50, checkouts: 15 });
-      expect(serum.cvr).toBeCloseTo(3);
-      expect(out.topProducts[1]).toMatchObject({ id: "222", checkouts: 5 });
-      // checkout rows for products outside the viewed set are ignored
-      expect(out.topProducts.find((p) => p.id === "999")).toBeUndefined();
-      // product without a title and without views: no division by zero
+      expect(out.topProducts[0]).toMatchObject({ id: "111", name: "Serum", views: 500, addToCart: 50, checkouts: 15 });
+      expect(out.topProducts[0].cvr).toBeCloseTo(3);
+      // product without a title and without views: placeholder name, no division by zero
       expect(out.topProducts[2]).toMatchObject({ name: "Product 333", cvr: 0 });
+      expect(out.meta.sources.topProducts).toBe("product_behavior_daily");
+
+      const rollupCalls = conn.query.mock.calls.filter(([sql]) => sql.includes("FROM product_behavior_daily"));
+      expect(rollupCalls).toHaveLength(1);
+      expect(rollupCalls[0][1].replacements).toEqual([SPEC.start, SPEC.end]);
+      // the rollup replaces both raw-event scans
+      expect(conn.query.mock.calls.some(([sql]) => sql.includes("FROM behavioral_events"))).toBe(false);
     });
 
-    test("sort is applied through a whitelist (add_to_cart, checkouts)", async () => {
-      const byCart = await newService().getIntentFunnel({
-        ...SPEC, sort: "add_to_cart", conn: makeConn(),
-      });
+    test("sort is applied through a whitelist, in SQL, over every product (add_to_cart, checkouts)", async () => {
+      const connCart = makeConn();
+      const byCart = await newService().getIntentFunnel({ ...SPEC, sort: "add_to_cart", conn: connCart });
       expect(byCart.topProducts[0].id).toBe("222");
+      const cartSql = connCart.query.mock.calls.map(([sql]) => sql).find((sql) => sql.includes("product_behavior_daily"));
+      expect(cartSql).toContain("ORDER BY SUM(add_to_cart_count) DESC, views DESC");
 
-      const byCheckouts = await newService().getIntentFunnel({
-        ...SPEC, sort: "checkouts", conn: makeConn(),
-      });
+      const connCheckouts = makeConn();
+      const byCheckouts = await newService().getIntentFunnel({ ...SPEC, sort: "checkouts", conn: connCheckouts });
       expect(byCheckouts.topProducts[0].id).toBe("111");
+      const checkoutsSql = connCheckouts.query.mock.calls.map(([sql]) => sql).find((sql) => sql.includes("product_behavior_daily"));
+      expect(checkoutsSql).toContain("ORDER BY SUM(checkout_started_count) DESC, views DESC");
     });
 
     test("an unknown sort never reaches SQL and falls back to views", async () => {
@@ -271,16 +304,44 @@ describe("intentFunnelService", () => {
       });
       expect(out.topProducts[0].id).toBe("111");
       conn.query.mock.calls.forEach(([sql]) => expect(sql).not.toMatch(/DROP TABLE/i));
+      const sql = conn.query.mock.calls.map(([q]) => q).find((q) => q.includes("product_behavior_daily"));
+      expect(sql).toContain("ORDER BY SUM(product_views) DESC, views DESC");
     });
 
     test("a slow product query degrades that section only", async () => {
       const timeout = Object.assign(new Error("timeout"), { code: "ER_QUERY_TIMEOUT", errno: 3024 });
-      const conn = makeConn({ productViews: () => { throw timeout; } });
+      const conn = makeConn({ rollup: () => { throw timeout; } });
       const out = await newService().getIntentFunnel({ ...SPEC, conn });
       expect(out.topProducts).toEqual([]);
       expect(out.meta.sections.topProducts).toEqual({ available: false, reason: "timeout" });
       expect(out.kpis[0].value).toBe(100);
       expect(out.paths.nodes.length).toBeGreaterThan(0);
+    });
+
+    test("a brand database without the rollup table falls back to the raw events, results as before", async () => {
+      const conn = makeConn({ rollup: () => { throw MISSING; } });
+      const out = await newService().getIntentFunnel({ ...SPEC, conn });
+      expect(out.meta.sources.topProducts).toBe("behavioral_events");
+      expect(out.meta.sections.topProducts).toBeUndefined();
+      expect(out.topProducts.map((p) => p.id)).toEqual(["111", "222", "333"]);
+      expect(out.topProducts[0]).toMatchObject({ name: "Serum", views: 500, addToCart: 50, checkouts: 15 });
+      // checkout rows for products outside the viewed set are ignored
+      expect(out.topProducts.find((p) => p.id === "999")).toBeUndefined();
+      expect(conn.query.mock.calls.filter(([sql]) => sql.includes("FROM behavioral_events"))).toHaveLength(2);
+    });
+
+    test("the fallback still honours the sort whitelist", async () => {
+      const conn = makeConn({ rollup: () => { throw MISSING; } });
+      const out = await newService().getIntentFunnel({ ...SPEC, sort: "add_to_cart", conn });
+      expect(out.topProducts[0].id).toBe("222");
+    });
+
+    test("every row the rollup query returns is kept (no scan cut-off in Node)", async () => {
+      const rows = Array.from({ length: 10 }, (_, i) => ({
+        product_id: String(1000 + i), title: `P${i}`, views: String(100 - i), add_to_cart: "1", checkouts: String(i),
+      }));
+      const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn({ rollup: () => rows }) });
+      expect(out.topProducts).toHaveLength(10);
     });
   });
 
@@ -399,8 +460,8 @@ describe("intentFunnelService", () => {
     test("all independent queries run in one round (no per-day / per-bucket / per-product queries)", async () => {
       const conn = makeConn();
       await newService().getIntentFunnel({ ...SPEC, start: "2026-09-01", end: "2026-10-12", conn });
-      // totals, buckets, trend, product views, product checkouts, paths, paths total
-      expect(conn.query).toHaveBeenCalledTimes(7);
+      // totals, buckets, trend, product rollup, paths, paths total
+      expect(conn.query).toHaveBeenCalledTimes(6);
     });
 
     test("cached results are keyed by brand and never cross tenants", async () => {
@@ -420,10 +481,10 @@ describe("intentFunnelService", () => {
       await service.getIntentFunnel({ ...SPEC, conn });
       const firstCalls = conn.query.mock.calls.length;
       await service.getIntentFunnel({ ...SPEC, sort: "checkouts", conn });
-      // only the (cheap) path queries may be re-run when sort changes: none here
-      expect(conn.query.mock.calls.length).toBe(firstCalls);
+      // the sort is part of the (cheap, indexed) product query, so only that one re-runs
+      expect(conn.query.mock.calls.length).toBe(firstCalls + 1);
       await service.getIntentFunnel({ ...SPEC, pathStart: "product_viewed", conn });
-      expect(conn.query.mock.calls.length).toBe(firstCalls + 2);
+      expect(conn.query.mock.calls.length).toBe(firstCalls + 1 + 2);
     });
 
     test("failures are not cached", async () => {
@@ -439,6 +500,54 @@ describe("intentFunnelService", () => {
       fail = false;
       const out = await service.getIntentFunnel({ ...SPEC, conn });
       expect(out.kpis[0].value).toBe(100);
+    });
+  });
+
+  describe("correctness guards", () => {
+    test("distribution segments always add up to the total, even when a visitor is in two buckets", async () => {
+      // 55 distinct scored visitors, but a visitor can have sessions in several buckets
+      const buckets = [
+        { ...DEFAULT_BUCKETS[0], cur_users: 40, cur_sessions: 50 },
+        { ...DEFAULT_BUCKETS[1], cur_users: 30, cur_sessions: 35 },
+        { ...DEFAULT_BUCKETS[2], cur_users: 20, cur_sessions: 25 },
+      ];
+      const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn({ buckets: () => buckets }) });
+      const { total, totalSessions, uniqueScoredUsers, items } = out.distribution;
+      expect(total).toBe(items.reduce((sum, i) => sum + i.users, 0));
+      expect(totalSessions).toBe(items.reduce((sum, i) => sum + i.sessions, 0));
+      expect(total).toBe(90);
+      expect(uniqueScoredUsers).toBe(55);
+    });
+
+    test("funnel percentages never exceed 100 when later steps outnumber product viewers", async () => {
+      const totals = totalsRow({
+        cur_productViews_users: 10, cur_productViews_sessions: 12,
+        cur_addToCart_users: 25, cur_addToCart_sessions: 30,
+        cur_checkouts_users: 11, cur_checkouts_sessions: 12,
+      });
+      const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn({ totals: () => [totals] }) });
+      out.funnel.forEach((step) => {
+        expect(step.pct).toBeLessThanOrEqual(100);
+        expect(step.sessionsPct).toBeLessThanOrEqual(100);
+      });
+      expect(out.funnel[1].pct).toBe(100);
+      expect(out.funnel[1].users).toBe(25); // the real count is not altered, only the share
+    });
+
+    test("both core queries carry an execution timeout", async () => {
+      const conn = makeConn();
+      await newService().getIntentFunnel({ ...SPEC, conn });
+      const core = conn.query.mock.calls
+        .map(([sql]) => sql)
+        .filter((sql) => sql.includes("FROM intent_sessions"));
+      expect(core).toHaveLength(2);
+      core.forEach((sql) => expect(sql).toMatch(/SELECT \/\*\+ MAX_EXECUTION_TIME\(30000\) \*\//));
+    });
+
+    test("a core query timeout propagates so the controller can answer 504", async () => {
+      const timeout = Object.assign(new Error("timeout"), { code: "ER_QUERY_TIMEOUT", errno: 3024 });
+      const conn = makeConn({ totals: () => { throw timeout; } });
+      await expect(newService().getIntentFunnel({ ...SPEC, conn })).rejects.toThrow("timeout");
     });
   });
 
