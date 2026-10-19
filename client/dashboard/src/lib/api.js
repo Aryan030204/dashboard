@@ -1843,3 +1843,92 @@ export async function deleteAlert(id) {
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
+
+// ---------------- Weekly Reports ----------------
+// brand_key goes in the QUERY STRING (the gateway ignores a body-only brand). The service
+// re-checks it against the gateway-signed brand, so this is a hint, not an authority.
+const WEEKLY_REPORTS = "/weekly-reports";
+
+function weeklyReportsUrl(path, brandKey) {
+  return `${WEEKLY_REPORTS}${path}${qs({ brand_key: normalizeBrandKey(brandKey) })}`;
+}
+
+export async function listWeeklyReports(brandKey) {
+  return doGet(WEEKLY_REPORTS, { brand_key: normalizeBrandKey(brandKey) });
+}
+
+export async function getWeeklyReport(brandKey, id) {
+  return doGet(`${WEEKLY_REPORTS}/${encodeURIComponent(id)}`, { brand_key: normalizeBrandKey(brandKey) });
+}
+
+export async function publishWeeklyReport(brandKey, id) {
+  return doPost(weeklyReportsUrl(`/${encodeURIComponent(id)}/publish`, brandKey), {});
+}
+
+export async function unpublishWeeklyReport(brandKey, id) {
+  return doPost(weeklyReportsUrl(`/${encodeURIComponent(id)}/unpublish`, brandKey), {});
+}
+
+export async function deleteWeeklyReport(brandKey, id) {
+  return doDelete(weeklyReportsUrl(`/${encodeURIComponent(id)}`, brandKey));
+}
+
+// Multipart upload with progress. doPost always sends JSON, and fetch cannot report upload
+// progress, so this uses XMLHttpRequest. Retries once after a token refresh on 401.
+export function uploadWeeklyReport(brandKey, { file, title, reportingWeek }, { onProgress, signal } = {}) {
+  const url = `${API_BASE}${weeklyReportsUrl("", brandKey)}`;
+
+  const send = () =>
+    new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+      const token = window.localStorage.getItem("gateway_access_token");
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) onProgress(event.loaded / event.total);
+      };
+      xhr.onload = () => {
+        let data = {};
+        try {
+          data = JSON.parse(xhr.responseText || "{}");
+        } catch {
+          // non-JSON body (proxy error page)
+        }
+        resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, data });
+      };
+      xhr.onerror = () => resolve({ status: 0, ok: false, data: {} });
+      xhr.onabort = () => resolve({ status: 0, ok: false, aborted: true, data: {} });
+      if (signal) signal.addEventListener("abort", () => xhr.abort(), { once: true });
+      const form = new FormData();
+      form.append("title", title);
+      form.append("reporting_week", reportingWeek);
+      form.append("file", file);
+      xhr.send(form);
+    });
+
+  return (async () => {
+    let result = await send();
+    if (result.status === 401 && (await ensureFreshToken())) result = await send();
+    if (!result.ok) {
+      if (!result.aborted) captureFailure(WEEKLY_REPORTS, { status: result.status, method: "POST", brandKey });
+      return { error: true, status: result.status, aborted: result.aborted, data: result.data };
+    }
+    return { error: false, data: result.data };
+  })();
+}
+
+// Slides are fetched with the Bearer token (an <img src> cannot send it) and shown through an
+// object URL. The caller owns the URL and must revoke it. Nothing here ever sees a storage URL.
+export async function fetchWeeklyReportSlide(brandKey, id, slideNumber, { thumb = false, signal } = {}) {
+  const url = `${API_BASE}${WEEKLY_REPORTS}/${encodeURIComponent(id)}/slides/${slideNumber}${qs({
+    brand_key: normalizeBrandKey(brandKey),
+    size: thumb ? "thumb" : "",
+  })}`;
+  const res = await fetchWithAuth(url, { signal });
+  if (!res.ok) {
+    const err = new Error(`slide ${slideNumber}: ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return URL.createObjectURL(await res.blob());
+}

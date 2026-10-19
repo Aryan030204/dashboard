@@ -46,6 +46,7 @@ import {
   ClipboardList,
   Gauge,
   Settings,
+  Presentation,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -54,6 +55,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
   { id: "product-conversion", label: "Product Funnel", icon: Filter },
   { id: "daily-funnel", label: "Conversion Funnel", icon: Table2 },
+  { id: "weekly-reports", label: "Weekly Reports", icon: Presentation },
   { id: "bundles", label: "Bundles", icon: Table2 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "web-vitals", label: "Web Vitals", icon: Gauge },
@@ -74,6 +76,7 @@ const TAB_ROUTE_MAP = {
   "session-analytics": "/session-analytics",
   "product-conversion": "/funnels",
   "daily-funnel": "/daily-funnel",
+  "weekly-reports": "/weekly-reports",
   bundles: "/bundles",
   inventory: "/inventory",
   "web-vitals": "/web-vitals",
@@ -174,6 +177,7 @@ import AdminRouteContainer from "./routes/AdminRouteContainer.jsx";
 import AuthRouteContainer from "./routes/AuthRouteContainer.jsx";
 import BundlesRouteContainer from "./routes/BundlesRouteContainer.jsx";
 import DailyFunnelRouteContainer from "./routes/DailyFunnelRouteContainer.jsx";
+import WeeklyReportsRouteContainer from "./routes/WeeklyReportsRouteContainer.jsx";
 import DashboardRouteContainer from "./routes/DashboardRouteContainer.jsx";
 import InventoryRouteContainer from "./routes/InventoryRouteContainer.jsx";
 import MerchantRequestsRouteContainer from "./routes/MerchantRequestsRouteContainer.jsx";
@@ -605,6 +609,12 @@ export default function App() {
     return hasPermission("daily_funnel_panel");
   }, [hasPermission, isAuthor]);
 
+  // View-only permission for clients; authors/admins also get the management tools.
+  const canAccessWeeklyReportsPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("weekly_report_preview");
+  }, [hasPermission, isAuthor]);
+
   const canAccessUtmFunnelTable = useMemo(() => {
     if (isAuthor) return true;
     return hasPermission("utm_funnel_table");
@@ -651,6 +661,7 @@ export default function App() {
     if (canAccessOverallSnapshotPanel) tabs.unshift("overall-snapshot");
     if (canAccessSessionAnalyticsPanel) tabs.push("session-analytics");
     if (canAccessDailyFunnelPanel) tabs.push("daily-funnel");
+    if (canAccessWeeklyReportsPanel) tabs.push("weekly-reports");
     if (canAccessRequestsPanel) tabs.push("requests");
     if (canAccessBundlesPanel) tabs.push("bundles");
     if (canAccessInventoryPanel) tabs.push("inventory");
@@ -660,6 +671,7 @@ export default function App() {
   }, [
     canAccessOverallSnapshotPanel,
     canAccessDailyFunnelPanel,
+    canAccessWeeklyReportsPanel,
     canAccessBundlesPanel,
     canAccessInventoryPanel,
     canAccessRequestsPanel,
@@ -702,6 +714,16 @@ export default function App() {
       return;
     }
     if (authorTab === "daily-funnel" && !canAccessDailyFunnelPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
+    if (authorTab === "weekly-reports" && !canAccessWeeklyReportsPanel) {
       navigate(
         {
           pathname: TAB_ROUTE_MAP[defaultLandingTab],
@@ -760,6 +782,7 @@ export default function App() {
     canAccessRequestsPanel,
     canAccessSessionAnalyticsPanel,
     canAccessWebVitalsPanel,
+    canAccessWeeklyReportsPanel,
     canAccessHealthMonitorPanel,
     initialized,
     location.search,
@@ -1250,7 +1273,7 @@ export default function App() {
   useEffect(() => {
     // Product filter options are only used by tabs with a filter bar; skip
     // the fetch entirely on brand-agnostic-UI tabs like Web Vitals/Health Monitor.
-    if (authorTab === "web-vitals" || authorTab === "health-monitor") {
+    if (authorTab === "web-vitals" || authorTab === "health-monitor" || authorTab === "weekly-reports") {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
       setProductOptionsLoading(false);
@@ -1909,7 +1932,7 @@ export default function App() {
     if (!activeBrandKey) return;
     // UTM filter options are only used by tabs with a filter bar; skip the
     // fetch entirely on brand-agnostic-UI tabs like Web Vitals/Health Monitor.
-    if (authorTab === "web-vitals" || authorTab === "health-monitor") return;
+    if (authorTab === "web-vitals" || authorTab === "health-monitor" || authorTab === "weekly-reports") return;
     if (isLongRangeDashboard) {
       setUtmOptions({ brand_key: activeBrandKey });
       return;
@@ -2216,6 +2239,15 @@ export default function App() {
             canAccessUtmFunnelTable={canAccessUtmFunnelTable}
             canAccessUtmCampaignGrain={canAccessUtmCampaignGrain}
             canAccessPercentBasisToggle={isAuthor}
+          />
+        );
+      case "weekly-reports":
+        return (
+          <WeeklyReportsRouteContainer
+            brands={brandsForSelector}
+            brandsLoading={isAuthor ? authorBrandsLoading : false}
+            activeBrandKey={activeBrandKey}
+            canManage={isAuthor}
           />
         );
       case "inventory":
@@ -2558,6 +2590,7 @@ export default function App() {
                     authorTab !== "tenant-setup" &&
                     authorTab !== "requests" &&
                     authorTab !== "web-vitals" &&
+                    authorTab !== "weekly-reports" &&
                     (isAuthor || showMultipleBrands) && (
                       <Box sx={{ mb: 1 }}>
                         <AuthorBrandSelector

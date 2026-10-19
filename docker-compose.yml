@@ -26,6 +26,8 @@ services:
         condition: service_healthy
       daily-insights-service:
         condition: service_healthy
+      weekly-reports-service:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - saas-net
@@ -146,6 +148,53 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  # Weekly Reports: HTTP API. Serves watermarked slides from the private bucket after
+  # authorization. Never exposes the original presentation.
+  weekly-reports-service:
+    container_name: weekly-reports-service-main
+    build:
+      context: ./weekly-reports-service
+      dockerfile: Dockerfile
+      target: api
+    env_file:
+      - .env
+      - ./weekly-reports-service/.env
+    environment:
+      PORT: 4040
+      NODE_ENV: production
+    mem_limit: ${WEEKLY_REPORTS_API_MEM_LIMIT:-512m}
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:4040/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Weekly Reports: conversion worker (LibreOffice + poppler). Separate container so a hung
+  # conversion cannot affect the API, with its own memory cap (it shares the host with Kafka).
+  weekly-reports-worker:
+    container_name: weekly-reports-worker-main
+    build:
+      context: ./weekly-reports-service
+      dockerfile: Dockerfile
+      target: worker
+    env_file:
+      - .env
+      - ./weekly-reports-service/.env
+    environment:
+      NODE_ENV: production
+    mem_limit: ${WEEKLY_REPORTS_WORKER_MEM_LIMIT:-2g}
+    stop_grace_period: 120s
+    restart: unless-stopped
+    networks:
+      - saas-net
+    depends_on:
+      weekly-reports-service:
+        condition: service_healthy
 
   analytics-service:
     container_name: analytics-service-main

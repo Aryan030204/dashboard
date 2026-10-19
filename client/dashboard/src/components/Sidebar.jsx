@@ -23,6 +23,7 @@ import {
   ClipboardList,
   Gauge,
   Settings,
+  Presentation,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -72,6 +73,7 @@ const NAV_ITEMS = [
       { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
       { id: "product-conversion", label: "Product Funnel", icon: Filter },
       { id: "daily-funnel", label: "Conversion Funnel", icon: Table2 },
+      { id: "weekly-reports", label: "Weekly Reports", icon: Presentation },
       { id: "bundles", label: "Bundles", icon: Table2 },
       { id: "inventory", label: "Inventory", icon: Package },
       { id: "web-vitals", label: "Web Vitals", icon: Gauge },

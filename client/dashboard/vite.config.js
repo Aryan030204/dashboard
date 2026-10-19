@@ -150,6 +150,14 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
+      // Weekly reports service (PPT upload + slide viewer)
+      '/api/weekly-reports': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
       // Health monitor service
       '/api/health-monitor': {
         target: 'http://localhost:8081',
@@ -250,6 +258,14 @@ export default defineConfig({
 
       // Daily insights service
       '/api/daily-insights': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // Weekly reports service (PPT upload + slide viewer)
+      '/api/weekly-reports': {
         target: 'http://localhost:8081',
         changeOrigin: true,
         secure: false,
