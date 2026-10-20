@@ -7,6 +7,11 @@ const { convertToPageImages } = require("./converter");
 // Turns one claimed report into slide images in the private bucket and flips it to READY.
 // Everything that can fail ends in FAILED with a short, user-safe reason. Raw converter output
 // is never stored or returned.
+//
+// Cancellation: while a job runs, a watcher checks every few seconds whether an admin cancelled or
+// deleted the report. If so, the running conversion is killed, no more files are written, the
+// worker lets go of the report (so its files can be purged) and the job ends as "cancelled", never
+// as FAILED. The cleanup sweep then removes whatever reached S3.
 function buildProcessor({ config, repo, storage, audit, convert = convertToPageImages, logger = console }) {
   async function toWebp(pngPath) {
     const full = await sharp(pngPath).resize({ width: config.slideWidth, withoutEnlargement: true }).webp({ quality: 80 }).toBuffer({ resolveWithObject: true });
@@ -24,17 +29,36 @@ function buildProcessor({ config, repo, storage, audit, convert = convertToPageI
   async function process(job) {
     const started = Date.now();
     const workDir = fs.mkdtempSync(path.join(config.uploadTmpDir || os.tmpdir(), `wr-${job.id}-`));
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const watcher = setInterval(async () => {
+      try {
+        if (await repo.isDeleted(job.id)) controller.abort();
+      } catch (_) {
+        /* a failed check is retried on the next tick */
+      }
+    }, config.cancelPollMs || 2000);
+
+    const cancelled = () => Object.assign(new Error("cancelled"), { code: "ABORTED" });
+    const checkCancelled = () => {
+      if (signal.aborted) throw cancelled();
+    };
+
     try {
       const sourcePath = path.join(workDir, `source.${job.sourceType}`);
       await storage.downloadToFile(job.sourceKey, sourcePath);
+      checkCancelled();
 
-      const pages = await convert({ sourcePath, workDir, config });
+      const pages = await convert({ sourcePath, workDir, config, signal });
+      checkCancelled();
 
       // The page count is known now: from here the UI can show "7 of 15, 8 remaining".
       await repo.setProgress(job.id, { stage: "SAVING_SLIDES", slidesTotal: pages.length, slidesDone: 0 });
 
       const slides = [];
       for (let i = 0; i < pages.length; i += 1) {
+        checkCancelled(); // stop before writing anything more to S3
         const n = i + 1;
         const img = await toWebp(pages[i]);
         const imageKey = storage.slideKey(job.brandKey, job.id, n);
@@ -45,11 +69,9 @@ function buildProcessor({ config, repo, storage, audit, convert = convertToPageI
         await repo.setProgress(job.id, { stage: "SAVING_SLIDES", slidesTotal: pages.length, slidesDone: n });
       }
 
-      // The manager may have deleted it while it was converting.
-      if (await repo.isDeleted(job.id)) {
-        logger.warn("[weekly-reports] report deleted during processing, discarding", job.id);
-        return { skipped: true };
-      }
+      // The report may have been cancelled or deleted right at the end.
+      if (await repo.isDeleted(job.id)) throw cancelled();
+
       await repo.complete(job.id, slides);
       await audit.record({
         brandKey: job.brandKey, reportId: job.id, action: audit.ACTIONS.PROCESSED,
@@ -57,12 +79,19 @@ function buildProcessor({ config, repo, storage, audit, convert = convertToPageI
       });
       return { slides: slides.length };
     } catch (err) {
+      if (signal.aborted || (err && err.code === "ABORTED")) {
+        logger.warn("[weekly-reports] job cancelled, stopped without finishing", job.id);
+        // Free the report so the cleanup sweep can delete the source and any slides already written.
+        await repo.releaseLock(job.id);
+        return { cancelled: true };
+      }
       const { code, detail } = classify(err);
       logger.error("[weekly-reports] processing failed", job.id, code, err && err.message);
       await repo.markFailed(job.id, code, detail);
       await audit.record({ brandKey: job.brandKey, reportId: job.id, action: audit.ACTIONS.PROCESSING_FAILED, metadata: { code } });
       return { failed: code };
     } finally {
+      clearInterval(watcher);
       fs.rm(workDir, { recursive: true, force: true }, () => {});
     }
   }

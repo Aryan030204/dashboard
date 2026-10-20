@@ -7,6 +7,7 @@ const { buildReportsRepo } = require("./services/reportsRepo");
 const { buildStorage } = require("./services/storage");
 const { buildAudit } = require("./services/audit");
 const { buildProcessor } = require("./services/processor");
+const { buildPurger } = require("./services/purger");
 
 // Separate process from the API so a hung LibreOffice can never block requests.
 async function main() {
@@ -16,6 +17,7 @@ async function main() {
   const storage = buildStorage(config);
   const audit = buildAudit(pool);
   const processor = buildProcessor({ config, repo, storage, audit });
+  const purger = buildPurger({ repo, storage });
   const workerId = `${os.hostname()}:${process.pid}`;
 
   let stopping = false;
@@ -36,6 +38,10 @@ async function main() {
     try {
       const failed = await repo.failStale(staleAfterMs);
       if (failed) console.warn(`[weekly-reports-worker] marked ${failed} stale report(s) FAILED`);
+
+      // Remove the S3 files of deleted/cancelled reports (retries anything the API could not finish).
+      const swept = await purger.sweep(5);
+      if (swept.purged) console.log(`[weekly-reports-worker] removed files of ${swept.purged} deleted report(s)`);
 
       const job = await repo.claimNext(workerId);
       if (job) {

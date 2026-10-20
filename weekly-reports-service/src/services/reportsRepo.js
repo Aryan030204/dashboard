@@ -1,10 +1,19 @@
 const { httpError } = require("../errors");
+const { uniqueTitle } = require("./uniqueTitle");
 
 // Every method that is reachable from a request takes the brand key and puts it in the WHERE
 // clause. A report id alone never grants access (PRD section 9 / SEC-3).
 const REPORT_COLUMNS = `id, brand_key, title, reporting_week, version, source_type, source_size_bytes, status,
   stage, slide_count, slides_total, slides_done, error_code, error_detail, uploaded_by, published_by,
   uploaded_at, published_at, created_at, updated_at`;
+
+async function titleTaken(db, brandKey, title) {
+  const [rows] = await db.query(
+    "SELECT 1 FROM weekly_reports WHERE brand_key = ? AND deleted_at IS NULL AND title = ? LIMIT 1",
+    [brandKey, title],
+  );
+  return rows.length > 0;
+}
 
 function buildReportsRepo(pool) {
   async function inTransaction(fn) {
@@ -27,32 +36,72 @@ function buildReportsRepo(pool) {
   }
 
   return {
-    // Creates the next version for (brand, week). The row starts "locked" so the worker does not
-    // claim it while the source file is still being uploaded to S3.
+    // Is this exact title (case-insensitive, per the table collation) already used by another
+    // presentation of the brand? Deleted and cancelled presentations do not count.
+    async isTitleTaken(brandKey, title) {
+      return titleTaken(pool, brandKey, title);
+    },
+
+    // Duplicate warnings shown BEFORE an upload: the title (with the name it would be saved under)
+    // and how many presentations already exist for the same reporting week.
+    async findDuplicates(brandKey, { title, reportingWeek }) {
+      const taken = await titleTaken(pool, brandKey, title);
+      const suggestedTitle = taken ? await uniqueTitle((t) => titleTaken(pool, brandKey, t), title) : title;
+      const [rows] = await pool.query(
+        "SELECT COUNT(*) AS n FROM weekly_reports WHERE brand_key = ? AND reporting_week = ? AND deleted_at IS NULL",
+        [brandKey, reportingWeek],
+      );
+      return { titleExists: taken, suggestedTitle, weekCount: Number(rows[0].n) };
+    },
+
+    // Creates the next version for (brand, week) and de-duplicates the title. The row starts
+    // "locked" so the worker does not claim it while the source file is still uploading to S3.
+    // A per-brand named lock serialises this so two uploads at once cannot take the same title or
+    // version; it is released only AFTER the commit so the next upload sees this one.
     async createReport({ brandKey, title, reportingWeek, sourceType, uploadedBy }) {
-      for (let attempt = 0; attempt < 4; attempt += 1) {
+      const conn = await pool.getConnection();
+      const lockName = `wr:create:${brandKey}`;
+      let locked = false;
+      try {
+        const [lockRows] = await conn.query("SELECT GET_LOCK(?, 10) AS got", [lockName]);
+        if (Number(lockRows[0].got) !== 1) {
+          throw httpError(503, "BUSY", "Another upload for this brand is being saved. Try again in a moment.");
+        }
+        locked = true;
+        await conn.beginTransaction();
         try {
-          return await inTransaction(async (conn) => {
-            const [rows] = await conn.query(
-              "SELECT COALESCE(MAX(version), 0) + 1 AS next FROM weekly_reports WHERE brand_key = ? AND reporting_week = ?",
-              [brandKey, reportingWeek],
-            );
-            const version = Number(rows[0].next);
-            const [res] = await conn.query(
-              `INSERT INTO weekly_reports
-                 (brand_key, title, reporting_week, version, source_type, status, locked_at, locked_by, uploaded_by)
-               VALUES (?, ?, ?, ?, ?, 'PROCESSING', UTC_TIMESTAMP(), 'upload', ?)`,
-              [brandKey, title, reportingWeek, version, sourceType, uploadedBy],
-            );
-            return { id: Number(res.insertId), version };
-          });
+          const finalTitle = await uniqueTitle((t) => titleTaken(conn, brandKey, t), title);
+          const [rows] = await conn.query(
+            "SELECT COALESCE(MAX(version), 0) + 1 AS next FROM weekly_reports WHERE brand_key = ? AND reporting_week = ?",
+            [brandKey, reportingWeek],
+          );
+          const version = Number(rows[0].next);
+          const [res] = await conn.query(
+            `INSERT INTO weekly_reports
+               (brand_key, title, reporting_week, version, source_type, status, locked_at, locked_by, uploaded_by)
+             VALUES (?, ?, ?, ?, ?, 'PROCESSING', UTC_TIMESTAMP(), 'upload', ?)`,
+            [brandKey, finalTitle, reportingWeek, version, sourceType, uploadedBy],
+          );
+          await conn.commit();
+          return { id: Number(res.insertId), version, title: finalTitle };
         } catch (err) {
-          // Two uploads for the same week raced for the same version number: retry.
-          if (err && err.code === "ER_DUP_ENTRY") continue;
+          try {
+            await conn.rollback();
+          } catch (_) {
+            /* ignore */
+          }
           throw err;
         }
+      } finally {
+        if (locked) {
+          try {
+            await conn.query("SELECT RELEASE_LOCK(?)", [lockName]);
+          } catch (_) {
+            /* the lock is dropped when the connection closes anyway */
+          }
+        }
+        conn.release();
       }
-      throw httpError(409, "VERSION_CONFLICT", "Could not allocate a version. Try again.");
     },
 
     // Source stored: record where it is and let the worker claim it.
@@ -135,6 +184,45 @@ function buildReportsRepo(pool) {
       if (!res.affectedRows) {
         throw httpError(409, "INVALID_STATE", "Unpublish the report before deleting it. A report that is processing cannot be deleted.");
       }
+    },
+
+    // Cancels a report that is still processing (queued or converting): hides it at once and marks its
+    // files for removal. Returns whether the files can be removed right now: not while a worker or an
+    // in-flight upload still holds the report, because they could write more files after the purge.
+    async cancel(id, brandKey) {
+      return inTransaction(async (conn) => {
+        const [rows] = await conn.query(
+          "SELECT status, locked_at FROM weekly_reports WHERE id = ? AND brand_key = ? AND deleted_at IS NULL FOR UPDATE",
+          [id, brandKey],
+        );
+        const row = rows[0];
+        if (!row) throw httpError(404, "NOT_FOUND", "Report not found.");
+        if (row.status !== "PROCESSING") {
+          throw httpError(409, "INVALID_STATE", "Only a report that is still processing can be cancelled.");
+        }
+        await conn.query("UPDATE weekly_reports SET deleted_at = UTC_TIMESTAMP() WHERE id = ?", [id]);
+        return { purgeNow: row.locked_at === null };
+      });
+    },
+
+    async markPurged(id) {
+      await pool.query("UPDATE weekly_reports SET storage_purged_at = UTC_TIMESTAMP() WHERE id = ?", [id]);
+    },
+
+    // Deleted/cancelled reports whose files are still in S3 and that nothing is using any more.
+    async claimPurgeBatch(limit = 5) {
+      const [rows] = await pool.query(
+        `SELECT id, brand_key FROM weekly_reports
+          WHERE deleted_at IS NOT NULL AND storage_purged_at IS NULL AND locked_at IS NULL
+          ORDER BY id LIMIT ?`,
+        [Number(limit)],
+      );
+      return rows.map((r) => ({ id: Number(r.id), brandKey: r.brand_key }));
+    },
+
+    // A worker that stops because its report was cancelled lets go of it, so the files can be purged.
+    async releaseLock(id) {
+      await pool.query("UPDATE weekly_reports SET locked_at = NULL, locked_by = NULL WHERE id = ?", [id]);
     },
 
     // ---- worker side -------------------------------------------------------------------------

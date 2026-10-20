@@ -6,6 +6,7 @@ const { requirePermission, requireAuthor } = require("../middleware/auth");
 const { httpError } = require("../errors");
 const { validateUpload, extensionOf } = require("../services/uploadValidator");
 const { buildSlideCache } = require("../services/slideCache");
+const { buildPurger } = require("../services/purger");
 
 // The single grantable scope. Holders (non-admins) can only preview PUBLISHED reports of their
 // brand; everything else is role-gated to elevated users.
@@ -84,6 +85,7 @@ function assertBrandInputsAgree(req) {
 function buildWeeklyReportsRouter({ config, repo, storage, audit }) {
   const router = express.Router();
   const slideCache = buildSlideCache(config.slideCacheMax);
+  const purger = buildPurger({ repo, storage });
   const A = audit.ACTIONS;
 
   const brandGuard = (req, _res, next) => {
@@ -178,6 +180,25 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit }) {
     }
   });
 
+  // Asked by the upload form BEFORE uploading, so the admin gets a warning (never an error):
+  //  - titleExists / suggestedTitle: that title is taken; uploading anyway saves it as "Title (1)".
+  //  - weekCount: presentations already under that reporting week; uploading anyway is allowed and
+  //    changes neither the title nor the week text.
+  router.get("/check", requireAuthor, brandGuard, async (req, res, next) => {
+    try {
+      const fields = createSchema.parse({ title: req.query.title, reporting_week: req.query.reporting_week });
+      const found = await repo.findDuplicates(req.principal.brand_key, { title: fields.title, reportingWeek: fields.reporting_week });
+      res.json({
+        title_exists: found.titleExists,
+        suggested_title: found.suggestedTitle,
+        week_exists: found.weekCount > 0,
+        week_count: found.weekCount,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get("/:id", requirePermission(VIEW_PERMISSION), brandGuard, async (req, res, next) => {
     try {
       const report = await loadAuthorizedReport(req);
@@ -213,7 +234,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit }) {
         config,
       );
 
-      const { id, version } = await repo.createReport({
+      const { id, version, title: savedTitle } = await repo.createReport({
         brandKey: brand,
         title: fields.title,
         reportingWeek: fields.reporting_week,
@@ -231,13 +252,17 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit }) {
         throw httpError(503, "STORAGE_UNAVAILABLE", "Report is temporarily unavailable. Try again.");
       }
 
-      await audit.record({ brandKey: brand, reportId: id, userId, action: A.UPLOADED, metadata: { version, size: info.sizeBytes } });
+      const titleAdjusted = savedTitle !== fields.title;
+      await audit.record({
+        brandKey: brand, reportId: id, userId, action: A.UPLOADED,
+        metadata: { version, size: info.sizeBytes, ...(titleAdjusted ? { requested_title: fields.title } : {}) },
+      });
       if (version > 1) {
         await audit.record({ brandKey: brand, reportId: id, userId, action: A.VERSION_CREATED, metadata: { version, reporting_week: fields.reporting_week } });
       }
 
       const created = await repo.findById(id);
-      res.status(202).json(managerDto(created));
+      res.status(202).json({ ...managerDto(created), title_adjusted: titleAdjusted });
     } catch (err) {
       next(err);
     } finally {
@@ -269,13 +294,41 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit }) {
     }
   });
 
+  // Delete removes the report AND its files from S3 (source, slides, thumbnails). The row is hidden
+  // first (so the state rules are checked atomically), then the files are deleted. If S3 fails the
+  // worker's cleanup sweep retries until they are gone, so nothing is left behind for good.
   router.delete("/:id", requireAuthor, brandGuard, async (req, res, next) => {
     try {
       const report = await loadAuthorizedReport(req);
       const { brand_key: brand, user_id: userId } = req.principal;
       await repo.softDelete(report.id, brand);
-      await audit.record({ brandKey: brand, reportId: report.id, userId, action: A.DELETED, metadata: { version: report.version } });
+      const filesRemoved = await purger.purge({ id: report.id, brandKey: brand });
+      await audit.record({
+        brandKey: brand, reportId: report.id, userId, action: A.DELETED,
+        metadata: { version: report.version, files_removed: filesRemoved },
+      });
       res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Cancel stops a report that is still processing (queued or converting) and removes it
+  // everywhere: the record is hidden, a running conversion is stopped by the worker within a couple
+  // of seconds, and every file already written to S3 is deleted.
+  router.post("/:id/cancel", requireAuthor, brandGuard, async (req, res, next) => {
+    try {
+      const report = await loadAuthorizedReport(req);
+      const { brand_key: brand, user_id: userId } = req.principal;
+      const { purgeNow } = await repo.cancel(report.id, brand);
+      // Files can go right away unless a worker or an in-flight upload still holds the report; in
+      // that case the worker releases it and the cleanup sweep removes the files moments later.
+      const filesRemoved = purgeNow ? await purger.purge({ id: report.id, brandKey: brand }) : false;
+      await audit.record({
+        brandKey: brand, reportId: report.id, userId, action: A.CANCELLED,
+        metadata: { version: report.version, stage: report.stage || null, files_removed: filesRemoved },
+      });
+      res.json({ cancelled: true, files_removed: filesRemoved });
     } catch (err) {
       next(err);
     }

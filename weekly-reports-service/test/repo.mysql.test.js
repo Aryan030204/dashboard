@@ -21,7 +21,7 @@ test("setup: apply the real migration", opts, async () => {
     password: env.WR_TEST_DB_PASSWORD, database: env.WR_TEST_DB_NAME, multipleStatements: true, timezone: "Z",
   });
   await pool.query("DROP TABLE IF EXISTS weekly_report_events, weekly_report_slides, weekly_reports");
-  for (const file of ["001-create-weekly-reports.sql", "002-add-progress-columns.sql"]) {
+  for (const file of ["001-create-weekly-reports.sql", "002-add-progress-columns.sql", "003-add-storage-purge.sql"]) {
     await pool.query(fs.readFileSync(path.join(__dirname, "..", "migrations", file), "utf8"));
   }
   repo = buildReportsRepo(pool);
@@ -131,6 +131,102 @@ test("failStale fails reports locked past the timeout and leaves fresh ones alon
   assert.equal((await repo.findById(old.id)).status, "FAILED");
   assert.equal((await repo.findById(old.id)).error_code, "PROCESSING_TIMEOUT");
   assert.equal((await repo.findById(fresh.id)).status, "PROCESSING");
+});
+
+test("cancel hides a processing report; files can be purged now only if nothing holds it", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  const queued = await newReport("BBB", "Cancel queued"); // released, not claimed
+  const held = await newReport("BBB", "Cancel held");
+  const claimed = await repo.claimNext("worker-1");
+  assert.equal(claimed.id, queued.id, "oldest job is claimed first");
+
+  assert.deepEqual(await repo.cancel(held.id, "BBB"), { purgeNow: true }, "not claimed: files can go now");
+  assert.deepEqual(await repo.cancel(queued.id, "BBB"), { purgeNow: false }, "held by a worker: wait");
+  assert.equal(await repo.findById(held.id), null);
+  assert.equal(await repo.findById(queued.id), null);
+});
+
+test("cancel refuses other brands, finished reports and already-cancelled reports", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  const proc = await newReport("BBB", "Cancel rules");
+  await assert.rejects(repo.cancel(proc.id, "PTS"), (e) => e.status === 404, "other brand");
+  const done = await newReport("BBB", "Cancel done"); await makeReady(done.id);
+  await assert.rejects(repo.cancel(done.id, "BBB"), (e) => e.status === 409, "not processing");
+  await repo.cancel(proc.id, "BBB");
+  await assert.rejects(repo.cancel(proc.id, "BBB"), (e) => e.status === 404, "already cancelled");
+});
+
+test("a cancelled report is never claimed by a worker", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  const a = await newReport("BBB", "Never claimed");
+  await repo.cancel(a.id, "BBB");
+  assert.equal(await repo.claimNext("w"), null);
+});
+
+test("purge queue: deleted/cancelled reports with files left, skipping any a worker still holds", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  const gone = await newReport("BBB", "Purge a"); await makeReady(gone.id);
+  await repo.softDelete(gone.id, "BBB");
+  const cancelledHeld = await newReport("BBB", "Purge b");
+  await repo.claimNext("w1"); // a worker picks up cancelledHeld (the only report still processing)
+  await repo.cancel(cancelledHeld.id, "BBB");
+
+  assert.deepEqual((await repo.claimPurgeBatch(10)).map((r) => r.id), [gone.id], "held report is not offered yet");
+  await repo.releaseLock(cancelledHeld.id);
+  assert.deepEqual((await repo.claimPurgeBatch(10)).map((r) => r.id).sort(), [gone.id, cancelledHeld.id].sort());
+
+  await repo.markPurged(gone.id);
+  assert.deepEqual((await repo.claimPurgeBatch(10)).map((r) => r.id), [cancelledHeld.id]);
+  await repo.markPurged(cancelledHeld.id);
+  assert.deepEqual(await repo.claimPurgeBatch(10), []);
+});
+
+test("a report with an upload still in flight is not offered for purging until it is released", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  const { id } = await repo.createReport({ brandKey: "BBB", title: "T", reportingWeek: "Uploading", sourceType: "pptx", uploadedBy: "u" });
+  assert.deepEqual(await repo.cancel(id, "BBB"), { purgeNow: false });
+  assert.deepEqual(await repo.claimPurgeBatch(10), []);
+  await repo.releaseForProcessing(id, "BBB", { sourceKey: "BBB/x", sizeBytes: 1, sha256: "c".repeat(64) });
+  assert.deepEqual((await repo.claimPurgeBatch(10)).map((r) => r.id), [id]);
+});
+
+
+test("createReport de-duplicates titles per brand, case-insensitively, and leaves the week alone", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  const mk = (brandKey, title, reportingWeek) =>
+    repo.createReport({ brandKey, title, reportingWeek, sourceType: "pptx", uploadedBy: "u" });
+  assert.equal((await mk("BBB", "Weekly Review", "Week 1")).title, "Weekly Review");
+  assert.equal((await mk("BBB", "weekly review", "Week 1")).title, "weekly review (1)");
+  assert.equal((await mk("BBB", "Weekly Review", "Week 2")).title, "Weekly Review (2)");
+  assert.equal((await mk("PTS", "Weekly Review", "Week 1")).title, "Weekly Review", "other brand is separate");
+  const [rows] = await pool.query("SELECT reporting_week, version FROM weekly_reports WHERE brand_key = 'BBB' ORDER BY id");
+  assert.deepEqual(rows.map((r) => [r.reporting_week, r.version]), [["Week 1", 1], ["Week 1", 2], ["Week 2", 1]]);
+});
+
+test("five uploads of the same title at once all get different titles and versions", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  const made = await Promise.all(
+    Array.from({ length: 5 }, () => repo.createReport({ brandKey: "BBB", title: "Race", reportingWeek: "Week 9", sourceType: "pptx", uploadedBy: "u" })),
+  );
+  assert.deepEqual(made.map((m) => m.title).sort(), ["Race", "Race (1)", "Race (2)", "Race (3)", "Race (4)"]);
+  assert.deepEqual(made.map((m) => m.version).sort(), [1, 2, 3, 4, 5]);
+});
+
+test("findDuplicates reports the title clash, the name it would get, and the week count", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  await repo.createReport({ brandKey: "BBB", title: "Quarterly", reportingWeek: "Week 7", sourceType: "pptx", uploadedBy: "u" });
+  await repo.createReport({ brandKey: "BBB", title: "Other", reportingWeek: "week 7", sourceType: "pptx", uploadedBy: "u" });
+  assert.deepEqual(await repo.findDuplicates("BBB", { title: "quarterly", reportingWeek: "Week 7" }), { titleExists: true, suggestedTitle: "quarterly (1)", weekCount: 2 });
+  assert.deepEqual(await repo.findDuplicates("BBB", { title: "Brand new", reportingWeek: "Week 8" }), { titleExists: false, suggestedTitle: "Brand new", weekCount: 0 });
+  assert.deepEqual(await repo.findDuplicates("PTS", { title: "Quarterly", reportingWeek: "Week 7" }), { titleExists: false, suggestedTitle: "Quarterly", weekCount: 0 });
+});
+
+test("deleted and cancelled presentations free their title and no longer count for the week", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  const a = await repo.createReport({ brandKey: "BBB", title: "Temp", reportingWeek: "Week 3", sourceType: "pptx", uploadedBy: "u" });
+  await repo.cancel(a.id, "BBB");
+  assert.deepEqual(await repo.findDuplicates("BBB", { title: "Temp", reportingWeek: "Week 3" }), { titleExists: false, suggestedTitle: "Temp", weekCount: 0 });
+  assert.equal((await repo.createReport({ brandKey: "BBB", title: "Temp", reportingWeek: "Week 3", sourceType: "pptx", uploadedBy: "u" })).title, "Temp");
 });
 
 test("teardown", opts, async () => {

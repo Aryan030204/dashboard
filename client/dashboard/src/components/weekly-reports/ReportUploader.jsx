@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Box, Button, LinearProgress, Paper, Stack, TextField, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
-import { uploadWeeklyReport } from "../../lib/api.js";
+import { checkWeeklyReportDuplicates, uploadWeeklyReport } from "../../lib/api.js";
 import {
   MAX_UPLOAD_BYTES,
   defaultReportingWeek,
@@ -23,6 +23,10 @@ export default function ReportUploader({ brandKey, onUploaded }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [checking, setChecking] = useState(false);
+  // Duplicate warning for the exact title + week that were checked. Editing either one makes it stale,
+  // so the next click checks again instead of silently reusing an old answer.
+  const [warning, setWarning] = useState(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
 
@@ -45,13 +49,36 @@ export default function ReportUploader({ brandKey, onUploaded }) {
     setTitle((current) => current || titleFromFilename(picked.name));
   }, []);
 
+  const checkKey = `${title.trim()}|${week.trim()}`;
+  const activeWarning = warning && warning.key === checkKey ? warning : null;
+
   const submit = async () => {
-    if (!file || uploading) return;
+    if (!file || uploading || checking) return;
     if (!title.trim() || !week.trim()) {
       setError("Enter a presentation title and a reporting week.");
       return;
     }
     setError("");
+
+    // First click: look for duplicates. If there are any, show a warning and wait; the button then
+    // reads "Upload anyway". A duplicate is never an error. If the check itself cannot be done, the
+    // upload continues (the server still keeps titles unique on its own).
+    if (!activeWarning) {
+      setChecking(true);
+      const found = await checkWeeklyReportDuplicates(brandKey, { title: title.trim(), reportingWeek: week.trim() });
+      setChecking(false);
+      if (!found.error && (found.data?.title_exists || found.data?.week_exists)) {
+        setWarning({
+          key: checkKey,
+          titleExists: Boolean(found.data.title_exists),
+          suggestedTitle: found.data.suggested_title,
+          weekCount: Number(found.data.week_count) || 0,
+        });
+        return;
+      }
+    }
+
+    setWarning(null);
     setUploading(true);
     setProgress(0);
     abortRef.current = new AbortController();
@@ -152,11 +179,35 @@ export default function ReportUploader({ brandKey, onUploaded }) {
           <LinearProgress variant="determinate" value={pct} sx={{ mt: 0.75, height: 6, borderRadius: 3 }} />
         </Box>
       )}
+      {activeWarning && (
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          {activeWarning.titleExists && (
+            <Typography variant="body2" sx={{ color: "text.primary" }}>
+              A presentation named "{title.trim()}" already exists for {brandKey}. If you upload anyway, this one will be saved as "{activeWarning.suggestedTitle}".
+            </Typography>
+          )}
+          {activeWarning.weekCount > 0 && (
+            <Typography variant="body2" sx={{ color: "text.primary", mt: activeWarning.titleExists ? 0.75 : 0 }}>
+              {week.trim()} already has {activeWarning.weekCount} {activeWarning.weekCount === 1 ? "presentation" : "presentations"} for {brandKey}.
+              You can still upload; the week{activeWarning.titleExists ? "" : " and the title"} will stay exactly as you typed {activeWarning.titleExists ? "it" : "them"}.
+            </Typography>
+          )}
+          <Typography variant="caption" sx={{ display: "block", mt: 0.75, color: "text.secondary" }}>
+            Change the title or the week to avoid this, or click "Upload anyway".
+          </Typography>
+        </Alert>
+      )}
       {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
 
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ mt: 2 }} alignItems={{ xs: "stretch", sm: "center" }}>
-        <Button variant="contained" disableElevation onClick={submit} disabled={!file || uploading}>
-          {uploading ? "Uploading..." : "Upload"}
+        <Button
+          variant="contained"
+          color={activeWarning ? "warning" : "primary"}
+          disableElevation
+          onClick={submit}
+          disabled={!file || uploading || checking}
+        >
+          {uploading ? "Uploading..." : checking ? "Checking..." : activeWarning ? "Upload anyway" : "Upload"}
         </Button>
         {uploading && <Button onClick={() => abortRef.current?.abort()}>Cancel</Button>}
         <Typography variant="caption" sx={{ color: "text.secondary" }}>

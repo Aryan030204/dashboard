@@ -1873,6 +1873,22 @@ export async function deleteWeeklyReport(brandKey, id) {
   return doDelete(weeklyReportsUrl(`/${encodeURIComponent(id)}`, brandKey));
 }
 
+// Stops a presentation that is still queued or converting and removes it everywhere (record, a
+// running conversion, and every file already stored).
+export async function cancelWeeklyReport(brandKey, id) {
+  return doPost(weeklyReportsUrl(`/${encodeURIComponent(id)}/cancel`, brandKey), {});
+}
+
+// Asked before uploading so the admin gets a warning (never an error) when the title is already used
+// or the reporting week already has presentations. See the upload form for what happens next.
+export async function checkWeeklyReportDuplicates(brandKey, { title, reportingWeek }) {
+  return doGet(`${WEEKLY_REPORTS}/check`, {
+    brand_key: normalizeBrandKey(brandKey),
+    title,
+    reporting_week: reportingWeek,
+  });
+}
+
 // Multipart upload with progress. doPost always sends JSON, and fetch cannot report upload
 // progress, so this uses XMLHttpRequest. Retries once after a token refresh on 401.
 export function uploadWeeklyReport(brandKey, { file, title, reportingWeek }, { onProgress, signal } = {}) {

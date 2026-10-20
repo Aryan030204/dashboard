@@ -1,5 +1,5 @@
 const fs = require("fs");
-const { S3Client, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
 const { Upload } = require("@aws-sdk/lib-storage");
 
 // Private bucket only. Nothing here ever builds a URL for a browser; slides are streamed back
@@ -63,6 +63,41 @@ function buildStorage(config) {
 
     async remove(key) {
       await client.send(new DeleteObjectCommand({ Bucket, Key: key }));
+    },
+
+    // Every object of one report lives under "<BRAND>/<report id>/" (source, slides, thumbnails).
+    // The prefix is built only from a brand read from the database and a numeric id, and removePrefix
+    // refuses anything that does not look exactly like that, so it can never wipe a wider path.
+    reportPrefix(brandKey, reportId) {
+      const brand = String(brandKey || "");
+      const id = Number(reportId);
+      if (!brand || brand.includes("/") || brand.includes("..") || !Number.isInteger(id) || id <= 0) {
+        throw new Error("invalid report storage prefix");
+      }
+      return `${brand}/${id}/`;
+    },
+
+    // Deletes everything under the prefix. Throws if S3 reports any object it could not delete, so
+    // the caller never marks the files as gone when they are not.
+    async removePrefix(prefix) {
+      if (!/^[^/]+\/\d+\/$/.test(prefix) || prefix.includes("..")) {
+        throw new Error("refusing to delete an unexpected prefix");
+      }
+      let token;
+      let removed = 0;
+      do {
+        const page = await client.send(new ListObjectsV2Command({ Bucket, Prefix: prefix, ContinuationToken: token }));
+        const keys = (page.Contents || []).map((o) => ({ Key: o.Key }));
+        if (keys.length) {
+          const out = await client.send(new DeleteObjectsCommand({ Bucket, Delete: { Objects: keys, Quiet: true } }));
+          if (out.Errors && out.Errors.length) {
+            throw new Error(`could not delete ${out.Errors.length} object(s): ${out.Errors[0].Code}`);
+          }
+          removed += keys.length;
+        }
+        token = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (token);
+      return removed;
     },
   };
 }

@@ -11,9 +11,10 @@ const { httpError } = require("../src/errors");
 const { baseConfig } = require("./helpers");
 
 function makeDeps({ convert, deleted = false, failStorage = false } = {}) {
-  const calls = { complete: null, failed: null, put: new Map(), events: [], progress: [] };
+  const calls = { complete: null, failed: null, put: new Map(), events: [], progress: [], released: [] };
   const repo = {
-    async isDeleted() { return deleted; },
+    async isDeleted() { return typeof deleted === "function" ? deleted() : deleted; },
+    async releaseLock(id) { calls.released.push(id); },
     async setProgress(id, p) { calls.progress.push({ id, ...p }); },
     async complete(id, slides) { calls.complete = { id, slides }; },
     async markFailed(id, code, detail) { calls.failed = { id, code, detail }; },
@@ -25,7 +26,7 @@ function makeDeps({ convert, deleted = false, failStorage = false } = {}) {
     async putBuffer(key, buf) { if (failStorage) throw new Error("s3 down"); calls.put.set(key, buf); },
   };
   const audit = { ACTIONS, async record(e) { calls.events.push(e); } };
-  const config = { ...baseConfig(), uploadTmpDir: os.tmpdir(), slideWidth: 800, thumbWidth: 100 };
+  const config = { ...baseConfig(), uploadTmpDir: os.tmpdir(), slideWidth: 800, thumbWidth: 100, cancelPollMs: 20 };
   const logger = { warn() {}, error() {} };
   return { calls, processor: buildProcessor({ config, repo, storage, audit, convert, logger }) };
 }
@@ -95,11 +96,52 @@ test("a storage failure while writing slides ends FAILED", async () => {
   assert.equal(calls.failed.code, "PROCESSING_ERROR");
 });
 
-test("a report deleted during conversion is discarded without completing", async () => {
+test("a report cancelled right at the end is not completed, and the worker lets go of it", async () => {
   const { calls, processor } = makeDeps({ convert: ({ workDir }) => fakePages(1, workDir), deleted: true });
   const result = await processor.process(job);
-  assert.deepEqual(result, { skipped: true });
+  assert.deepEqual(result, { cancelled: true });
   assert.equal(calls.complete, null);
+  assert.equal(calls.failed, null, "a cancelled job is never recorded as FAILED");
+  assert.deepEqual(calls.released, [7]);
+});
+
+test("cancelling during conversion kills the running tool, writes nothing and releases the report", async () => {
+  let stopped = false;
+  const flip = { value: false };
+  const { calls, processor } = makeDeps({
+    deleted: () => flip.value,
+    // Stands in for LibreOffice: runs until the abort signal fires, like the real killable child.
+    convert: ({ signal }) => new Promise((resolve, reject) => {
+      setTimeout(() => { flip.value = true; }, 40); // the admin cancels while it is converting
+      signal.addEventListener("abort", () => {
+        stopped = true;
+        reject(Object.assign(new Error("aborted"), { code: "ABORTED" }));
+      });
+    }),
+  });
+  const result = await processor.process(job);
+  assert.deepEqual(result, { cancelled: true });
+  assert.ok(stopped, "the conversion was told to stop");
+  assert.equal(calls.put.size, 0, "nothing was written to S3");
+  assert.equal(calls.complete, null);
+  assert.equal(calls.failed, null);
+  assert.deepEqual(calls.released, [7]);
+  assert.equal(calls.events.length, 0, "no processed/failed audit event for a cancelled job");
+});
+
+test("cancelling between slides stops writing more files", async () => {
+  const holder = {};
+  const made = makeDeps({
+    convert: ({ workDir }) => fakePages(5, workDir),
+    // Reports "deleted" once the third slide (2 files each) has been written.
+    deleted: () => holder.calls.put.size >= 6,
+  });
+  holder.calls = made.calls;
+  const result = await made.processor.process(job);
+  assert.deepEqual(result, { cancelled: true });
+  assert.ok(made.calls.put.size >= 6 && made.calls.put.size < 10, `stopped early, wrote ${made.calls.put.size} of 10 files`);
+  assert.equal(made.calls.complete, null);
+  assert.deepEqual(made.calls.released, [7]);
 });
 
 test("the work directory is removed after a job", async () => {

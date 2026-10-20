@@ -6,7 +6,7 @@ yet; the unit tests (`npm test` in `weekly-reports-service`) and the client buil
 ## 1. Prerequisites
 
 - [ ] MySQL 8 database for the three tables; apply `weekly-reports-service/migrations/001-create-weekly-reports.sql`
-      and then `002-add-progress-columns.sql` (once each, in that order).
+      then `002-add-progress-columns.sql` and `003-add-storage-purge.sql` (once each, in that order).
 - [ ] Private S3 bucket (Block Public Access on, default encryption on) + IAM permission
       Get/Put/Delete on that bucket only for the EC2 role.
 - [ ] `weekly-reports-service/.env` from `.env.example` (`WR_DB_*`, `WEEKLY_REPORTS_BUCKET`,
@@ -65,7 +65,13 @@ Use one author account and one client account that has `weekly_report_preview` o
 | 9 | Author: upload same week again, publish v2 | Client sees v2; v1 is UNPUBLISHED in history |
 | 10 | Author: upload a .pdf, a renamed .txt, a 60 MB file | Rejected with a clear message each time |
 | 11 | Remove `weekly_report_preview` from the client | Menu item gone; `/weekly-reports` redirects; API 403 |
-| 12 | Stop the worker mid-conversion | Report goes FAILED (`PROCESSING_TIMEOUT`) after ~6 min, never visible to clients |
+| 11a | Upload a deck with a title that already exists for the brand | Warning appears, nothing uploaded yet; button reads "Upload anyway". Clicking it saves the deck as `Title (1)` and shows a toast saying so |
+| 11b | Upload a deck into a week that already has one, with a new title | Warning about the week; "Upload anyway" saves it with the exact title and week typed (as the next version of that week) |
+| 11c | Edit the title or week after a warning | The warning disappears and the next click checks again |
+| 12 | Delete a finished presentation, then look in the bucket | Its `<BRAND>/<id>/` folder is gone (source, slides, thumbnails); other presentations' folders remain |
+| 13 | Upload two decks back to back; Cancel the second while it is queued | It disappears from the list; its folder is removed from the bucket; the first deck keeps converting |
+| 14 | Cancel a deck while it shows "Converting" | It disappears; within a few seconds the worker log shows it stopped, no soffice process remains, its folder is removed |
+| 15 | Stop the worker mid-conversion | Report goes FAILED (`PROCESSING_TIMEOUT`) after ~6 min, never visible to clients |
 
 ## 4. Production
 

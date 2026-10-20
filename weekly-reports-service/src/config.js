@@ -44,6 +44,7 @@ function getConfig(env = process.env) {
 
     // Worker.
     workerPollMs: toInt(env.WORKER_POLL_MS, 5000),
+    cancelPollMs: toInt(env.CANCEL_POLL_MS, 2000), // how often a running job checks it was not cancelled
     convertTimeoutMs: toInt(env.CONVERT_TIMEOUT_MS, 5 * 60 * 1000),
     slideWidth: toInt(env.SLIDE_WIDTH, 1920),
     thumbWidth: toInt(env.THUMB_WIDTH, 320),

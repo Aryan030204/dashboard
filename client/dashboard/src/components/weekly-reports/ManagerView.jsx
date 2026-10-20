@@ -23,6 +23,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { toast } from "react-toastify";
 import {
+  cancelWeeklyReport,
   deleteWeeklyReport,
   listWeeklyReports,
   publishWeeklyReport,
@@ -90,11 +91,17 @@ export default function ManagerView({ brandKey }) {
     setConfirm(null);
     if (kind === "publish") await run(report, publishWeeklyReport, "Published. Clients can now preview it.");
     if (kind === "unpublish") await run(report, unpublishWeeklyReport, "Unpublished. Clients can no longer see it.");
-    if (kind === "delete") await run(report, deleteWeeklyReport, "Report deleted.");
+    if (kind === "delete") await run(report, deleteWeeklyReport, "Presentation deleted, including its files.");
+    if (kind === "cancel") await run(report, cancelWeeklyReport, "Cancelled. The upload and its files were removed.");
   };
 
   const actions = (r) => (
     <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", justifyContent: { xs: "stretch", md: "flex-end" }, "& > button": { flex: { xs: "1 1 auto", md: "0 0 auto" } } }}>
+      {r.status === "PROCESSING" && (
+        <Button size="small" variant="outlined" color="error" onClick={() => setConfirm({ kind: "cancel", report: r })} disabled={busyId === r.id}>
+          Cancel
+        </Button>
+      )}
       {canPreview(r) && (
         <Button size="small" variant="outlined" onClick={() => setViewing(r)} disabled={busyId === r.id}>Preview</Button>
       )}
@@ -123,7 +130,14 @@ export default function ManagerView({ brandKey }) {
 
   return (
     <Stack spacing={2.5}>
-      <ReportUploader brandKey={brandKey} onUploaded={() => { toast.info("Uploaded. Conversion has started."); refresh(); }} />
+      <ReportUploader
+        brandKey={brandKey}
+        onUploaded={(saved) => {
+          // The server may have added "(1)" to a title that was already taken: say so.
+          toast.info(saved?.title_adjusted ? `Uploaded and saved as "${saved.title}". Conversion has started.` : "Uploaded. Conversion has started.");
+          refresh();
+        }}
+      />
 
       <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2.5 } }}>
         <Typography component="h2" sx={{ color: "text.primary", fontWeight: 700, fontSize: 17, mb: 1.5 }}>
@@ -185,19 +199,21 @@ export default function ManagerView({ brandKey }) {
               {confirm.kind === "publish" && "Publish this presentation?"}
               {confirm.kind === "unpublish" && "Unpublish this presentation?"}
               {confirm.kind === "delete" && "Delete this presentation?"}
+              {confirm.kind === "cancel" && "Cancel this upload?"}
             </DialogTitle>
             <DialogContent>
               <DialogContentText sx={{ color: "text.secondary" }}>
                 {confirm.kind === "publish" &&
                   `Users of ${brandKey} with preview access will be able to preview "${confirm.report.title}" (v${confirm.report.version}). Other published presentations are not affected.`}
                 {confirm.kind === "unpublish" && `Users will stop seeing "${confirm.report.title}". You can publish it again later.`}
-                {confirm.kind === "delete" && `"${confirm.report.title}" (v${confirm.report.version}) will be removed from the list.`}
+                {confirm.kind === "delete" && `"${confirm.report.title}" (v${confirm.report.version}) and all of its files, including the original upload, will be permanently deleted. This cannot be undone.`}
+                {confirm.kind === "cancel" && `Processing of "${confirm.report.title}" (v${confirm.report.version}) will stop. The presentation and any files already created for it will be permanently deleted.`}
               </DialogContentText>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-              <Button onClick={() => setConfirm(null)}>Cancel</Button>
-              <Button onClick={onConfirm} variant="contained" color={confirm.kind === "delete" ? "error" : "primary"} disableElevation autoFocus>
-                {confirm.kind === "publish" ? "Publish" : confirm.kind === "unpublish" ? "Unpublish" : "Delete"}
+              <Button onClick={() => setConfirm(null)}>{confirm.kind === "cancel" ? "Keep processing" : "Cancel"}</Button>
+              <Button onClick={onConfirm} variant="contained" color={confirm.kind === "delete" || confirm.kind === "cancel" ? "error" : "primary"} disableElevation autoFocus>
+                {confirm.kind === "publish" ? "Publish" : confirm.kind === "unpublish" ? "Unpublish" : confirm.kind === "cancel" ? "Cancel upload" : "Delete"}
               </Button>
             </DialogActions>
           </>

@@ -3,6 +3,7 @@ const { getConfig } = require("../src/config");
 const { buildApp } = require("../src/app");
 const { httpError } = require("../src/errors");
 const { ACTIONS } = require("../src/services/audit");
+const { uniqueTitle } = require("../src/services/uniqueTitle");
 
 const SECRET = "test-gateway-secret";
 
@@ -39,6 +40,9 @@ function fakeRepo() {
   const repo = {
     _reports: reports,
     async createReport({ brandKey, title, reportingWeek, sourceType, uploadedBy }) {
+      const taken = (t) => reports.some((r) => r.brand_key === brandKey && live(r) && r.title.toLowerCase() === t.toLowerCase());
+      const requested = title;
+      title = await uniqueTitle(async (t) => taken(t), requested);
       const same = reports.filter((r) => r.brand_key === brandKey && r.reporting_week === reportingWeek);
       const version = same.reduce((m, r) => Math.max(m, r.version), 0) + 1;
       const row = {
@@ -47,9 +51,10 @@ function fakeRepo() {
         slides_total: null, slides_done: null, error_code: null,
         error_detail: null, locked_at: new Date(), uploaded_by: uploadedBy, published_by: null,
         uploaded_at: new Date(), published_at: null, created_at: new Date(), updated_at: new Date(), deleted_at: null,
+        storage_purged_at: null,
       };
       reports.push(row);
-      return { id: row.id, version };
+      return { id: row.id, version, title };
     },
     async releaseForProcessing(id, brandKey, { sourceKey, sizeBytes }) {
       const r = reports.find((x) => x.id === id && x.brand_key === brandKey);
@@ -62,6 +67,13 @@ function fakeRepo() {
     async findById(id) {
       const r = reports.find((x) => x.id === id);
       return live(r) ? { ...r } : null;
+    },
+    async findDuplicates(brandKey, { title, reportingWeek }) {
+      const taken = (t) => reports.some((r) => r.brand_key === brandKey && live(r) && r.title.toLowerCase() === t.toLowerCase());
+      const titleExists = taken(title);
+      const suggestedTitle = titleExists ? await uniqueTitle(async (t) => taken(t), title) : title;
+      const weekCount = reports.filter((r) => r.brand_key === brandKey && live(r) && r.reporting_week.toLowerCase() === reportingWeek.toLowerCase()).length;
+      return { titleExists, suggestedTitle, weekCount };
     },
     async listByBrand(brandKey, { publishedOnly = false } = {}) {
       let rows = reports.filter((r) => r.brand_key === brandKey && live(r));
@@ -95,6 +107,30 @@ function fakeRepo() {
       if (!r) throw httpError(409, "INVALID_STATE", "Unpublish the report before deleting it. A report that is processing cannot be deleted.");
       r.deleted_at = new Date();
     },
+    async cancel(id, brandKey) {
+      const r = reports.find((x) => x.id === id && x.brand_key === brandKey && live(x));
+      if (!r) throw httpError(404, "NOT_FOUND", "Report not found.");
+      if (r.status !== "PROCESSING") throw httpError(409, "INVALID_STATE", "Only a report that is still processing can be cancelled.");
+      r.deleted_at = new Date();
+      return { purgeNow: r.locked_at === null };
+    },
+    async markPurged(id) {
+      reports.find((x) => x.id === id).storage_purged_at = new Date();
+    },
+    async claimPurgeBatch(limit = 5) {
+      return reports
+        .filter((r) => r.deleted_at && !r.storage_purged_at && r.locked_at === null)
+        .slice(0, limit)
+        .map((r) => ({ id: r.id, brandKey: r.brand_key }));
+    },
+    async releaseLock(id) {
+      const r = reports.find((x) => x.id === id);
+      if (r) { r.locked_at = null; r.locked_by = null; }
+    },
+    async isDeleted(id) {
+      const r = reports.find((x) => x.id === id);
+      return !r || r.deleted_at !== null;
+    },
     // test helpers
     seed({ brand = "BBB", week = "Week 42", status = "READY", slideCount = 3, title = "Weekly Review", version } = {}) {
       const same = reports.filter((r) => r.brand_key === brand && r.reporting_week === week);
@@ -103,7 +139,7 @@ function fakeRepo() {
         source_storage_key: `${brand}/${seq}/source/presentation.pptx`, source_size_bytes: 1000, status, stage: null,
         slide_count: slideCount, slides_total: slideCount, slides_done: slideCount, error_code: null, error_detail: null, locked_at: null, uploaded_by: "author1", published_by: null,
         uploaded_at: new Date(), published_at: status === "PUBLISHED" ? new Date(Date.now() + seq) : null,
-        created_at: new Date(), updated_at: new Date(), deleted_at: null,
+        created_at: new Date(), updated_at: new Date(), deleted_at: null, storage_purged_at: null,
       };
       reports.push(row);
       for (let n = 1; n <= slideCount; n += 1) {
@@ -115,10 +151,18 @@ function fakeRepo() {
   return repo;
 }
 
-function fakeStorage({ failPut = false } = {}) {
+function fakeStorage({ failPut = false, failRemove = false } = {}) {
   const objects = new Map();
+  const state = { failRemove, removedPrefixes: [] };
   return {
     objects,
+    state,
+    reportPrefix: (brand, id) => `${brand}/${id}/`,
+    async removePrefix(prefix) {
+      if (state.failRemove) throw new Error("s3 delete failed");
+      state.removedPrefixes.push(prefix);
+      for (const key of [...objects.keys()]) if (key.startsWith(prefix)) objects.delete(key);
+    },
     sourceKey: (brand, id, ext) => `${brand}/${id}/source/presentation.${ext}`,
     async putFile(key) {
       if (failPut) throw new Error("s3 down");
