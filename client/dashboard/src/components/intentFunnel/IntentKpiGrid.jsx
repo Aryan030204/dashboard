@@ -157,20 +157,21 @@ export default function IntentKpiGrid({ kpis = [] }) {
                 display: "flex",
                 alignItems: "flex-start",
                 justifyContent: "space-between",
-                gap: 1,
+                flexWrap: { xs: "wrap", sm: "nowrap" },
+                gap: { xs: 0.5, md: 1 },
                 mb: 0.75,
               }}
             >
               <Box
                 sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}
               >
-                <Box sx={{ color: accent, display: "inline-flex" }}>
+                <Box sx={{ color: accent, display: "inline-flex", flexShrink: 0 }}>
                   <Icon size={18} />
                 </Box>
                 <Typography
                   variant="body2"
                   color="text.secondary"
-                  sx={{ lineHeight: 1.2, minWidth: 0 }}
+                  sx={{ lineHeight: 1.2, minWidth: 0, fontSize: { xs: 12, md: 14 }, overflowWrap: "anywhere" }}
                 >
                   {kpi.label}
                 </Typography>

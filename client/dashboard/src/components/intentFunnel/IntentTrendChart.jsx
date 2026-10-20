@@ -1,4 +1,4 @@
-import { MenuItem, Select, useTheme } from "@mui/material";
+import { MenuItem, Select, useMediaQuery, useTheme } from "@mui/material";
 import {
   CartesianGrid,
   Legend,
@@ -23,6 +23,7 @@ export default function IntentTrendChart({
   onGranularityChange,
 }) {
   const theme = useTheme();
+  const compact = useMediaQuery(theme.breakpoints.down("sm"));
   const axisColor = theme.palette.text.secondary;
 
   return (
@@ -41,11 +42,11 @@ export default function IntentTrendChart({
         </Select>
       }
     >
-      <div style={{ width: "100%", height: 250 }}>
+      <div style={{ width: "100%", height: compact ? 230 : 250 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={trend}
-            margin={{ top: 8, right: 12, left: -8, bottom: 0 }}
+            margin={{ top: 8, right: compact ? 4 : 12, left: compact ? -16 : -8, bottom: 0 }}
           >
             <CartesianGrid
               stroke={theme.palette.divider}
@@ -64,7 +65,7 @@ export default function IntentTrendChart({
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => compactFormat.format(v)}
-              width={44}
+              width={compact ? 40 : 44}
             />
             <Tooltip
               formatter={(value, name) => [formatCount(value), name]}

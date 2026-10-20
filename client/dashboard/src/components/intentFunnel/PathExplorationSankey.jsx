@@ -6,6 +6,7 @@ import {
   Select,
   Tooltip as MuiTooltip,
   Typography,
+  useMediaQuery,
   useTheme,
 } from "@mui/material";
 import { ResponsiveContainer, Sankey, Tooltip as ChartTooltip } from "recharts";
@@ -31,13 +32,14 @@ const STATE_COLORS = {
   exit: "#ef4444",
 };
 
+// On phones every control takes a full row (label left, select filling the rest).
 function ControlSelect({ label, value, onChange, options, hint }) {
   const select = (
-    <FormControl size="small">
+    <FormControl size="small" sx={{ flex: { xs: 1, sm: "none" }, minWidth: 0 }}>
       <Select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        sx={{ fontSize: 13, minWidth: 120 }}
+        sx={{ fontSize: 13, minWidth: { xs: 0, sm: 120 } }}
       >
         {options.map((option) => (
           <MenuItem key={option.value} value={option.value} disabled={option.disabled}>
@@ -48,17 +50,91 @@ function ControlSelect({ label, value, onChange, options, hint }) {
     </FormControl>
   );
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-      <Typography variant="caption" color="text.secondary" noWrap>
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        gap: 0.75,
+        width: { xs: "100%", sm: "auto" },
+      }}
+    >
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        noWrap
+        sx={{ width: { xs: 84, sm: "auto" }, flexShrink: 0 }}
+      >
         {label}
       </Typography>
       {hint ? (
         <MuiTooltip title={hint} arrow>
-          <span>{select}</span>
+          <Box component="span" sx={{ display: "flex", flex: { xs: 1, sm: "none" }, minWidth: 0 }}>
+            {select}
+          </Box>
         </MuiTooltip>
       ) : (
         select
       )}
+    </Box>
+  );
+}
+
+// Phone view of the path data: one block per step, every action as a labelled bar. The flow
+// diagram needs more width than a phone has, and scrolling it sideways hides most of it.
+function PathStepList({ paths, textColor }) {
+  const steps = useMemo(() => {
+    const byStep = new Map();
+    (paths?.nodes || []).forEach((node) => {
+      if (!byStep.has(node.step)) byStep.set(node.step, []);
+      byStep.get(node.step).push(node);
+    });
+    return [...byStep.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([step, nodes]) => ({
+        step,
+        info: paths.steps?.[step],
+        nodes: [...nodes].sort((a, b) => b.value - a.value),
+      }));
+  }, [paths]);
+
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {steps.map(({ step, info, nodes }) => (
+        <Box key={step}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1, mb: 0.75 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              {`Step ${step + 1}${info?.title ? ` · ${info.title}` : ""}`}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+              {`${formatCount(info?.sessions ?? 0)} sessions`}
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+            {nodes.map((node) => (
+              <Box key={node.key} sx={{ minWidth: 0 }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1 }}>
+                  <Typography variant="caption" sx={{ color: textColor, fontWeight: 600, minWidth: 0 }}>
+                    {node.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                    {`${formatCount(node.value)} (${formatPct(node.pct)})`}
+                  </Typography>
+                </Box>
+                <Box sx={{ height: 8, borderRadius: 1, bgcolor: "action.hover", overflow: "hidden" }}>
+                  <Box
+                    sx={{
+                      height: "100%",
+                      width: `${Math.max(2, Math.min(100, node.pct))}%`,
+                      bgcolor: STATE_COLORS[node.state] || "#94a3b8",
+                      borderRadius: 1,
+                    }}
+                  />
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      ))}
     </Box>
   );
 }
@@ -75,6 +151,7 @@ export default function PathExplorationSankey({
   onIntentFilterChange,
 }) {
   const theme = useTheme();
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
   const isDark = theme.palette.mode === "dark";
   const textColor = theme.palette.text.primary;
   const mutedColor = theme.palette.text.secondary;
@@ -176,9 +253,11 @@ export default function PathExplorationSankey({
         <Box
           sx={{
             display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
             flexWrap: "wrap",
-            alignItems: "center",
+            alignItems: { xs: "stretch", sm: "center" },
             gap: { xs: 1, md: 2 },
+            width: { xs: "100%", sm: "auto" },
           }}
         >
           <ControlSelect
@@ -212,7 +291,9 @@ export default function PathExplorationSankey({
           {formatCount(paths.coverage.totalSessions)} sessions that started here.
         </Typography>
       ) : null}
-      {data ? (
+      {data && phone ? (
+        <PathStepList paths={paths} textColor={textColor} />
+      ) : data ? (
         <Box sx={{ overflowX: "auto" }}>
           <Box sx={{ minWidth: 820, height: 420 }}>
             <ResponsiveContainer width="100%" height="100%">

@@ -26,8 +26,11 @@ export function SectionCard({ title, info, action, children, sx = {} }) {
           mb: 1.5,
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0 }}>
+          <Typography
+            variant="subtitle1"
+            sx={{ fontWeight: 700, fontSize: { xs: "0.95rem", sm: "1rem" }, lineHeight: 1.3 }}
+          >
             {title}
           </Typography>
           {info && (
@@ -41,7 +44,7 @@ export function SectionCard({ title, info, action, children, sx = {} }) {
             </Tooltip>
           )}
         </Box>
-        {action}
+        {action ? <Box sx={{ minWidth: 0, maxWidth: "100%" }}>{action}</Box> : null}
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
     </Card>

@@ -61,6 +61,14 @@ const DEFAULT_BUCKETS = [
   },
 ];
 
+// behaviour-based levels, one row per level plus the bots left out of them
+const DEFAULT_BEHAVIOR = [
+  { behavior_level: "low", cur_sessions: 50, cur_users: 45, prev_sessions: 40, prev_users: 36 },
+  { behavior_level: "medium", cur_sessions: 40, cur_users: 35, prev_sessions: 30, prev_users: 27 },
+  { behavior_level: "high", cur_sessions: 10, cur_users: 9, prev_sessions: 10, prev_users: 9 },
+  { behavior_level: "bot", cur_sessions: 4, cur_users: 3, prev_sessions: 2, prev_users: 2 },
+];
+
 const ROLLUP_ROWS = [
   { product_id: "111", title: "Serum", views: "500", add_to_cart: "50", checkouts: "15" },
   { product_id: "222", title: "Cleanser", views: "300", add_to_cart: "90", checkouts: "5" },
@@ -84,6 +92,7 @@ function makeConn(overrides = {}) {
     rollup: (sql) => sortedRollup(ROLLUP_ROWS, sql),
     totals: () => [DEFAULT_TOTALS],
     buckets: () => DEFAULT_BUCKETS,
+    behavior: () => DEFAULT_BEHAVIOR,
     trend: () => [
       { date: "2026-10-10", product_views: "100", add_to_carts: "20", checkout_starts: "5" },
       { date: "2026-10-12", product_views: "90", add_to_carts: "18", checkout_starts: "4" },
@@ -114,6 +123,7 @@ function makeConn(overrides = {}) {
     if (sql.includes("FROM product_behavior_daily")) return handlers.rollup(sql, options);
     if (sql.includes("event_name = 'checkout_started'")) return handlers.productCheckouts(sql, options);
     if (sql.includes("FROM behavioral_events")) return handlers.productViews(sql, options);
+    if (sql.includes("GROUP BY behavior_level")) return handlers.behavior(sql, options);
     if (sql.includes("GROUP BY intent_bucket")) return handlers.buckets(sql, options);
     if (sql.includes("FROM intent_sessions")) return handlers.totals(sql, options);
     throw new Error(`unexpected sql: ${sql}`);
@@ -460,8 +470,8 @@ describe("intentFunnelService", () => {
     test("all independent queries run in one round (no per-day / per-bucket / per-product queries)", async () => {
       const conn = makeConn();
       await newService().getIntentFunnel({ ...SPEC, start: "2026-09-01", end: "2026-10-12", conn });
-      // totals, buckets, trend, product rollup, paths, paths total
-      expect(conn.query).toHaveBeenCalledTimes(6);
+      // totals, buckets, trend, product rollup, paths, paths total, behaviour levels
+      expect(conn.query).toHaveBeenCalledTimes(7);
     });
 
     test("cached results are keyed by brand and never cross tenants", async () => {
@@ -534,13 +544,13 @@ describe("intentFunnelService", () => {
       expect(out.funnel[1].users).toBe(25); // the real count is not altered, only the share
     });
 
-    test("both core queries carry an execution timeout", async () => {
+    test("every query that scans intent_sessions carries an execution timeout", async () => {
       const conn = makeConn();
       await newService().getIntentFunnel({ ...SPEC, conn });
       const core = conn.query.mock.calls
         .map(([sql]) => sql)
         .filter((sql) => sql.includes("FROM intent_sessions"));
-      expect(core).toHaveLength(2);
+      expect(core).toHaveLength(3); // totals, score buckets, behaviour levels
       core.forEach((sql) => expect(sql).toMatch(/SELECT \/\*\+ MAX_EXECUTION_TIME\(30000\) \*\//));
     });
 

@@ -197,6 +197,82 @@ function buildBucketQuery({ prevStart, curStart, endExclusive }) {
   return { sql, params };
 }
 
+// Behaviour-based intent: what the visitor actually did in each session, not where the session's score
+// falls among the brand's other sessions. Written to line up with Microsoft Clarity's User Intent:
+//   low    - under 5 seconds on the site, or any length with no clicks and no scrolls
+//   high   - over 5 seconds with clicks and at least one key action (product view, add to cart, checkout)
+//   medium - over 5 seconds with some interaction, but no key action
+// It reads every closed session (scored, excluded as zero-signal, or still pending), so one-page bounces
+// land in "low" instead of disappearing. Bots are counted separately and left out of the three levels.
+// The score-based buckets above stay percentile based (about 28% of a brand's sessions are always "high").
+const BEHAVIOR_MIN_DURATION_MS = 5000;
+const BEHAVIOR_LEVEL_SQL = `CASE
+        WHEN intent_exclusion_reason = 'bot' THEN 'bot'
+        WHEN session_time_spent_ms < ${BEHAVIOR_MIN_DURATION_MS} OR (click_count = 0 AND scroll_count = 0) THEN 'low'
+        WHEN click_count > 0 AND (product_view_count > 0 OR add_to_cart_count > 0 OR checkout_started_count > 0) THEN 'high'
+        ELSE 'medium'
+      END`;
+const BEHAVIOR_RULES = Object.freeze({
+  minDurationSeconds: BEHAVIOR_MIN_DURATION_MS / 1000,
+  low: "Under 5 seconds, or no clicks and no scrolls",
+  medium: "Over 5 seconds with some interaction",
+  high: "Over 5 seconds with clicks and a product view, add to cart or checkout",
+});
+
+function buildBehaviorQuery({ prevStart, curStart, endExclusive }) {
+  const params = [];
+  const cols = [];
+  [
+    ["cur", "sessions"],
+    ["cur", "users"],
+    ["prev", "sessions"],
+    ["prev", "users"],
+  ].forEach(([period, unit]) => {
+    cols.push(`${periodExpr({ unit, period, cond: null }, curStart, params)} AS ${period}_${unit}`);
+  });
+  params.push(prevStart, endExclusive);
+  const sql = `
+    SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+      ${BEHAVIOR_LEVEL_SQL} AS behavior_level,
+      ${cols.join(",\n      ")}
+    FROM intent_sessions
+    WHERE session_start >= ? AND session_start < ?
+      AND session_time_spent_ms IS NOT NULL
+    GROUP BY behavior_level
+  `;
+  return { sql, params };
+}
+
+function buildBehavior(rows) {
+  const byLevel = {};
+  (rows || []).forEach((row) => {
+    byLevel[row.behavior_level] = row;
+  });
+  const items = INTENT_LEVELS.map((level) => ({
+    level,
+    users: num(byLevel[level]?.cur_users),
+    sessions: num(byLevel[level]?.cur_sessions),
+  }));
+  const userSum = items.reduce((sum, item) => sum + item.users, 0);
+  const sessionSum = items.reduce((sum, item) => sum + item.sessions, 0);
+  return {
+    available: true,
+    rules: BEHAVIOR_RULES,
+    distribution: {
+      total: userSum,
+      totalSessions: sessionSum,
+      botsExcluded: num(byLevel.bot?.cur_sessions),
+      items: items.map((item) => ({
+        ...item,
+        pct: safePct(item.users, userSum),
+        sessionsPct: safePct(item.sessions, sessionSum),
+      })),
+    },
+    // same card shape as the score-based KPIs, for the three intent cards only
+    kpis: buildKpis({}, byLevel).filter((kpi) => INTENT_LEVELS.includes(kpi.id)),
+  };
+}
+
 function buildTrendQuery({ start, end }) {
   return {
     sql: `
@@ -634,6 +710,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         kpis: "intent_sessions",
         funnel: "intent_sessions",
         distribution: "intent_sessions",
+        behavior: "intent_sessions",
         conversion: "intent_sessions",
         trend: "intent_daily_summary",
         // refreshed by the pipeline every 15 minutes; raw behavioral_events only as a
@@ -671,6 +748,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
           funnel: [],
           trend: [],
           distribution: { total: 0, totalSessions: 0, uniqueScoredUsers: 0, items: [] },
+          behavior: null,
           conversionRates: [],
           topProducts: [],
           paths: emptyPaths(),
@@ -679,11 +757,19 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       throw err;
     }
 
-    const [trendRes, rollupRes, pathsRes, pathsTotalRes] = await Promise.all([
+    const [trendRes, rollupRes, pathsRes, pathsTotalRes, behaviorRes] = await Promise.all([
       selectOptional(conn, buildTrendQuery({ start, end }), "trend", meta, brandKey),
       selectOptional(conn, buildProductRollupQuery({ start, end, sortKey }), "topProducts", meta, brandKey),
       selectOptional(conn, buildPathsQuery({ start, end, pathStart }), "paths", meta, brandKey),
       selectOptional(conn, buildPathsTotalQuery({ start, end, pathStart }), "paths", meta, brandKey),
+      // optional: needs intent_exclusion_reason, which older brand databases may not have yet
+      selectOptional(
+        conn,
+        buildBehaviorQuery({ prevStart, curStart: start, endExclusive }),
+        "behavior",
+        meta,
+        brandKey,
+      ),
     ]);
 
     // Brand databases without the rollup table fall back to scanning the raw events.
@@ -716,6 +802,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         checkouts: num(row.checkout_starts),
       })),
       distribution: buildDistribution(totals, buckets),
+      behavior: behaviorRes.ok ? buildBehavior(behaviorRes.rows) : null,
       conversionRates: buildConversion(buckets),
       topProducts,
       paths: pathsRes.ok
@@ -744,6 +831,9 @@ module.exports = {
   _internal: {
     buildTotalsQuery,
     buildBucketQuery,
+    buildBehaviorQuery,
+    buildBehavior,
+    BEHAVIOR_LEVEL_SQL,
     buildTrendQuery,
     buildProductRollupQuery,
     rollupProducts,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Box, Button, Typography } from "@mui/material";
+import { Box, Button, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { EmptyStateCard, SectionFallback } from "../routes/shared/RouteUi.jsx";
 import { getIntentFunnel } from "../lib/api.js";
 import IntentKpiGrid from "./intentFunnel/IntentKpiGrid.jsx";
@@ -28,6 +28,9 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
   const [pathStart, setPathStart] = useState("page_viewed");
   const [topN, setTopN] = useState(5);
   const [intentFilter, setIntentFilter] = useState("all");
+  // "score": percentile buckets of the intent score, per user. "behavior": rule-based, per session
+  // (the same idea as Microsoft Clarity's user intent). Both come in the same response.
+  const [intentBasis, setIntentBasis] = useState("score");
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -84,6 +87,16 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
     [data?.trend, granularity],
   );
 
+  const behavior = data?.behavior || null;
+  const useBehavior = intentBasis === "behavior" && behavior != null;
+  // The high / medium / low cards switch with the basis; the other cards are the same either way.
+  const kpis = useMemo(() => {
+    const base = data?.kpis || [];
+    if (!useBehavior) return base;
+    const replacements = new Map((behavior.kpis || []).map((kpi) => [kpi.id, kpi]));
+    return base.map((kpi) => replacements.get(kpi.id) || kpi);
+  }, [data?.kpis, behavior, useBehavior]);
+
   const unavailable = data?.meta?.available === false;
   const hasSessions = (data?.kpis || []).some((kpi) => kpi.id === "visitors" && kpi.sessions > 0);
 
@@ -114,8 +127,43 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
           transition: "opacity 0.2s ease",
         }}
       >
+        {behavior ? (
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: { xs: "column", sm: "row" },
+              alignItems: { xs: "stretch", sm: "center" },
+              gap: { xs: 0.75, sm: 1 },
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Intent based on
+            </Typography>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={intentBasis}
+              onChange={(_, next) => next && setIntentBasis(next)}
+              aria-label="Intent basis"
+              sx={{
+                width: { xs: "100%", sm: "auto" },
+                "& .MuiToggleButton-root": {
+                  flex: { xs: 1, sm: "none" },
+                  textTransform: "none",
+                  fontSize: { xs: 12, sm: 13 },
+                  lineHeight: 1.25,
+                  px: { xs: 1, sm: 1.5 },
+                },
+              }}
+            >
+              <ToggleButton value="score">Score (percentile)</ToggleButton>
+              <ToggleButton value="behavior">Behaviour (like Clarity)</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+        ) : null}
+
         <Box sx={{ mb: { xs: 0.5, md: 1 } }}>
-          <IntentKpiGrid kpis={data.kpis} />
+          <IntentKpiGrid kpis={kpis} />
         </Box>
 
         <Box sx={rowSx("minmax(0, 1.7fr) minmax(0, 1fr)")}>
@@ -124,7 +172,11 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
             granularity={granularity}
             onGranularityChange={setGranularity}
           />
-          <IntentDistributionDonut distribution={data.distribution} />
+          <IntentDistributionDonut
+            distribution={useBehavior ? behavior.distribution : data.distribution}
+            metric={useBehavior ? "sessions" : "users"}
+            basis={useBehavior ? "behavior" : "score"}
+          />
         </Box>
 
         <IntentFunnelBars funnel={data.funnel} />
@@ -152,9 +204,13 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
   }
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: { xs: 2, md: 2.5 } }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: { xs: 2, md: 2.5 }, minWidth: 0, maxWidth: "100%" }}>
       <Box>
-        <Typography variant="h4" sx={{ fontWeight: 600 }} color="text.primary">
+        <Typography
+          variant="h4"
+          sx={{ fontWeight: 600, fontSize: { xs: "1.5rem", sm: "2rem", md: "2.125rem" } }}
+          color="text.primary"
+        >
           Intent Funnel
         </Typography>
         <Typography variant="body2" color="text.secondary">

@@ -8,15 +8,25 @@ import {
   formatPct,
 } from "./intentFunnelUtils.js";
 
-export default function IntentDistributionDonut({ distribution }) {
+const SCORE_INFO =
+  "Share of scored users classified as high, medium or low intent by score percentile. Sessions that are still being scored or were excluded are not included.";
+const BEHAVIOR_INFO =
+  "Share of sessions by what the visitor did. Low: under 5 seconds, or no clicks and no scrolls. Medium: over 5 seconds with some interaction. High: over 5 seconds with clicks and a product view, add to cart or checkout. Every closed session is counted; bots are left out.";
+
+// `metric` picks what the donut counts: "users" (score basis) or "sessions" (behaviour basis).
+export default function IntentDistributionDonut({ distribution, metric = "users", basis = "score" }) {
   const theme = useTheme();
+  const bySessions = metric === "sessions";
   const items = distribution?.items || [];
-  const total = distribution?.total || 0;
+  const total = (bySessions ? distribution?.totalSessions : distribution?.total) || 0;
+  const valueKey = bySessions ? "sessions" : "users";
+  const pctKey = bySessions ? "sessionsPct" : "pct";
+  const botsExcluded = distribution?.botsExcluded || 0;
 
   return (
     <SectionCard
       title="Intent Distribution"
-      info="Share of scored users classified as high, medium or low intent. Sessions that are still being scored or were excluded are not included."
+      info={basis === "behavior" ? BEHAVIOR_INFO : SCORE_INFO}
     >
       <Box
         sx={{
@@ -32,7 +42,7 @@ export default function IntentDistributionDonut({ distribution }) {
             <PieChart>
               <Pie
                 data={items}
-                dataKey="users"
+                dataKey={valueKey}
                 nameKey="level"
                 innerRadius={58}
                 outerRadius={88}
@@ -72,7 +82,7 @@ export default function IntentDistributionDonut({ distribution }) {
               {formatCount(total)}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Users
+              {bySessions ? "Sessions" : "Users"}
             </Typography>
           </Box>
         </Box>
@@ -97,11 +107,16 @@ export default function IntentDistributionDonut({ distribution }) {
                   {INTENT_LABELS[item.level]}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {formatCount(item.users)} ({formatPct(item.pct)})
+                  {formatCount(item[valueKey])} ({formatPct(item[pctKey])})
                 </Typography>
               </Box>
             </Box>
           ))}
+          {bySessions && botsExcluded > 0 ? (
+            <Typography variant="caption" color="text.secondary">
+              {formatCount(botsExcluded)} bot sessions excluded
+            </Typography>
+          ) : null}
         </Box>
       </Box>
     </SectionCard>

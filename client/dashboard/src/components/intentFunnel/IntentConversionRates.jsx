@@ -29,9 +29,13 @@ export default function IntentConversionRates({ conversionRates = [] }) {
               key={row.level}
               sx={{
                 display: "grid",
-                gridTemplateColumns: "minmax(0, 1.2fr) auto minmax(0, 1fr)",
+                // phones: label and rate on one line, the users -> checkouts figures underneath
+                gridTemplateColumns: {
+                  xs: "minmax(0, 1fr) auto",
+                  sm: "minmax(0, 1.2fr) auto minmax(0, 1fr)",
+                },
                 alignItems: "center",
-                gap: 1.5,
+                gap: { xs: 0.75, sm: 1.5 },
                 p: 1.25,
                 borderRadius: 1.5,
                 border: "1px solid",
@@ -58,7 +62,12 @@ export default function IntentConversionRates({ conversionRates = [] }) {
               >
                 {formatPct(row.rate)}
               </Typography>
-              <Box sx={{ textAlign: "right" }}>
+              <Box
+                sx={{
+                  textAlign: { xs: "left", sm: "right" },
+                  gridColumn: { xs: "1 / -1", sm: "auto" },
+                }}
+              >
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   {formatCount(row.users)} → {formatCount(row.checkouts)}
                 </Typography>
