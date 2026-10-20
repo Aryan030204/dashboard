@@ -79,6 +79,11 @@ Use one author account and one client account that has `weekly_report_preview` o
 2. Pilot with one brand (BBB): upload, preview, publish, check as a real client user.
 3. Grant `weekly_report_preview` to client users in Access Control.
 
+The gateway does not wait for the weekly-reports containers. If they are down or not deployed yet,
+`/weekly-reports` answers 502 and everything else in Datum keeps working, so it is safe to deploy
+`main` before the bucket, migrations and `.env` exist. Check once with
+`docker compose stop weekly-reports-service weekly-reports-worker && docker compose up -d api-gateway`.
+
 ## 5. Rollback
 
 Stop `weekly-reports-service` and `weekly-reports-worker` and remove the `/weekly-reports` nginx

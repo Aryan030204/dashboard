@@ -26,8 +26,8 @@ services:
         condition: service_healthy
       daily-insights-service:
         condition: service_healthy
-      weekly-reports-service:
-        condition: service_healthy
+    # weekly-reports-service is deliberately NOT a dependency here: Weekly Reports is optional and the
+    # gateway must start even when its containers are missing or unhealthy.
     restart: unless-stopped
     networks:
       - saas-net
