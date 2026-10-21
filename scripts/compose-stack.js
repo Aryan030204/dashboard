@@ -16,6 +16,8 @@ const BASE_SERVICES = [
   "alerts-service",
   "merchant-requests-service",
   "daily-insights-service",
+  "weekly-reports-service",
+  "weekly-reports-worker",
   "analytics-service",
   "sessions-service",
   "kafka-service",
