@@ -124,6 +124,7 @@ const PERMISSION_OPTIONS = [
   "health_monitor_panel",
   "web_vitals_panel",
   "pnl_panel",
+  "ads_panel",
 ];
 
 const COLUMN_PERMISSIONS = [
@@ -168,6 +169,7 @@ const PERMISSION_CATEGORIES = [
       "health_monitor_panel",
       "web_vitals_panel",
       "pnl_panel",
+      "ads_panel",
       "daily_insight_view",
       "compare_mode",
       "multiselectable_kpi_cards",

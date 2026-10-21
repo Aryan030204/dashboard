@@ -25,6 +25,7 @@ import {
   Settings,
   Target,
   Wallet,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -79,6 +80,7 @@ const NAV_ITEMS = [
       { id: "inventory", label: "Inventory", icon: Package },
       { id: "web-vitals", label: "Web Vitals", icon: Gauge },
       { id: "pnl", label: "P&L", icon: Wallet },
+      { id: "ads", label: "Ads", icon: Megaphone },
       { id: "requests", label: "Requests", icon: ClipboardList },
     ],
   },

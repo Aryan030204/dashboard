@@ -25,6 +25,7 @@ const { buildDashboardRouter } = require("./modules/dashboard");
 const { buildSessionAnalyticsRouter } = require("./routes/sessionAnalytics.routes");
 const { buildWebVitalsRouter } = require("./routes/webVitals.routes");
 const { buildPnlRouter } = require("./routes/pnl.routes");
+const { buildAdsRouter } = require("./routes/ads.routes");
 const {
   collectRoutes,
   createHealthMonitorReporter,
@@ -76,6 +77,7 @@ const dashboardRouter = buildDashboardRouter();
 const sessionAnalyticsRouter = buildSessionAnalyticsRouter();
 const webVitalsRouter = buildWebVitalsRouter();
 const pnlRouter = buildPnlRouter();
+const adsRouter = buildAdsRouter();
 const externalRouter = buildExternalRouter();
 const uploadsRouter = buildUploadsRouter();
 const apiKeysRouter = buildApiKeysRouter(sequelize);
@@ -89,6 +91,8 @@ app.use("/metrics", bundlesRouter);
 app.use("/dashboard", dashboardRouter);
 app.use("/session-analytics", sessionAnalyticsRouter);
 app.use("/web-vitals", webVitalsRouter);
+// Before /pnl: the P&L router gates everything under it on pnl_panel.
+app.use("/pnl/ads", adsRouter);
 app.use("/pnl", pnlRouter);
 app.use("/external", externalRouter);
 app.use("/", uploadsRouter);
@@ -110,6 +114,8 @@ async function init() {
   // an index problem must never keep the service from starting.
   for (const model of [
     require("./shared/db/models/TotalConfig.mongo"),
+    require("./shared/db/models/AdsAlertRule.mongo").AdsAlertRule,
+    require("./shared/db/models/AdsAlertEvent.mongo").AdsAlertEvent,
   ]) {
     try {
       await model.syncIndexes();
@@ -153,6 +159,7 @@ async function init() {
         ...collectRoutes(dashboardRouter, { mountPath: "/dashboard", sourceModule: "modules/dashboard/index.js" }),
         ...collectRoutes(sessionAnalyticsRouter, { mountPath: "/session-analytics", sourceModule: "routes/sessionAnalytics.routes.js" }),
         ...collectRoutes(webVitalsRouter, { mountPath: "/web-vitals", sourceModule: "routes/webVitals.routes.js" }),
+        ...collectRoutes(adsRouter, { mountPath: "/pnl/ads", sourceModule: "routes/ads.routes.js" }),
         ...collectRoutes(pnlRouter, { mountPath: "/pnl", sourceModule: "routes/pnl.routes.js" }),
         ...collectRoutes(externalRouter, { mountPath: "/external", sourceModule: "modules/external/index.js" }),
         ...collectRoutes(uploadsRouter, { mountPath: "/", sourceModule: "modules/uploads/index.js" }),

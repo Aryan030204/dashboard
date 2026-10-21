@@ -2087,3 +2087,52 @@ export async function deleteAlert(id) {
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
 }
+
+// --- Ads page (/pnl/ads/*) ---------------------------------------------------
+// Campaign / ad / product ad performance the P&L worker syncs alongside its
+// spend rollups. Every reader takes { brand_key, start, end }.
+
+function adsRangeParams(args = {}, extra = {}) {
+  return appendBrandKey({ start: args.start, end: args.end, ...extra }, args);
+}
+
+export async function getAdsOverview(args = {}) {
+  return doGet("/pnl/ads/overview", adsRangeParams(args));
+}
+
+export async function getAdsCampaigns(args = {}) {
+  return doGet("/pnl/ads/campaigns", adsRangeParams(args, { channel: args.channel || "all" }));
+}
+
+export async function getAdsCampaignAds(args = {}) {
+  return doGet(
+    `/pnl/ads/campaigns/${encodeURIComponent(args.campaignId)}/ads`,
+    adsRangeParams(args, { channel: args.channel }),
+  );
+}
+
+export async function getAdsProducts(args = {}) {
+  return doGet("/pnl/ads/products", adsRangeParams(args));
+}
+
+export async function getAdsLandingPages(args = {}) {
+  return doGet("/pnl/ads/landing-pages", adsRangeParams(args));
+}
+
+export async function getAdsAlertRules(args = {}) {
+  return doGet("/pnl/ads/alert-rules", appendBrandKey({}, args));
+}
+
+export async function saveAdsAlertRules({ brand_key, rules }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPut(`/pnl/ads/alert-rules${qs({ brand_key: brandKey })}`, { brand_key: brandKey, rules });
+}
+
+export async function getAdsAlertEvents(args = {}) {
+  return doGet("/pnl/ads/alert-events", appendBrandKey({ limit: args.limit || 50 }, args));
+}
+
+export async function triggerAdsSync({ brand_key }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/ads/sync${qs({ brand_key: brandKey })}`, { brand_key: brandKey });
+}

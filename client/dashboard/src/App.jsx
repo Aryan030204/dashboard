@@ -48,6 +48,7 @@ import {
   Settings,
   Target,
   Wallet,
+  Megaphone,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -61,6 +62,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "web-vitals", label: "Web Vitals", icon: Gauge },
   { id: "pnl", label: "P&L", icon: Wallet },
+  { id: "ads", label: "Ads", icon: Megaphone },
   { id: "health-monitor", label: "Health Monitor", icon: HeartPulse },
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "requests", label: "Requests", icon: ClipboardList },
@@ -83,6 +85,7 @@ const TAB_ROUTE_MAP = {
   inventory: "/inventory",
   "web-vitals": "/web-vitals",
   pnl: "/pnl",
+  ads: "/ads",
   "health-monitor": "/health-monitor",
   alerts: "/alerts",
   requests: "/requests",
@@ -190,6 +193,7 @@ import SessionAnalyticsRouteContainer from "./routes/SessionAnalyticsRouteContai
 import HealthMonitorRouteContainer from "./routes/HealthMonitorRouteContainer.jsx";
 import WebVitalsRouteContainer from "./routes/WebVitalsRouteContainer.jsx";
 import PnlRouteContainer from "./routes/PnlRouteContainer.jsx";
+import AdsRouteContainer from "./routes/AdsRouteContainer.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
 );
@@ -658,6 +662,11 @@ export default function App() {
     return hasPermission("pnl_panel");
   }, [hasPermission, isAuthor]);
 
+  const canAccessAdsPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("ads_panel");
+  }, [hasPermission, isAuthor]);
+
   const defaultLandingTab = useMemo(() => {
     if (isAuthor) return "overall-snapshot";
     return canAccessOverallSnapshotPanel ? "overall-snapshot" : "dashboard";
@@ -675,6 +684,7 @@ export default function App() {
     if (canAccessInventoryPanel) tabs.push("inventory");
     if (canAccessWebVitalsPanel) tabs.push("web-vitals");
     if (canAccessPnlPanel) tabs.push("pnl");
+    if (canAccessAdsPanel) tabs.push("ads");
     if (canAccessHealthMonitorPanel) tabs.push("health-monitor");
     return tabs;
   }, [
@@ -687,6 +697,7 @@ export default function App() {
     canAccessSessionAnalyticsPanel,
     canAccessWebVitalsPanel,
     canAccessPnlPanel,
+    canAccessAdsPanel,
     canAccessHealthMonitorPanel,
     isAuthor,
   ]);
@@ -773,6 +784,16 @@ export default function App() {
       );
       return;
     }
+    if (authorTab === "ads" && !canAccessAdsPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
     if (authorTab === "pnl" && !canAccessPnlPanel) {
       navigate(
         {
@@ -804,6 +825,7 @@ export default function App() {
     canAccessSessionAnalyticsPanel,
     canAccessWebVitalsPanel,
     canAccessPnlPanel,
+    canAccessAdsPanel,
     canAccessHealthMonitorPanel,
     initialized,
     location.search,
@@ -1296,7 +1318,7 @@ export default function App() {
   useEffect(() => {
     // Product filter options are only used by tabs with a filter bar; skip
     // the fetch entirely on brand-agnostic-UI tabs like Web Vitals/Health Monitor.
-    if (authorTab === "web-vitals" || authorTab === "pnl" || authorTab === "health-monitor") {
+    if (authorTab === "web-vitals" || authorTab === "pnl" || authorTab === "ads" || authorTab === "health-monitor") {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
       setProductOptionsLoading(false);
@@ -1971,7 +1993,7 @@ export default function App() {
     if (!activeBrandKey) return;
     // UTM filter options are only used by tabs with a filter bar; skip the
     // fetch entirely on brand-agnostic-UI tabs like Web Vitals/Health Monitor.
-    if (authorTab === "web-vitals" || authorTab === "pnl" || authorTab === "health-monitor") return;
+    if (authorTab === "web-vitals" || authorTab === "pnl" || authorTab === "ads" || authorTab === "health-monitor") return;
     if (isLongRangeDashboard) {
       setUtmOptions({ brand_key: activeBrandKey });
       return;
@@ -2309,6 +2331,10 @@ export default function App() {
       case "pnl":
         return (
           <PnlRouteContainer hasBrand={hasBrand} activeBrandKey={activeBrandKey} />
+        );
+      case "ads":
+        return (
+          <AdsRouteContainer hasBrand={hasBrand} activeBrandKey={activeBrandKey} />
         );
       case "session-analytics":
         return (
