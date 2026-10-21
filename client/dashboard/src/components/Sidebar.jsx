@@ -24,6 +24,7 @@ import {
   Gauge,
   Settings,
   Target,
+  Presentation,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -78,6 +79,7 @@ const NAV_ITEMS = [
       { id: "inventory", label: "Inventory", icon: Package },
       { id: "web-vitals", label: "Web Vitals", icon: Gauge },
       { id: "requests", label: "Requests", icon: ClipboardList },
+      { id: "weekly-reports", label: "Weekly Reports", icon: Presentation },
     ],
   },
   {

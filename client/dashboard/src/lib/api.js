@@ -1661,6 +1661,143 @@ export async function getHealthMonitorIncidents(filters = {}) {
   return { error: false, data: res.data || { incidents: [], page: 1, pageSize: 25, total: 0 } };
 }
 
+// ---- Weekly Reports ---------------------------------------------------------
+// The gateway only reads brand context from headers/query args, so brand_key is
+// always sent in the query string (including POST/DELETE), never only in a body.
+function weeklyReportsPath(path, brandKey, extra = {}) {
+  return `/weekly-reports${path}${qs({ brand_key: normalizeBrandKey(brandKey), ...extra })}`;
+}
+
+export function weeklyReportErrorMessage(res, fallback = "Something went wrong.") {
+  const message = res?.data?.error;
+  return typeof message === "string" && message.trim() ? message : fallback;
+}
+
+export async function listWeeklyReports({ brandKey, signal } = {}) {
+  const res = await doGet("/weekly-reports", { brand_key: normalizeBrandKey(brandKey) }, { signal });
+  if (res.error) return res;
+  return { error: false, data: Array.isArray(res.data?.reports) ? res.data.reports : [] };
+}
+
+export async function checkWeeklyReport({ brandKey, title, reportingWeek, signal } = {}) {
+  const res = await doGet(
+    "/weekly-reports/check",
+    {
+      brand_key: normalizeBrandKey(brandKey),
+      title,
+      reporting_week: reportingWeek,
+    },
+    { signal },
+  );
+  if (res.error) return res;
+  return { error: false, data: res.data || {} };
+}
+
+export async function publishWeeklyReport({ brandKey, id }) {
+  return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/publish`, brandKey), {});
+}
+
+export async function unpublishWeeklyReport({ brandKey, id }) {
+  return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/unpublish`, brandKey), {});
+}
+
+export async function cancelWeeklyReport({ brandKey, id }) {
+  return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/cancel`, brandKey), {});
+}
+
+export async function deleteWeeklyReport({ brandKey, id }) {
+  return doDelete(weeklyReportsPath(`/${encodeURIComponent(id)}`, brandKey));
+}
+
+// Slides are served as authenticated WebP, so they are fetched as blobs and the
+// caller turns them into object URLs (and revokes them).
+export async function fetchWeeklyReportSlide({ brandKey, id, slide, thumb = false, signal }) {
+  const url = `${API_BASE}${weeklyReportsPath(
+    `/${encodeURIComponent(id)}/slides/${encodeURIComponent(slide)}`,
+    brandKey,
+    { size: thumb ? "thumb" : undefined },
+  )}`;
+  try {
+    const res = await fetchWithAuth(url, { signal });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      captureFailure("/weekly-reports/slides", { status: res.status, method: "GET", brandKey });
+      return { error: true, status: res.status, data: json };
+    }
+    return { error: false, blob: await res.blob() };
+  } catch (error) {
+    if (error?.name === "AbortError" || signal?.aborted) {
+      return { error: true, aborted: true };
+    }
+    captureFailure("/weekly-reports/slides", { method: "GET", brandKey });
+    return { error: true };
+  }
+}
+
+// Multipart upload with progress. Returns { promise, abort }. The promise
+// resolves to { error, status, data, aborted }. Plain fetch can't report upload
+// progress, so this uses XHR and replays the request once after a 401 refresh.
+export function uploadWeeklyReport({ brandKey, file, title, reportingWeek, onProgress }) {
+  const url = `${API_BASE}${weeklyReportsPath("", brandKey)}`;
+  let xhr = null;
+  let aborted = false;
+
+  const send = () =>
+    new Promise((resolve) => {
+      xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+      const headers = authHeaders();
+      Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+      };
+      xhr.onload = () => {
+        let data = {};
+        try {
+          data = JSON.parse(xhr.responseText || "{}");
+        } catch {
+          data = {};
+        }
+        resolve({ status: xhr.status, data });
+      };
+      xhr.onerror = () => resolve({ networkError: true });
+      xhr.onabort = () => resolve({ aborted: true });
+
+      const form = new FormData();
+      // Text fields first, file last, so the server sees them before the stream.
+      form.append("title", title);
+      form.append("reporting_week", reportingWeek);
+      form.append("file", file);
+      xhr.send(form);
+    });
+
+  const promise = (async () => {
+    let result = await send();
+    if (result.status === 401 && !aborted) {
+      const refreshed = await ensureFreshToken();
+      if (refreshed && !aborted) result = await send();
+    }
+    if (result.aborted || aborted) return { error: true, aborted: true };
+    if (result.networkError) {
+      captureFailure("/weekly-reports", { method: "POST", brandKey });
+      return { error: true };
+    }
+    if (result.status < 200 || result.status >= 300) {
+      captureFailure("/weekly-reports", { status: result.status, method: "POST", brandKey });
+      return { error: true, status: result.status, data: result.data };
+    }
+    return { error: false, status: result.status, data: result.data };
+  })();
+
+  return {
+    promise,
+    abort: () => {
+      aborted = true;
+      xhr?.abort();
+    },
+  };
+}
+
 export async function getSessionAnalyticsSummary(args = {}) {
   const params = appendBrandKey(
     {
