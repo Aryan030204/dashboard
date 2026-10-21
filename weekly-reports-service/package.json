@@ -1,0 +1,30 @@
+{
+  "name": "weekly-reports-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "start:worker": "node src/worker.js",
+    "dev": "nodemon src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.731.1",
+    "@aws-sdk/lib-storage": "^3.731.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.19.2",
+    "helmet": "^7.0.0",
+    "multer": "^2.1.1",
+    "mysql2": "^3.22.0",
+    "sharp": "^0.33.5",
+    "yauzl": "^3.2.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11",
+    "supertest": "^7.0.0"
+  }
+}
