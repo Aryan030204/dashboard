@@ -1,15 +1,17 @@
 import dayjs from "dayjs";
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
-export const ACCEPTED_EXTENSIONS = [".ppt", ".pptx"];
+export const ACCEPTED_EXTENSIONS = [".ppt", ".pptx", ".pdf"];
 export const ACCEPT_ATTRIBUTE = [
   ".ppt",
   ".pptx",
+  ".pdf",
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/pdf",
 ].join(",");
 export const UNSUPPORTED_FORMAT_MESSAGE =
-  "Unsupported format. Please upload a PPT or PPTX file.";
+  "Unsupported format. Please upload a PPT, PPTX or PDF file.";
 export const MAX_TITLE_LENGTH = 200;
 export const MIN_WEEK = 1;
 export const MAX_WEEK = 53;

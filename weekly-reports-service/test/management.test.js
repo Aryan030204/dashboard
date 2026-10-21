@@ -45,7 +45,7 @@ test("uploading the same week again creates v2 and keeps v1", async () => {
 
 test("rejected files store nothing: wrong type, renamed file, macro, not a presentation, empty, corrupt", async () => {
   const cases = [
-    ["notes.pdf", Buffer.from("%PDF-1.4"), 415, "UNSUPPORTED_FILE_TYPE"],
+    ["notes.docx", Buffer.from("PK\u0003\u0004 a word document"), 415, "UNSUPPORTED_FILE_TYPE"],
     ["deck.pptx", Buffer.from("this is just text, renamed"), 415, "UNSUPPORTED_FILE_TYPE"],
     ["deck.ppt", Buffer.from("this is not an OLE file at all"), 415, "UNSUPPORTED_FILE_TYPE"],
     ["deck.pptx", macroPptx(), 415, "MACRO_ENABLED_NOT_ALLOWED"],

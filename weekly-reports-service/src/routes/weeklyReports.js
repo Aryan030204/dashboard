@@ -4,7 +4,7 @@ const fs = require("fs");
 const { z } = require("zod");
 const { requirePermission, requireAuthor } = require("../middleware/auth");
 const { httpError } = require("../errors");
-const { validateUpload, extensionOf } = require("../services/uploadValidator");
+const { validateUpload, extensionOf, UNSUPPORTED_TYPE_MESSAGE } = require("../services/uploadValidator");
 const { buildSlideCache } = require("../services/slideCache");
 const { buildPurger } = require("../services/purger");
 
@@ -14,6 +14,7 @@ const VIEW_PERMISSION = "weekly_report_preview";
 const CONTENT_TYPES = {
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ppt: "application/vnd.ms-powerpoint",
+  pdf: "application/pdf",
 };
 
 const createSchema = z.object({
@@ -123,7 +124,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit }) {
     limits: { fileSize: config.maxUploadBytes, files: 1, fields: 8 },
     fileFilter(_req, file, cb) {
       if (!extensionOf(file.originalname)) {
-        return cb(httpError(415, "UNSUPPORTED_FILE_TYPE", "Only .pptx or .ppt files are supported."));
+        return cb(httpError(415, "UNSUPPORTED_FILE_TYPE", UNSUPPORTED_TYPE_MESSAGE));
       }
       return cb(null, true);
     },
@@ -225,7 +226,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit }) {
     const file = req.file;
     try {
       assertBrandInputsAgree(req); // body fields exist only after multer parsed them
-      if (!file) throw httpError(400, "FILE_REQUIRED", "Choose a .pptx or .ppt file to upload.");
+      if (!file) throw httpError(400, "FILE_REQUIRED", "Choose a .pptx, .ppt or .pdf file to upload.");
       const fields = createSchema.parse({ title: req.body.title, reporting_week: req.body.reporting_week });
       const { brand_key: brand, user_id: userId } = req.principal;
 

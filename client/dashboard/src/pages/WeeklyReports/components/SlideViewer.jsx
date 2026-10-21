@@ -401,12 +401,17 @@ export function SlideViewer({ report, brandKey, onClose, fill = false }) {
   );
 }
 
+// The app's fixed sidebar toggle (App.jsx) uses zIndex 1301, which is above a normal MUI dialog (1300),
+// so it floated over this full-screen preview and covered the title. The preview must sit above it.
+const VIEWER_Z_INDEX = 1400;
+
 export function SlideViewerDialog({ report, brandKey, onClose }) {
   return (
     <Dialog
       fullScreen
       open={Boolean(report)}
       onClose={onClose}
+      sx={{ zIndex: VIEWER_Z_INDEX }}
       PaperProps={{ sx: { bgcolor: "#0a0a0a" } }}
     >
       {report && (

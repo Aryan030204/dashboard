@@ -93,9 +93,11 @@ function ManagerView({ brandKey, reports, loading, error, refresh, reload }) {
       : pendingAction?.message;
 
   return (
-    <Stack spacing={2}>
+    // index.css sets a near-black body color, so text outside a Paper/Card (like this title) would be
+    // dark on dark. Setting the theme's text color on the page root keeps it readable in both modes.
+    <Stack spacing={2} sx={{ color: "text.primary" }}>
       <Box>
-        <Typography variant="h5" fontWeight={700}>
+        <Typography variant="h5" fontWeight={700} color="text.primary">
           Weekly Reports
         </Typography>
         <Typography variant="body2" color="text.secondary">

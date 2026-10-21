@@ -21,7 +21,7 @@ test("setup: apply the real migration", opts, async () => {
     password: env.WR_TEST_DB_PASSWORD, database: env.WR_TEST_DB_NAME, multipleStatements: true, timezone: "Z",
   });
   await pool.query("DROP TABLE IF EXISTS weekly_report_events, weekly_report_slides, weekly_reports");
-  for (const file of ["001-create-weekly-reports.sql", "002-add-progress-columns.sql", "003-add-storage-purge.sql"]) {
+  for (const file of ["001-create-weekly-reports.sql", "002-add-progress-columns.sql", "003-add-storage-purge.sql", "004-allow-pdf-source.sql"]) {
     await pool.query(fs.readFileSync(path.join(__dirname, "..", "migrations", file), "utf8"));
   }
   repo = buildReportsRepo(pool);
@@ -227,6 +227,18 @@ test("deleted and cancelled presentations free their title and no longer count f
   await repo.cancel(a.id, "BBB");
   assert.deepEqual(await repo.findDuplicates("BBB", { title: "Temp", reportingWeek: "Week 3" }), { titleExists: false, suggestedTitle: "Temp", weekCount: 0 });
   assert.equal((await repo.createReport({ brandKey: "BBB", title: "Temp", reportingWeek: "Week 3", sourceType: "pptx", uploadedBy: "u" })).title, "Temp");
+});
+
+test("a PDF source type can be stored (migration 004), alongside pptx and ppt", opts, async () => {
+  await pool.query("DELETE FROM weekly_reports");
+  for (const sourceType of ["pdf", "pptx", "ppt"]) {
+    const { id } = await repo.createReport({ brandKey: "BBB", title: `Doc ${sourceType}`, reportingWeek: "Week 5", sourceType, uploadedBy: "u" });
+    assert.equal((await repo.findById(id)).source_type, sourceType);
+  }
+  await assert.rejects(
+    repo.createReport({ brandKey: "BBB", title: "Bad", reportingWeek: "Week 5", sourceType: "docx", uploadedBy: "u" }),
+    "other types are still refused by the database",
+  );
 });
 
 test("teardown", opts, async () => {

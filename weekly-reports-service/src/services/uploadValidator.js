@@ -6,10 +6,16 @@ const { httpError } = require("../errors");
 
 const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 const OLE_MAGIC = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+const PDF_MAGIC = Buffer.from("%PDF-");
+// The PDF spec lets a few bytes of junk precede the header; real readers accept it within the first KB.
+const PDF_HEADER_WINDOW = 1024;
+
+const ALLOWED_EXTENSIONS = ["pptx", "ppt", "pdf"];
+const UNSUPPORTED_TYPE_MESSAGE = "Only .pptx, .ppt or .pdf files are supported.";
 
 function extensionOf(name) {
   const ext = path.extname(String(name || "")).toLowerCase().replace(".", "");
-  return ext === "pptx" || ext === "ppt" ? ext : null;
+  return ALLOWED_EXTENSIONS.includes(ext) ? ext : null;
 }
 
 async function readHead(filePath, length) {
@@ -103,11 +109,17 @@ function inspectPptx(filePath, limits) {
 // Validates a file already written to disk by multer. Returns { ext, sizeBytes, sha256 }.
 async function validateUpload({ filePath, originalName, sizeBytes }, limits) {
   const ext = extensionOf(originalName);
-  if (!ext) throw httpError(415, "UNSUPPORTED_FILE_TYPE", "Only .pptx or .ppt files are supported.");
+  if (!ext) throw httpError(415, "UNSUPPORTED_FILE_TYPE", UNSUPPORTED_TYPE_MESSAGE);
   if (!sizeBytes) throw httpError(422, "CORRUPT_FILE", "The file is empty.");
 
-  const head = await readHead(filePath, 8);
-  if (ext === "pptx") {
+  const head = await readHead(filePath, ext === "pdf" ? PDF_HEADER_WINDOW : 8);
+  if (ext === "pdf") {
+    // Content is only ever rasterised by poppler (no scripts run), so the header check is the gate here;
+    // page count and page shape are enforced by the worker before anything is rendered.
+    if (head.indexOf(PDF_MAGIC) === -1) {
+      throw httpError(415, "UNSUPPORTED_FILE_TYPE", "This file is not a valid .pdf document.");
+    }
+  } else if (ext === "pptx") {
     if (head.length < 4 || !head.subarray(0, 4).equals(ZIP_MAGIC)) {
       throw httpError(415, "UNSUPPORTED_FILE_TYPE", "This file is not a valid .pptx presentation.");
     }
@@ -122,4 +134,4 @@ async function validateUpload({ filePath, originalName, sizeBytes }, limits) {
   return { ext, sizeBytes, sha256: await sha256File(filePath) };
 }
 
-module.exports = { validateUpload, extensionOf };
+module.exports = { validateUpload, extensionOf, UNSUPPORTED_TYPE_MESSAGE };

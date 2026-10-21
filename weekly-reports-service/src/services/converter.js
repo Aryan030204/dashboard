@@ -3,6 +3,10 @@ const path = require("path");
 const { spawn } = require("child_process");
 const { httpError } = require("../errors");
 
+// A page far taller than it is wide would render as an enormous image once scaled to the slide width.
+// Refuse those instead of letting poppler allocate it.
+const MAX_RENDER_HEIGHT_PX = 8000;
+
 const abortedError = () => Object.assign(new Error("aborted"), { code: "ABORTED" });
 
 // Runs a command with a hard timeout and no shell. Resolves with { code, stdout, stderr }.
@@ -52,7 +56,7 @@ function run(cmd, args, { timeoutMs, cwd, env, signal } = {}) {
   });
 }
 
-// PPT/PPTX -> PDF (LibreOffice headless) -> one PNG per page (poppler). Returns PNG paths in
+// PPT/PPTX -> PDF (LibreOffice headless) -> one PNG per page (poppler). A PDF upload skips the first step. Returns PNG paths in
 // slide order. Runs with a private LibreOffice profile and no network use; macros do not run
 // in headless conversion. Pass `signal` to cancel: the running tool is killed and the call rejects
 // with code "ABORTED".
@@ -62,34 +66,54 @@ async function convertToPageImages({ sourcePath, workDir, config, signal, exec =
     return () => Math.max(1000, config.convertTimeoutMs - (Date.now() - start));
   })();
 
+  const isPdf = path.extname(sourcePath).toLowerCase() === ".pdf";
   const profileDir = path.join(workDir, "lo-profile");
-  const pdfPath = path.join(workDir, `${path.basename(sourcePath, path.extname(sourcePath))}.pdf`);
+  // A PDF upload is already the page source; presentations are converted to one first.
+  const pdfPath = isPdf ? sourcePath : path.join(workDir, `${path.basename(sourcePath, path.extname(sourcePath))}.pdf`);
+  const what = isPdf ? "document" : "presentation";
 
   try {
-    const lo = await exec(
-      process.env.SOFFICE_BIN || "soffice",
-      [
-        "--headless", "--norestore", "--nolockcheck", "--nodefault", "--nofirststartwizard",
-        `-env:UserInstallation=file://${profileDir.replace(/\\/g, "/")}`,
-        "--convert-to", "pdf", "--outdir", workDir, sourcePath,
-      ],
-      { timeoutMs: remaining(), cwd: workDir, env: { HOME: workDir }, signal },
-    );
-    if (lo.code !== 0 || !fs.existsSync(pdfPath)) {
-      throw httpError(422, "CONVERSION_FAILED", "The presentation could not be converted.");
+    if (!isPdf) {
+      const lo = await exec(
+        process.env.SOFFICE_BIN || "soffice",
+        [
+          "--headless", "--norestore", "--nolockcheck", "--nodefault", "--nofirststartwizard",
+          `-env:UserInstallation=file://${profileDir.replace(/\\/g, "/")}`,
+          "--convert-to", "pdf", "--outdir", workDir, sourcePath,
+        ],
+        { timeoutMs: remaining(), cwd: workDir, env: { HOME: workDir }, signal },
+      );
+      if (lo.code !== 0 || !fs.existsSync(pdfPath)) {
+        throw httpError(422, "CONVERSION_FAILED", "The presentation could not be converted.");
+      }
     }
 
-    const info = await exec(process.env.PDFINFO_BIN || "pdfinfo", [pdfPath], { timeoutMs: 30000, cwd: workDir, signal });
+    // -f/-l makes pdfinfo also print every page's size (up to the slide limit) so odd shapes are caught.
+    const info = await exec(
+      process.env.PDFINFO_BIN || "pdfinfo",
+      ["-f", "1", "-l", String(config.maxSlides), pdfPath],
+      { timeoutMs: 30000, cwd: workDir, signal },
+    );
+    if (isPdf && info.code !== 0) {
+      throw httpError(422, "CONVERSION_FAILED", "This PDF could not be read. It may be damaged or password-protected.");
+    }
     const pages = Number((/^Pages:\s+(\d+)/m.exec(info.stdout) || [])[1]);
-    if (!pages) throw httpError(422, "CONVERSION_FAILED", "The presentation has no slides.");
+    if (!pages) throw httpError(422, "CONVERSION_FAILED", `The ${what} has no pages.`);
     if (pages > config.maxSlides) {
-      throw httpError(422, "TOO_MANY_SLIDES", `The presentation has ${pages} slides; the limit is ${config.maxSlides}.`);
+      throw httpError(422, "TOO_MANY_SLIDES", `The ${what} has ${pages} slides; the limit is ${config.maxSlides}.`);
+    }
+    for (const m of info.stdout.matchAll(/^Page\s+\d+\s+size:\s+([\d.]+)\s+x\s+([\d.]+)\s+pts/gm)) {
+      const w = Number(m[1]);
+      const h = Number(m[2]);
+      if (!(w > 0) || !(h > 0) || (config.slideWidth * h) / w > MAX_RENDER_HEIGHT_PX) {
+        throw httpError(422, "CONVERSION_FAILED", "A page is too large or oddly shaped to render.");
+      }
     }
 
     const prefix = path.join(workDir, "page");
     const ppm = await exec(
       process.env.PDFTOPPM_BIN || "pdftoppm",
-      ["-r", String(config.rasterDpi), "-png", pdfPath, prefix],
+      ["-scale-to-x", String(config.slideWidth), "-scale-to-y", "-1", "-png", pdfPath, prefix],
       { timeoutMs: remaining(), cwd: workDir, signal },
     );
     if (ppm.code !== 0) throw httpError(422, "CONVERSION_FAILED", "The slides could not be rendered.");

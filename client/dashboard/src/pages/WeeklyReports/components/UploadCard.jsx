@@ -143,7 +143,7 @@ export default function UploadCard({ brandKey, onUploaded }) {
       <Box
         role="button"
         tabIndex={dropzoneDisabled ? -1 : 0}
-        aria-label="Upload a PPT or PPTX file"
+        aria-label="Upload a PPT, PPTX or PDF file"
         aria-disabled={dropzoneDisabled}
         onClick={() => !dropzoneDisabled && inputRef.current?.click()}
         onKeyDown={(event) => {
@@ -220,7 +220,7 @@ export default function UploadCard({ brandKey, onUploaded }) {
         ) : (
           <>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 0.5 }}>
-              Drop a PPT or PPTX here
+              Drop a PPT, PPTX or PDF here
             </Typography>
             <Typography variant="caption" color="text.secondary" display="block">
               or choose a file (max 50 MB)

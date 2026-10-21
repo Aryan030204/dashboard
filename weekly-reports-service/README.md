@@ -1,6 +1,6 @@
 # weekly-reports-service
 
-Brand-scoped Weekly Reports: authors upload a PPT/PPTX, it is converted to slide images, and clients
+Brand-scoped Weekly Reports: authors upload a PPT, PPTX or PDF, it is converted to slide images, and clients
 with `weekly_report_preview` can preview the published reports of their brand. Product requirements: `docs/datum-weekly-reports-prd.pdf`.
 
 Two containers from one image (`Dockerfile` targets):
@@ -21,6 +21,18 @@ Two containers from one image (`Dockerfile` targets):
 - The original file has no route. Slides are streamed through the API (no overlay is applied);
   the bucket is private and no storage URL is ever returned.
 - The service refuses to start without `GATEWAY_SHARED_SECRET`.
+
+## Accepted files
+
+`.pptx`, `.ppt` and `.pdf`, up to `MAX_UPLOAD_BYTES` (50 MB) and `MAX_SLIDES` pages (100).
+
+- Each type is checked by its real content, not just the extension (a `.pdf` must contain the `%PDF-`
+  header, a `.pptx` must be a valid OOXML zip without macros, a `.ppt` must be an OLE file).
+- Presentations are converted with LibreOffice first. A PDF skips that step and goes straight to poppler.
+- Every page is rendered scaled to `SLIDE_WIDTH` (1920 px), so memory use is bounded. A PDF with a page
+  that would render absurdly tall, with too many pages, or that is damaged/password-protected is
+  rejected with a clear message and never shown to clients.
+- PDFs are only rasterised: no scripts or embedded content ever run.
 
 ## Duplicate titles and weeks
 
@@ -50,9 +62,9 @@ Both are warnings, never errors. The upload form asks `GET /weekly-reports/check
 
 1. Create a **private** S3 bucket (Block Public Access on, default encryption on) and give the host's
    IAM role Get/Put/Delete on that bucket only. Set `WEEKLY_REPORTS_BUCKET`.
-2. Apply `migrations/001-create-weekly-reports.sql`, `002-add-progress-columns.sql` and
-   `003-add-storage-purge.sql` (once each, in that order) to the central MySQL 8 database
-   (needs `FOR UPDATE SKIP LOCKED`).
+2. Apply `migrations/001-create-weekly-reports.sql`, `002-add-progress-columns.sql`,
+   `003-add-storage-purge.sql` and `004-allow-pdf-source.sql` (once each, in that order) to the central
+   MySQL 8 database (needs `FOR UPDATE SKIP LOCKED`).
 3. Copy `.env.example` to `.env` and fill `WR_DB_*`, `WEEKLY_REPORTS_BUCKET`, `GATEWAY_SHARED_SECRET`.
 4. Optional: put brand fonts used in decks into `fonts/` before building the worker image.
 5. Build and start: `docker compose up -d --build weekly-reports-service weekly-reports-worker api-gateway`.
