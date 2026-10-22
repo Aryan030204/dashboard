@@ -273,6 +273,40 @@ function buildBehavior(rows) {
   };
 }
 
+// Sessions that started in the period, from the pipeline's daily rollup (intent_daily_summary.sessions_started:
+// distinct sessions with any event that day). A session exists from its first event, but intent_sessions only
+// gets its row once the visitor returns after the timeout, so the closed-session figures elsewhere on this
+// page are a fraction of what Shopify or Clarity count as sessions. One indexed query over the rollup.
+function buildSessionsStartedQuery({ prevStart, start, end }) {
+  return {
+    sql: `
+      SELECT
+        SUM(CASE WHEN summary_date >= ? THEN sessions_started END) AS cur_started,
+        SUM(CASE WHEN summary_date < ? THEN sessions_started END) AS prev_started
+      FROM intent_daily_summary
+      WHERE summary_date >= ? AND summary_date <= ?
+    `,
+    params: [start, start, prevStart, end],
+  };
+}
+
+// null while the pipeline has not filled sessions_started for the period yet (older rollup rows).
+function buildSessionsStarted(rows, totals) {
+  const row = rows?.[0];
+  if (!row || row.cur_started == null) return null;
+  const value = num(row.cur_started);
+  const closed = num(totals?.cur_visitors_sessions);
+  return {
+    id: "sessionsStarted",
+    label: "Total Sessions",
+    value,
+    delta: row.prev_started == null ? null : pctChange(value, row.prev_started),
+    closed,
+    // share of the started sessions that already have a closed, analysed row
+    closedPct: Math.min(100, safePct(closed, value)),
+  };
+}
+
 function buildTrendQuery({ start, end }) {
   return {
     sql: `
@@ -711,6 +745,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         funnel: "intent_sessions",
         distribution: "intent_sessions",
         behavior: "intent_sessions",
+        sessionsStarted: "intent_daily_summary",
         conversion: "intent_sessions",
         trend: "intent_daily_summary",
         // refreshed by the pipeline every 15 minutes; raw behavioral_events only as a
@@ -749,6 +784,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
           trend: [],
           distribution: { total: 0, totalSessions: 0, uniqueScoredUsers: 0, items: [] },
           behavior: null,
+          sessionsStarted: null,
           conversionRates: [],
           topProducts: [],
           paths: emptyPaths(),
@@ -757,7 +793,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       throw err;
     }
 
-    const [trendRes, rollupRes, pathsRes, pathsTotalRes, behaviorRes] = await Promise.all([
+    const [trendRes, rollupRes, pathsRes, pathsTotalRes, behaviorRes, startedRes] = await Promise.all([
       selectOptional(conn, buildTrendQuery({ start, end }), "trend", meta, brandKey),
       selectOptional(conn, buildProductRollupQuery({ start, end, sortKey }), "topProducts", meta, brandKey),
       selectOptional(conn, buildPathsQuery({ start, end, pathStart }), "paths", meta, brandKey),
@@ -767,6 +803,14 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         conn,
         buildBehaviorQuery({ prevStart, curStart: start, endExclusive }),
         "behavior",
+        meta,
+        brandKey,
+      ),
+      // optional: needs intent_daily_summary.sessions_started, added by the pipeline's rollup
+      selectOptional(
+        conn,
+        buildSessionsStartedQuery({ prevStart, start, end }),
+        "sessionsStarted",
         meta,
         brandKey,
       ),
@@ -803,6 +847,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       })),
       distribution: buildDistribution(totals, buckets),
       behavior: behaviorRes.ok ? buildBehavior(behaviorRes.rows) : null,
+      sessionsStarted: startedRes.ok ? buildSessionsStarted(startedRes.rows, totals) : null,
       conversionRates: buildConversion(buckets),
       topProducts,
       paths: pathsRes.ok
@@ -831,6 +876,8 @@ module.exports = {
   _internal: {
     buildTotalsQuery,
     buildBucketQuery,
+    buildSessionsStartedQuery,
+    buildSessionsStarted,
     buildBehaviorQuery,
     buildBehavior,
     BEHAVIOR_LEVEL_SQL,

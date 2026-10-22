@@ -163,7 +163,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
         ) : null}
 
         <Box sx={{ mb: { xs: 0.5, md: 1 } }}>
-          <IntentKpiGrid kpis={kpis} />
+          <IntentKpiGrid kpis={kpis} sessionsStarted={data.sessionsStarted} />
         </Box>
 
         <Box sx={rowSx("minmax(0, 1.7fr) minmax(0, 1fr)")}>

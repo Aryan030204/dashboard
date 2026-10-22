@@ -93,6 +93,7 @@ function makeConn(overrides = {}) {
     totals: () => [DEFAULT_TOTALS],
     buckets: () => DEFAULT_BUCKETS,
     behavior: () => DEFAULT_BEHAVIOR,
+    started: () => [{ cur_started: "300", prev_started: "200" }],
     trend: () => [
       { date: "2026-10-10", product_views: "100", add_to_carts: "20", checkout_starts: "5" },
       { date: "2026-10-12", product_views: "90", add_to_carts: "18", checkout_starts: "4" },
@@ -119,6 +120,7 @@ function makeConn(overrides = {}) {
     if (sql.includes("FROM behavioral_path_daily")) {
       return sql.includes("GROUP BY sequence_hash") ? handlers.paths(sql, options) : handlers.pathsTotal(sql, options);
     }
+    if (sql.includes("sessions_started")) return handlers.started(sql, options);
     if (sql.includes("FROM intent_daily_summary")) return handlers.trend(sql, options);
     if (sql.includes("FROM product_behavior_daily")) return handlers.rollup(sql, options);
     if (sql.includes("event_name = 'checkout_started'")) return handlers.productCheckouts(sql, options);
@@ -470,8 +472,8 @@ describe("intentFunnelService", () => {
     test("all independent queries run in one round (no per-day / per-bucket / per-product queries)", async () => {
       const conn = makeConn();
       await newService().getIntentFunnel({ ...SPEC, start: "2026-09-01", end: "2026-10-12", conn });
-      // totals, buckets, trend, product rollup, paths, paths total, behaviour levels
-      expect(conn.query).toHaveBeenCalledTimes(7);
+      // totals, buckets, trend, product rollup, paths, paths total, behaviour levels, sessions started
+      expect(conn.query).toHaveBeenCalledTimes(8);
     });
 
     test("cached results are keyed by brand and never cross tenants", async () => {
