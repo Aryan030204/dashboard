@@ -219,35 +219,68 @@ const BEHAVIOR_RULES = Object.freeze({
   high: "Over 5 seconds with clicks and a product view, add to cart or checkout",
 });
 
+// Short column tags for the per-actor counters below.
+const BEHAVIOR_TAGS = Object.freeze([
+  ["high", "h"],
+  ["medium", "m"],
+  ["low", "l"],
+  ["bot", "b"],
+]);
+
+// One scan of intent_sessions for both periods, one result row. Sessions are counted per level; a visitor
+// is counted once, at the best level any of their sessions reached in the period (high over medium over
+// low), so the three user counts add up to the visitors seen (bot-only visitors excluded). Sessions are
+// grouped per actor first (a hash group, the same pattern as buildTotalsQuery), then summed.
 function buildBehaviorQuery({ prevStart, curStart, endExclusive }) {
-  const params = [];
-  const cols = [];
-  [
-    ["cur", "sessions"],
-    ["cur", "users"],
-    ["prev", "sessions"],
-    ["prev", "users"],
-  ].forEach(([period, unit]) => {
-    cols.push(`${periodExpr({ unit, period, cond: null }, curStart, params)} AS ${period}_${unit}`);
+  const inner = [];
+  const outer = [];
+  ["cur", "prev"].forEach((period) => {
+    const isCur = period === "cur" ? 1 : 0;
+    BEHAVIOR_TAGS.forEach(([level, tag]) => {
+      inner.push(`SUM(is_cur = ${isCur} AND lvl = '${level}') AS ${period}_${tag}`);
+      outer.push(`COALESCE(SUM(${period}_${tag}), 0) AS ${period}_${level}_sessions`);
+    });
+    outer.push(
+      `COALESCE(SUM(${period}_h > 0), 0) AS ${period}_high_users`,
+      `COALESCE(SUM(${period}_h = 0 AND ${period}_m > 0), 0) AS ${period}_medium_users`,
+      `COALESCE(SUM(${period}_h = 0 AND ${period}_m = 0 AND ${period}_l > 0), 0) AS ${period}_low_users`,
+    );
   });
-  params.push(prevStart, endExclusive);
   const sql = `
     SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
-      ${BEHAVIOR_LEVEL_SQL} AS behavior_level,
-      ${cols.join(",\n      ")}
-    FROM intent_sessions
-    WHERE session_start >= ? AND session_start < ?
-      AND session_time_spent_ms IS NOT NULL
-    GROUP BY behavior_level
+      ${outer.join(",\n      ")}
+    FROM (
+      SELECT
+        actor_id,
+        ${inner.join(",\n        ")}
+      FROM (
+        SELECT
+          actor_id,
+          session_start >= ? AS is_cur,
+          ${BEHAVIOR_LEVEL_SQL} AS lvl
+        FROM intent_sessions
+        WHERE session_start >= ? AND session_start < ?
+          AND session_time_spent_ms IS NOT NULL
+      ) levelled
+      GROUP BY actor_id
+    ) per_actor
   `;
-  return { sql, params };
+  return { sql, params: [curStart, prevStart, endExclusive] };
 }
 
 function buildBehavior(rows) {
+  const row = rows?.[0] || {};
+  // same shape as a score bucket row, so buildKpis can be reused
   const byLevel = {};
-  (rows || []).forEach((row) => {
-    byLevel[row.behavior_level] = row;
+  INTENT_LEVELS.forEach((level) => {
+    byLevel[level] = {
+      cur_users: num(row[`cur_${level}_users`]),
+      cur_sessions: num(row[`cur_${level}_sessions`]),
+      prev_users: num(row[`prev_${level}_users`]),
+      prev_sessions: num(row[`prev_${level}_sessions`]),
+    };
   });
+  byLevel.bot = { cur_sessions: num(row.cur_bot_sessions) };
   const items = INTENT_LEVELS.map((level) => ({
     level,
     users: num(byLevel[level]?.cur_users),

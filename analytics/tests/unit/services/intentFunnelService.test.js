@@ -61,12 +61,14 @@ const DEFAULT_BUCKETS = [
   },
 ];
 
-// behaviour-based levels, one row per level plus the bots left out of them
+// behaviour-based levels: one row; users are counted once at their best level, bots are left out of the levels
 const DEFAULT_BEHAVIOR = [
-  { behavior_level: "low", cur_sessions: 50, cur_users: 45, prev_sessions: 40, prev_users: 36 },
-  { behavior_level: "medium", cur_sessions: 40, cur_users: 35, prev_sessions: 30, prev_users: 27 },
-  { behavior_level: "high", cur_sessions: 10, cur_users: 9, prev_sessions: 10, prev_users: 9 },
-  { behavior_level: "bot", cur_sessions: 4, cur_users: 3, prev_sessions: 2, prev_users: 2 },
+  {
+    cur_high_sessions: 10, cur_medium_sessions: 40, cur_low_sessions: 50, cur_bot_sessions: 4,
+    cur_high_users: 9, cur_medium_users: 30, cur_low_users: 41,
+    prev_high_sessions: 10, prev_medium_sessions: 30, prev_low_sessions: 40, prev_bot_sessions: 2,
+    prev_high_users: 9, prev_medium_users: 24, prev_low_users: 32,
+  },
 ];
 
 const ROLLUP_ROWS = [
@@ -125,7 +127,7 @@ function makeConn(overrides = {}) {
     if (sql.includes("FROM product_behavior_daily")) return handlers.rollup(sql, options);
     if (sql.includes("event_name = 'checkout_started'")) return handlers.productCheckouts(sql, options);
     if (sql.includes("FROM behavioral_events")) return handlers.productViews(sql, options);
-    if (sql.includes("GROUP BY behavior_level")) return handlers.behavior(sql, options);
+    if (sql.includes(") levelled")) return handlers.behavior(sql, options);
     if (sql.includes("GROUP BY intent_bucket")) return handlers.buckets(sql, options);
     if (sql.includes("FROM intent_sessions")) return handlers.totals(sql, options);
     throw new Error(`unexpected sql: ${sql}`);
@@ -560,6 +562,64 @@ describe("intentFunnelService", () => {
       const timeout = Object.assign(new Error("timeout"), { code: "ER_QUERY_TIMEOUT", errno: 3024 });
       const conn = makeConn({ totals: () => { throw timeout; } });
       await expect(newService().getIntentFunnel({ ...SPEC, conn })).rejects.toThrow("timeout");
+    });
+  });
+
+  describe("behaviour-based intent (every session, each visitor at their best level)", () => {
+    test("returns sessions and users per level, bots left out, and the three intent KPI cards", async () => {
+      const { behavior } = await newService().getIntentFunnel({ ...SPEC, conn: makeConn() });
+      expect(behavior.distribution.items.map((i) => [i.level, i.sessions, i.users])).toEqual([
+        ["high", 10, 9],
+        ["medium", 40, 30],
+        ["low", 50, 41],
+      ]);
+      expect(behavior.distribution.total).toBe(80);             // visitors, each counted once
+      expect(behavior.distribution.totalSessions).toBe(100);    // bots are not in it
+      expect(behavior.distribution.botsExcluded).toBe(4);
+      expect(behavior.kpis.map((k) => k.id)).toEqual(["high", "medium", "low"]);
+      const low = behavior.kpis.find((k) => k.id === "low");
+      expect(low).toMatchObject({ value: 41, sessions: 50 });
+      expect(low.sessionsDelta).toBeCloseTo(25);                // 40 -> 50 sessions
+    });
+
+    test("a visitor is counted once, at their best level, so the three counts add up to the visitors", () => {
+      const sql = _internal.buildBehaviorQuery({ prevStart: "a", curStart: "b", endExclusive: "c" }).sql;
+      const flat = sql.replace(/\s+/g, " ");
+      expect(flat).toContain("COALESCE(SUM(cur_h > 0), 0) AS cur_high_users");
+      expect(flat).toContain("COALESCE(SUM(cur_h = 0 AND cur_m > 0), 0) AS cur_medium_users");
+      expect(flat).toContain("COALESCE(SUM(cur_h = 0 AND cur_m = 0 AND cur_l > 0), 0) AS cur_low_users");
+      expect(flat).toContain("GROUP BY actor_id");
+    });
+
+    test("it reads every closed session and binds only dates; the score buckets are unchanged", async () => {
+      const { sql, params } = _internal.buildBehaviorQuery({
+        prevStart: "2026-10-07", curStart: "2026-10-10", endExclusive: "2026-10-13",
+      });
+      expect(sql).not.toContain("intent_status");
+      expect(sql).toContain("session_time_spent_ms IS NOT NULL");
+      expect(sql).not.toContain("2026-10");
+      expect(params).toEqual(["2026-10-10", "2026-10-07", "2026-10-13"]);
+      const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn() });
+      expect(out.distribution.items.map((i) => i.users)).toEqual([9, 18, 28]);
+    });
+
+    test("the rules are in SQL in the Clarity order: bots out, then low, then high, else medium", () => {
+      expect(_internal.BEHAVIOR_LEVEL_SQL.replace(/\s+/g, " ")).toBe(
+        "CASE WHEN intent_exclusion_reason = 'bot' THEN 'bot' " +
+          "WHEN session_time_spent_ms < 5000 OR (click_count = 0 AND scroll_count = 0) THEN 'low' " +
+          "WHEN click_count > 0 AND (product_view_count > 0 OR add_to_cart_count > 0 OR checkout_started_count > 0) THEN 'high' " +
+          "ELSE 'medium' END",
+      );
+    });
+
+    test("a database without the column degrades only this section; no sessions gives zeros", async () => {
+      const bad = Object.assign(new Error("Unknown column"), { code: "ER_BAD_FIELD_ERROR", errno: 1054 });
+      const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn({ behavior: () => { throw bad; } }) });
+      expect(out.behavior).toBeNull();
+      expect(out.meta.sections.behavior).toEqual({ available: false, reason: "schema_unsupported" });
+      const empty = _internal.buildBehavior([]);
+      assertFinite(empty);
+      expect(empty.distribution.total).toBe(0);
     });
   });
 

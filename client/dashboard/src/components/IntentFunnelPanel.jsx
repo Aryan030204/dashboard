@@ -28,9 +28,12 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
   const [pathStart, setPathStart] = useState("page_viewed");
   const [topN, setTopN] = useState(5);
   const [intentFilter, setIntentFilter] = useState("all");
-  // "score": percentile buckets of the intent score, per user. "behavior": rule-based, per session
-  // (the same idea as Microsoft Clarity's user intent). Both come in the same response.
-  const [intentBasis, setIntentBasis] = useState("score");
+  // "behavior": rule-based over every session, each visitor at their best level (the same idea as Microsoft
+  // Clarity's user intent). "score": percentile buckets of the intent score. Both come in the same response;
+  // until the user picks one, behaviour is shown whenever the server sent it.
+  const [intentBasis, setIntentBasis] = useState(null);
+  // What the behaviour donut counts: visitors, or sessions (Clarity counts sessions).
+  const [donutMetric, setDonutMetric] = useState("users");
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -88,7 +91,8 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
   );
 
   const behavior = data?.behavior || null;
-  const useBehavior = intentBasis === "behavior" && behavior != null;
+  const basis = intentBasis || (behavior ? "behavior" : "score");
+  const useBehavior = basis === "behavior" && behavior != null;
   // The high / medium / low cards switch with the basis; the other cards are the same either way.
   const kpis = useMemo(() => {
     const base = data?.kpis || [];
@@ -142,7 +146,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
             <ToggleButtonGroup
               size="small"
               exclusive
-              value={intentBasis}
+              value={basis}
               onChange={(_, next) => next && setIntentBasis(next)}
               aria-label="Intent basis"
               sx={{
@@ -156,10 +160,16 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
                 },
               }}
             >
-              <ToggleButton value="score">Score (percentile)</ToggleButton>
               <ToggleButton value="behavior">Behaviour (like Clarity)</ToggleButton>
+              <ToggleButton value="score">Score (percentile)</ToggleButton>
             </ToggleButtonGroup>
           </Box>
+        ) : null}
+        {useBehavior ? (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+            Counts every session once the visitor has been quiet for 30 minutes, so the newest hour is not
+            included yet. Each visitor is counted once, at their best level.
+          </Typography>
         ) : null}
 
         <Box sx={{ mb: { xs: 0.5, md: 1 } }}>
@@ -174,7 +184,8 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
           />
           <IntentDistributionDonut
             distribution={useBehavior ? behavior.distribution : data.distribution}
-            metric={useBehavior ? "sessions" : "users"}
+            metric={useBehavior ? donutMetric : "users"}
+            onMetricChange={useBehavior ? setDonutMetric : undefined}
             basis={useBehavior ? "behavior" : "score"}
           />
         </Box>
