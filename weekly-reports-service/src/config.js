@@ -42,6 +42,13 @@ function getConfig(env = process.env) {
     maxUncompressedBytes: toInt(env.MAX_UNCOMPRESSED_BYTES, 600 * 1024 * 1024),
     uploadTmpDir: env.UPLOAD_TMP_DIR || os.tmpdir(),
 
+    // Chunked uploads. A chunk must stay well under Vercel's ~4.5 MB request limit (the browser reaches
+    // this service through a Vercel function), so the default is 3 MiB.
+    uploadChunkBytes: toInt(env.UPLOAD_CHUNK_BYTES, 3 * 1024 * 1024),
+    uploadSessionTtlMs: toInt(env.UPLOAD_SESSION_TTL_MS, 30 * 60 * 1000),
+    maxUploadSessionsPerUser: toInt(env.MAX_UPLOAD_SESSIONS_PER_USER, 3),
+    maxUploadSessions: toInt(env.MAX_UPLOAD_SESSIONS, 20),
+
     // Worker.
     workerPollMs: toInt(env.WORKER_POLL_MS, 5000),
     cancelPollMs: toInt(env.CANCEL_POLL_MS, 2000), // how often a running job checks it was not cancelled

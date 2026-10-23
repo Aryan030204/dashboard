@@ -189,7 +189,7 @@ function makeApp(opts = {}) {
   const storage = opts.storage || fakeStorage();
   const audit = opts.audit || fakeAudit();
   const config = baseConfig(opts.config || {});
-  const app = buildApp({ config, repo, storage, audit });
+  const app = buildApp({ config, repo, storage, audit, sessions: opts.sessions });
   return { app, repo, storage, audit, config };
 }
 

@@ -7,6 +7,7 @@ const { httpError } = require("../errors");
 const { validateUpload, extensionOf, UNSUPPORTED_TYPE_MESSAGE } = require("../services/uploadValidator");
 const { buildSlideCache } = require("../services/slideCache");
 const { buildPurger } = require("../services/purger");
+const { buildUploadSessions } = require("../services/uploadSessions");
 
 // The single grantable scope. Holders (non-admins) can only preview PUBLISHED reports of their
 // brand; everything else is role-gated to elevated users.
@@ -83,7 +84,7 @@ function assertBrandInputsAgree(req) {
   }
 }
 
-function buildWeeklyReportsRouter({ config, repo, storage, audit }) {
+function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = buildUploadSessions({ config }) }) {
   const router = express.Router();
   const slideCache = buildSlideCache(config.slideCacheMax);
   const purger = buildPurger({ repo, storage });
@@ -222,52 +223,148 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit }) {
     }
   });
 
+  // Everything that happens to a fully received file, whichever way it arrived (one multipart request
+  // or assembled from chunks): check its real content, create the next version, store the source in S3
+  // and hand it to the worker.
+  async function ingestUpload({ principal, filePath, originalName, sizeBytes, title, reportingWeek }) {
+    const fields = createSchema.parse({ title, reporting_week: reportingWeek });
+    const { brand_key: brand, user_id: userId } = principal;
+
+    const info = await validateUpload({ filePath, originalName, sizeBytes }, config);
+
+    const { id, version, title: savedTitle } = await repo.createReport({
+      brandKey: brand,
+      title: fields.title,
+      reportingWeek: fields.reporting_week,
+      sourceType: info.ext,
+      uploadedBy: userId,
+    });
+
+    try {
+      const sourceKey = storage.sourceKey(brand, id, info.ext);
+      await storage.putFile(sourceKey, filePath, CONTENT_TYPES[info.ext]);
+      await repo.releaseForProcessing(id, brand, { sourceKey, sizeBytes: info.sizeBytes, sha256: info.sha256 });
+    } catch (err) {
+      console.error("[weekly-reports] source upload failed", id, err && err.message);
+      await repo.markFailed(id, "UPLOAD_FAILED", "The source file could not be stored.");
+      throw httpError(503, "STORAGE_UNAVAILABLE", "Report is temporarily unavailable. Try again.");
+    }
+
+    const titleAdjusted = savedTitle !== fields.title;
+    await audit.record({
+      brandKey: brand, reportId: id, userId, action: A.UPLOADED,
+      metadata: { version, size: info.sizeBytes, ...(titleAdjusted ? { requested_title: fields.title } : {}) },
+    });
+    if (version > 1) {
+      await audit.record({ brandKey: brand, reportId: id, userId, action: A.VERSION_CREATED, metadata: { version, reporting_week: fields.reporting_week } });
+    }
+
+    const created = await repo.findById(id);
+    return { ...managerDto(created), title_adjusted: titleAdjusted };
+  }
+
+  // Single multipart request. Still supported (direct API use, local dev), but behind Vercel it is
+  // limited to ~4.5 MB, which is why the browser uses the chunked flow below.
   router.post("/", requireAuthor, brandGuard, uploadMiddleware, async (req, res, next) => {
     const file = req.file;
     try {
       assertBrandInputsAgree(req); // body fields exist only after multer parsed them
       if (!file) throw httpError(400, "FILE_REQUIRED", "Choose a .pptx, .ppt or .pdf file to upload.");
-      const fields = createSchema.parse({ title: req.body.title, reporting_week: req.body.reporting_week });
-      const { brand_key: brand, user_id: userId } = req.principal;
-
-      const info = await validateUpload(
-        { filePath: file.path, originalName: file.originalname, sizeBytes: file.size },
-        config,
-      );
-
-      const { id, version, title: savedTitle } = await repo.createReport({
-        brandKey: brand,
-        title: fields.title,
-        reportingWeek: fields.reporting_week,
-        sourceType: info.ext,
-        uploadedBy: userId,
+      const body = await ingestUpload({
+        principal: req.principal,
+        filePath: file.path,
+        originalName: file.originalname,
+        sizeBytes: file.size,
+        title: req.body.title,
+        reportingWeek: req.body.reporting_week,
       });
-
-      try {
-        const sourceKey = storage.sourceKey(brand, id, info.ext);
-        await storage.putFile(sourceKey, file.path, CONTENT_TYPES[info.ext]);
-        await repo.releaseForProcessing(id, brand, { sourceKey, sizeBytes: info.sizeBytes, sha256: info.sha256 });
-      } catch (err) {
-        console.error("[weekly-reports] source upload failed", id, err && err.message);
-        await repo.markFailed(id, "UPLOAD_FAILED", "The source file could not be stored.");
-        throw httpError(503, "STORAGE_UNAVAILABLE", "Report is temporarily unavailable. Try again.");
-      }
-
-      const titleAdjusted = savedTitle !== fields.title;
-      await audit.record({
-        brandKey: brand, reportId: id, userId, action: A.UPLOADED,
-        metadata: { version, size: info.sizeBytes, ...(titleAdjusted ? { requested_title: fields.title } : {}) },
-      });
-      if (version > 1) {
-        await audit.record({ brandKey: brand, reportId: id, userId, action: A.VERSION_CREATED, metadata: { version, reporting_week: fields.reporting_week } });
-      }
-
-      const created = await repo.findById(id);
-      res.status(202).json({ ...managerDto(created), title_adjusted: titleAdjusted });
+      res.status(202).json(body);
     } catch (err) {
       next(err);
     } finally {
       if (file && file.path) fs.unlink(file.path, () => {});
+    }
+  });
+
+  // ---- chunked upload ------------------------------------------------------------------------------
+  // 1) POST /uploads                   {filename, size, title, reporting_week} -> {upload_id, chunk_size, total_chunks}
+  // 2) PUT  /uploads/:id/chunks/:index raw bytes, one chunk at a time, in order
+  // 3) POST /uploads/:id/complete      assembles the file and runs the normal upload pipeline (202)
+  //    DELETE /uploads/:id             cancels and removes what was received
+  // Same rules as every manage action: elevated role only, brand from the signed header.
+  // The principal uses snake_case fields; the session store identifies its owner by brand and user.
+  const uploadOwner = (req) => ({ brandKey: req.principal.brand_key, userId: req.principal.user_id });
+
+  const uploadStartSchema = z.object({
+    filename: z.string().trim().min(1, "A file name is required.").max(255, "The file name is too long."),
+    size: z.number({ invalid_type_error: "The file size is required." }).int().positive("The file is empty."),
+    title: createSchema.shape.title,
+    reporting_week: createSchema.shape.reporting_week,
+  });
+
+  router.post("/uploads", requireAuthor, brandGuard, async (req, res, next) => {
+    try {
+      const body = uploadStartSchema.parse(req.body || {});
+      const { brand_key: brandKey, user_id: userId } = req.principal;
+      const { session, chunkSize, totalChunks } = await sessions.create({
+        brandKey, userId, filename: body.filename, size: body.size, title: body.title, reportingWeek: body.reporting_week,
+      });
+      res.status(201).json({ upload_id: session.id, chunk_size: chunkSize, total_chunks: totalChunks });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // The raw parser is local to this route and capped at one chunk, so an oversized request is refused
+  // before it is buffered.
+  const rawChunk = express.raw({ type: () => true, limit: config.uploadChunkBytes });
+
+  router.put("/uploads/:uploadId/chunks/:index", requireAuthor, brandGuard, rawChunk, async (req, res, next) => {
+    try {
+      const session = sessions.get(req.params.uploadId, uploadOwner(req));
+      if (!/^\d{1,6}$/.test(req.params.index)) throw httpError(400, "INVALID_CHUNK", "Invalid chunk number.");
+      const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      if (!buffer.length) throw httpError(400, "BAD_CHUNK_SIZE", "The chunk is empty.");
+      res.json(await sessions.appendChunk(session, Number(req.params.index), buffer));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/uploads/:uploadId/complete", requireAuthor, brandGuard, async (req, res, next) => {
+    let session;
+    try {
+      session = sessions.get(req.params.uploadId, uploadOwner(req));
+      sessions.assertComplete(session); // missing bytes: keep the session so the client can send the rest
+    } catch (err) {
+      return next(err);
+    }
+    try {
+      const body = await ingestUpload({
+        principal: req.principal,
+        filePath: session.filePath,
+        originalName: session.filename,
+        sizeBytes: session.size,
+        title: session.title,
+        reportingWeek: session.reportingWeek,
+      });
+      // The temporary copy is deleted BEFORE answering, so it is already gone when the client sees 202.
+      await sessions.discard(session.id);
+      res.status(202).json(body);
+    } catch (err) {
+      await sessions.discard(session.id); // success or failure, the temporary copy is done with
+      next(err);
+    }
+    return undefined;
+  });
+
+  router.delete("/uploads/:uploadId", requireAuthor, brandGuard, async (req, res, next) => {
+    try {
+      const session = sessions.get(req.params.uploadId, uploadOwner(req));
+      await sessions.discard(session.id);
+      res.status(204).end();
+    } catch (err) {
+      next(err);
     }
   });
 

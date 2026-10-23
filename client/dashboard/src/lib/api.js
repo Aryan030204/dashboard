@@ -1,4 +1,5 @@
 import { captureApiFailure } from "../observability.js";
+import { chunkedUpload } from "./chunkedUpload.js";
 
 function resolveApiBase() {
   const envBase = (import.meta.env.VITE_API_BASE || "").trim();
@@ -1734,68 +1735,72 @@ export async function fetchWeeklyReportSlide({ brandKey, id, slide, thumb = fals
   }
 }
 
-// Multipart upload with progress. Returns { promise, abort }. The promise
-// resolves to { error, status, data, aborted }. Plain fetch can't report upload
-// progress, so this uses XHR and replays the request once after a 401 refresh.
-export function uploadWeeklyReport({ brandKey, file, title, reportingWeek, onProgress }) {
-  const url = `${API_BASE}${weeklyReportsPath("", brandKey)}`;
-  let xhr = null;
-  let aborted = false;
-
-  const send = () =>
-    new Promise((resolve) => {
-      xhr = new XMLHttpRequest();
-      xhr.open("POST", url);
-      const headers = authHeaders();
-      Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) onProgress?.(event.loaded / event.total);
-      };
-      xhr.onload = () => {
-        let data = {};
-        try {
-          data = JSON.parse(xhr.responseText || "{}");
-        } catch {
-          data = {};
-        }
-        resolve({ status: xhr.status, data });
-      };
-      xhr.onerror = () => resolve({ networkError: true });
-      xhr.onabort = () => resolve({ aborted: true });
-
-      const form = new FormData();
-      // Text fields first, file last, so the server sees them before the stream.
-      form.append("title", title);
-      form.append("reporting_week", reportingWeek);
-      form.append("file", file);
-      xhr.send(form);
-    });
-
-  const promise = (async () => {
-    let result = await send();
-    if (result.status === 401 && !aborted) {
-      const refreshed = await ensureFreshToken();
-      if (refreshed && !aborted) result = await send();
+// One XHR request (XHR, not fetch, because only XHR reports upload progress). Resolves to
+// { status, data } | { networkError: true } | { aborted: true }; it never rejects.
+function xhrRequest({ method, url, json, body, signal, onProgress }) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve({ aborted: true });
+      return;
     }
-    if (result.aborted || aborted) return { error: true, aborted: true };
-    if (result.networkError) {
-      captureFailure("/weekly-reports", { method: "POST", brandKey });
-      return { error: true };
-    }
-    if (result.status < 200 || result.status >= 300) {
-      captureFailure("/weekly-reports", { status: result.status, method: "POST", brandKey });
-      return { error: true, status: result.status, data: result.data };
-    }
-    return { error: false, status: result.status, data: result.data };
-  })();
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    Object.entries(authHeaders()).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+    if (json !== undefined) xhr.setRequestHeader("Content-Type", "application/json");
+    else if (body) xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+    };
+    xhr.onload = () => {
+      let data = {};
+      try {
+        data = JSON.parse(xhr.responseText || "{}");
+      } catch {
+        data = {};
+      }
+      resolve({ status: xhr.status, data });
+    };
+    xhr.onerror = () => resolve({ networkError: true });
+    xhr.onabort = () => resolve({ aborted: true });
+    signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(json !== undefined ? JSON.stringify(json) : (body ?? null));
+  });
+}
 
-  return {
-    promise,
-    abort: () => {
-      aborted = true;
-      xhr?.abort();
-    },
+// Transport for chunkedUpload: adds the brand and the token, and replays a request once after a 401
+// (an expired access token) so a long upload survives a token refresh.
+function weeklyReportsUploadTransport(brandKey) {
+  return async function send({ method, path, json, body, signal, onProgress }) {
+    const url = `${API_BASE}${weeklyReportsPath(path, brandKey)}`;
+    const once = () => xhrRequest({ method, url, json, body, signal, onProgress });
+    let result = await once();
+    if (result.status === 401 && !signal?.aborted) {
+      if (await ensureFreshToken()) result = await once();
+    }
+    return result;
   };
+}
+
+// Uploads a deck in small chunks (see lib/chunkedUpload.js for why). Returns { promise, abort }.
+// The promise resolves to { error, status, data, aborted }, as the single-request upload did.
+export function uploadWeeklyReport({ brandKey, file, title, reportingWeek, onProgress }) {
+  const controller = new AbortController();
+
+  const promise = chunkedUpload({
+    file,
+    title,
+    reportingWeek,
+    onProgress,
+    signal: controller.signal,
+    send: weeklyReportsUploadTransport(brandKey),
+  }).then((result) => {
+    if (result.error && !result.aborted) {
+      captureFailure("/weekly-reports/uploads", { status: result.status, method: "POST", brandKey });
+    }
+    return result;
+  });
+
+  return { promise, abort: () => controller.abort() };
 }
 
 export async function getSessionAnalyticsSummary(args = {}) {
