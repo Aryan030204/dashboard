@@ -34,6 +34,30 @@ Two containers from one image (`Dockerfile` targets):
   rejected with a clear message and never shown to clients.
 - PDFs are only rasterised: no scripts or embedded content ever run.
 
+## How uploads reach the service (chunked)
+
+In production every browser request goes through a Vercel function, and Vercel rejects any request body
+over about 4.5 MB (`FUNCTION_PAYLOAD_TOO_LARGE`), so a deck cannot be sent in one request. The browser
+therefore uploads in chunks and the service assembles them:
+
+| Step | Request | Notes |
+|---|---|---|
+| 1 | `POST /weekly-reports/uploads` `{filename, size, title, reporting_week}` | Checks type, size and fields. Returns `{upload_id, chunk_size, total_chunks}` (201). |
+| 2 | `PUT /weekly-reports/uploads/:id/chunks/:index` raw bytes | In order, one at a time. Re-sending the chunk just accepted is acknowledged, not written twice. |
+| 3 | `POST /weekly-reports/uploads/:id/complete` | Checks the real file, creates the report, stores the source in S3, returns 202 (same body as before). |
+| - | `DELETE /weekly-reports/uploads/:id` | Cancels and removes what was received. |
+
+- Every step is elevated-role only, and an upload belongs to the brand and user that started it. Anyone
+  else gets a plain 404, as for an unknown id.
+- The file is checked by its real content at step 3, exactly like before; a refused file leaves nothing behind.
+- Partly received files live in the API container's temp folder (`UPLOAD_TMP_DIR`, folders `wr-upload-*`).
+  An upload idle for `UPLOAD_SESSION_TTL_MS` (30 min) is deleted, leftovers from a previous run are removed
+  on start, and each user may have `MAX_UPLOAD_SESSIONS_PER_USER` (3) in progress.
+- State is kept in the API process's memory, so one API instance is assumed (as in docker-compose). If the
+  API restarts mid-upload, that upload fails and the admin starts it again.
+- **`UPLOAD_CHUNK_BYTES` must stay well under 4.5 MB** (default 3 MiB) as long as uploads go through Vercel.
+- The single-request `POST /weekly-reports` (multipart) still exists for direct API use.
+
 ## Duplicate titles and weeks
 
 Both are warnings, never errors. The upload form asks `GET /weekly-reports/check` first.

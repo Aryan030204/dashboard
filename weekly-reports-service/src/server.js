@@ -5,6 +5,7 @@ const { createPool } = require("./db/pool");
 const { buildReportsRepo } = require("./services/reportsRepo");
 const { buildStorage } = require("./services/storage");
 const { buildAudit } = require("./services/audit");
+const { buildUploadSessions } = require("./services/uploadSessions");
 const { buildApp } = require("./app");
 
 function start() {
@@ -28,7 +29,12 @@ function start() {
 
   const pool = createPool(config);
   const storage = buildStorage(config);
-  const app = buildApp({ config, repo: buildReportsRepo(pool), storage, audit: buildAudit(pool) });
+  const sessions = buildUploadSessions({ config });
+  const app = buildApp({ config, repo: buildReportsRepo(pool), storage, audit: buildAudit(pool), sessions });
+
+  // Idle uploads are dropped after UPLOAD_SESSION_TTL_MS; folders left by a previous run are removed once.
+  sessions.cleanupOrphans().catch(() => {});
+  setInterval(() => sessions.sweep().catch(() => {}), 60 * 1000).unref();
 
   app.listen(config.port, () => {
     console.log(`[weekly-reports] listening on :${config.port}`);
