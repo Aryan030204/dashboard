@@ -219,35 +219,68 @@ const BEHAVIOR_RULES = Object.freeze({
   high: "Over 5 seconds with clicks and a product view, add to cart or checkout",
 });
 
+// Short column tags for the per-actor counters below.
+const BEHAVIOR_TAGS = Object.freeze([
+  ["high", "h"],
+  ["medium", "m"],
+  ["low", "l"],
+  ["bot", "b"],
+]);
+
+// One scan of intent_sessions for both periods, one result row. Sessions are counted per level; a visitor
+// is counted once, at the best level any of their sessions reached in the period (high over medium over
+// low), so the three user counts add up to the visitors seen (bot-only visitors excluded). Sessions are
+// grouped per actor first (a hash group, the same pattern as buildTotalsQuery), then summed.
 function buildBehaviorQuery({ prevStart, curStart, endExclusive }) {
-  const params = [];
-  const cols = [];
-  [
-    ["cur", "sessions"],
-    ["cur", "users"],
-    ["prev", "sessions"],
-    ["prev", "users"],
-  ].forEach(([period, unit]) => {
-    cols.push(`${periodExpr({ unit, period, cond: null }, curStart, params)} AS ${period}_${unit}`);
+  const inner = [];
+  const outer = [];
+  ["cur", "prev"].forEach((period) => {
+    const isCur = period === "cur" ? 1 : 0;
+    BEHAVIOR_TAGS.forEach(([level, tag]) => {
+      inner.push(`SUM(is_cur = ${isCur} AND lvl = '${level}') AS ${period}_${tag}`);
+      outer.push(`COALESCE(SUM(${period}_${tag}), 0) AS ${period}_${level}_sessions`);
+    });
+    outer.push(
+      `COALESCE(SUM(${period}_h > 0), 0) AS ${period}_high_users`,
+      `COALESCE(SUM(${period}_h = 0 AND ${period}_m > 0), 0) AS ${period}_medium_users`,
+      `COALESCE(SUM(${period}_h = 0 AND ${period}_m = 0 AND ${period}_l > 0), 0) AS ${period}_low_users`,
+    );
   });
-  params.push(prevStart, endExclusive);
   const sql = `
     SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
-      ${BEHAVIOR_LEVEL_SQL} AS behavior_level,
-      ${cols.join(",\n      ")}
-    FROM intent_sessions
-    WHERE session_start >= ? AND session_start < ?
-      AND session_time_spent_ms IS NOT NULL
-    GROUP BY behavior_level
+      ${outer.join(",\n      ")}
+    FROM (
+      SELECT
+        actor_id,
+        ${inner.join(",\n        ")}
+      FROM (
+        SELECT
+          actor_id,
+          session_start >= ? AS is_cur,
+          ${BEHAVIOR_LEVEL_SQL} AS lvl
+        FROM intent_sessions
+        WHERE session_start >= ? AND session_start < ?
+          AND session_time_spent_ms IS NOT NULL
+      ) levelled
+      GROUP BY actor_id
+    ) per_actor
   `;
-  return { sql, params };
+  return { sql, params: [curStart, prevStart, endExclusive] };
 }
 
 function buildBehavior(rows) {
+  const row = rows?.[0] || {};
+  // same shape as a score bucket row, so buildKpis can be reused
   const byLevel = {};
-  (rows || []).forEach((row) => {
-    byLevel[row.behavior_level] = row;
+  INTENT_LEVELS.forEach((level) => {
+    byLevel[level] = {
+      cur_users: num(row[`cur_${level}_users`]),
+      cur_sessions: num(row[`cur_${level}_sessions`]),
+      prev_users: num(row[`prev_${level}_users`]),
+      prev_sessions: num(row[`prev_${level}_sessions`]),
+    };
   });
+  byLevel.bot = { cur_sessions: num(row.cur_bot_sessions) };
   const items = INTENT_LEVELS.map((level) => ({
     level,
     users: num(byLevel[level]?.cur_users),
@@ -270,6 +303,40 @@ function buildBehavior(rows) {
     },
     // same card shape as the score-based KPIs, for the three intent cards only
     kpis: buildKpis({}, byLevel).filter((kpi) => INTENT_LEVELS.includes(kpi.id)),
+  };
+}
+
+// Sessions that started in the period, from the pipeline's daily rollup (intent_daily_summary.sessions_started:
+// distinct sessions with any event that day). A session exists from its first event, but intent_sessions only
+// gets its row once the visitor returns after the timeout, so the closed-session figures elsewhere on this
+// page are a fraction of what Shopify or Clarity count as sessions. One indexed query over the rollup.
+function buildSessionsStartedQuery({ prevStart, start, end }) {
+  return {
+    sql: `
+      SELECT
+        SUM(CASE WHEN summary_date >= ? THEN sessions_started END) AS cur_started,
+        SUM(CASE WHEN summary_date < ? THEN sessions_started END) AS prev_started
+      FROM intent_daily_summary
+      WHERE summary_date >= ? AND summary_date <= ?
+    `,
+    params: [start, start, prevStart, end],
+  };
+}
+
+// null while the pipeline has not filled sessions_started for the period yet (older rollup rows).
+function buildSessionsStarted(rows, totals) {
+  const row = rows?.[0];
+  if (!row || row.cur_started == null) return null;
+  const value = num(row.cur_started);
+  const closed = num(totals?.cur_visitors_sessions);
+  return {
+    id: "sessionsStarted",
+    label: "Total Sessions",
+    value,
+    delta: row.prev_started == null ? null : pctChange(value, row.prev_started),
+    closed,
+    // share of the started sessions that already have a closed, analysed row
+    closedPct: Math.min(100, safePct(closed, value)),
   };
 }
 
@@ -711,6 +778,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         funnel: "intent_sessions",
         distribution: "intent_sessions",
         behavior: "intent_sessions",
+        sessionsStarted: "intent_daily_summary",
         conversion: "intent_sessions",
         trend: "intent_daily_summary",
         // refreshed by the pipeline every 15 minutes; raw behavioral_events only as a
@@ -749,6 +817,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
           trend: [],
           distribution: { total: 0, totalSessions: 0, uniqueScoredUsers: 0, items: [] },
           behavior: null,
+          sessionsStarted: null,
           conversionRates: [],
           topProducts: [],
           paths: emptyPaths(),
@@ -757,7 +826,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       throw err;
     }
 
-    const [trendRes, rollupRes, pathsRes, pathsTotalRes, behaviorRes] = await Promise.all([
+    const [trendRes, rollupRes, pathsRes, pathsTotalRes, behaviorRes, startedRes] = await Promise.all([
       selectOptional(conn, buildTrendQuery({ start, end }), "trend", meta, brandKey),
       selectOptional(conn, buildProductRollupQuery({ start, end, sortKey }), "topProducts", meta, brandKey),
       selectOptional(conn, buildPathsQuery({ start, end, pathStart }), "paths", meta, brandKey),
@@ -767,6 +836,14 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         conn,
         buildBehaviorQuery({ prevStart, curStart: start, endExclusive }),
         "behavior",
+        meta,
+        brandKey,
+      ),
+      // optional: needs intent_daily_summary.sessions_started, added by the pipeline's rollup
+      selectOptional(
+        conn,
+        buildSessionsStartedQuery({ prevStart, start, end }),
+        "sessionsStarted",
         meta,
         brandKey,
       ),
@@ -803,6 +880,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       })),
       distribution: buildDistribution(totals, buckets),
       behavior: behaviorRes.ok ? buildBehavior(behaviorRes.rows) : null,
+      sessionsStarted: startedRes.ok ? buildSessionsStarted(startedRes.rows, totals) : null,
       conversionRates: buildConversion(buckets),
       topProducts,
       paths: pathsRes.ok
@@ -831,6 +909,8 @@ module.exports = {
   _internal: {
     buildTotalsQuery,
     buildBucketQuery,
+    buildSessionsStartedQuery,
+    buildSessionsStarted,
     buildBehaviorQuery,
     buildBehavior,
     BEHAVIOR_LEVEL_SQL,

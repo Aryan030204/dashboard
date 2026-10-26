@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Box, Card, Tooltip, Typography, useTheme } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import {
+  Activity,
   ArrowDownRight,
   ArrowUpRight,
   CreditCard,
@@ -114,7 +115,48 @@ function ModeToggle({ mode, onChange }) {
   );
 }
 
-export default function IntentKpiGrid({ kpis = [] }) {
+// Sessions that started in the period (every visit counts from its first event), shown across the
+// full width above the other cards. The cards below only count sessions that have already closed.
+function SessionsStartedCard({ sessions }) {
+  return (
+    <Card sx={{ p: { xs: 1.25, md: 1.75 }, minWidth: 0, gridColumn: "1 / -1" }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: { xs: "flex-start", sm: "center" },
+          justifyContent: "space-between",
+          gap: { xs: 0.75, sm: 2 },
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+            <Box sx={{ color: "primary.main", display: "inline-flex", flexShrink: 0 }}>
+              <Activity size={18} />
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+              {sessions.label}
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: { xs: 24, md: 30 }, fontWeight: 700, lineHeight: 1.2, mb: 0.5 }}>
+            {formatCount(sessions.value)}
+          </Typography>
+          <DeltaLine delta={sessions.delta} />
+        </Box>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ maxWidth: { sm: 360 }, textAlign: { xs: "left", sm: "right" } }}
+        >
+          Every visit counts from its first page view. {formatCount(sessions.closed)} (
+          {sessions.closedPct.toFixed(1)}%) have closed, and only those are analysed in the cards and charts below.
+        </Typography>
+      </Box>
+    </Card>
+  );
+}
+
+export default function IntentKpiGrid({ kpis = [], sessionsStarted = null }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const [modes, setModes] = useState({});
@@ -130,6 +172,7 @@ export default function IntentKpiGrid({ kpis = [] }) {
         },
       }}
     >
+      {sessionsStarted ? <SessionsStartedCard sessions={sessionsStarted} /> : null}
       {kpis.map((kpi) => {
         const Icon = KPI_ICONS[kpi.id] || Users;
         const accent = INTENT_COLORS[kpi.tone] || theme.palette.primary.main;

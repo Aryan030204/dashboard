@@ -185,6 +185,7 @@ export default async function handler(req, res) {
       "/auth",
       "/alerts",
       "/daily-insights",
+      "/weekly-reports",
       "/tenant",
       "/push",
       "/track",

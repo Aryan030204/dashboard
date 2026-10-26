@@ -125,6 +125,7 @@ const PERMISSION_OPTIONS = [
   "web_vitals_panel",
   "pnl_panel",
   "ads_panel",
+  "weekly_report_preview",
 ];
 
 const COLUMN_PERMISSIONS = [
@@ -170,6 +171,7 @@ const PERMISSION_CATEGORIES = [
       "web_vitals_panel",
       "pnl_panel",
       "ads_panel",
+      "weekly_report_preview",
       "daily_insight_view",
       "compare_mode",
       "multiselectable_kpi_cards",

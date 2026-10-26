@@ -49,6 +49,7 @@ import {
   Target,
   Wallet,
   Megaphone,
+  Presentation,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -66,6 +67,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "health-monitor", label: "Health Monitor", icon: HeartPulse },
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "requests", label: "Requests", icon: ClipboardList },
+  { id: "weekly-reports", label: "Weekly Reports", icon: Presentation },
   { id: "tenant-setup", label: "Tenant Setup", icon: Store },
   { id: "client-settings", label: "Client Side Settings", icon: Settings },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
@@ -89,6 +91,7 @@ const TAB_ROUTE_MAP = {
   "health-monitor": "/health-monitor",
   alerts: "/alerts",
   requests: "/requests",
+  "weekly-reports": "/weekly-reports",
   access: "/access-control",
   "traffic-split-config": "/configurations",
   "tenant-setup": "/tenant-setup",
@@ -194,6 +197,7 @@ import HealthMonitorRouteContainer from "./routes/HealthMonitorRouteContainer.js
 import WebVitalsRouteContainer from "./routes/WebVitalsRouteContainer.jsx";
 import PnlRouteContainer from "./routes/PnlRouteContainer.jsx";
 import AdsRouteContainer from "./routes/AdsRouteContainer.jsx";
+import WeeklyReportsRouteContainer from "./routes/WeeklyReportsRouteContainer.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
 );
@@ -667,6 +671,13 @@ export default function App() {
     return hasPermission("ads_panel");
   }, [hasPermission, isAuthor]);
 
+  // Managing (upload/publish/delete) is backend-enforced to elevated roles;
+  // everyone else with this permission only gets the viewer.
+  const canAccessWeeklyReportsPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("weekly_report_preview");
+  }, [hasPermission, isAuthor]);
+
   const defaultLandingTab = useMemo(() => {
     if (isAuthor) return "overall-snapshot";
     return canAccessOverallSnapshotPanel ? "overall-snapshot" : "dashboard";
@@ -686,6 +697,7 @@ export default function App() {
     if (canAccessPnlPanel) tabs.push("pnl");
     if (canAccessAdsPanel) tabs.push("ads");
     if (canAccessHealthMonitorPanel) tabs.push("health-monitor");
+    if (canAccessWeeklyReportsPanel) tabs.push("weekly-reports");
     return tabs;
   }, [
     canAccessOverallSnapshotPanel,
@@ -699,6 +711,7 @@ export default function App() {
     canAccessPnlPanel,
     canAccessAdsPanel,
     canAccessHealthMonitorPanel,
+    canAccessWeeklyReportsPanel,
     isAuthor,
   ]);
 
@@ -804,6 +817,16 @@ export default function App() {
       );
       return;
     }
+    if (authorTab === "weekly-reports" && !canAccessWeeklyReportsPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
     if (authorTab === "health-monitor" && !canAccessHealthMonitorPanel) {
       navigate(
         {
@@ -827,6 +850,7 @@ export default function App() {
     canAccessPnlPanel,
     canAccessAdsPanel,
     canAccessHealthMonitorPanel,
+    canAccessWeeklyReportsPanel,
     initialized,
     location.search,
     sanitizedSearch,
@@ -1318,7 +1342,13 @@ export default function App() {
   useEffect(() => {
     // Product filter options are only used by tabs with a filter bar; skip
     // the fetch entirely on brand-agnostic-UI tabs like Web Vitals/Health Monitor.
-    if (authorTab === "web-vitals" || authorTab === "pnl" || authorTab === "ads" || authorTab === "health-monitor") {
+    if (
+      authorTab === "web-vitals" ||
+      authorTab === "pnl" ||
+      authorTab === "ads" ||
+      authorTab === "health-monitor" ||
+      authorTab === "weekly-reports"
+    ) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
       setProductOptionsLoading(false);
@@ -1993,7 +2023,15 @@ export default function App() {
     if (!activeBrandKey) return;
     // UTM filter options are only used by tabs with a filter bar; skip the
     // fetch entirely on brand-agnostic-UI tabs like Web Vitals/Health Monitor.
-    if (authorTab === "web-vitals" || authorTab === "pnl" || authorTab === "ads" || authorTab === "health-monitor") return;
+    if (
+      authorTab === "web-vitals" ||
+      authorTab === "pnl" ||
+      authorTab === "ads" ||
+      authorTab === "health-monitor" ||
+      authorTab === "weekly-reports"
+    ) {
+      return;
+    }
     if (isLongRangeDashboard) {
       setUtmOptions({ brand_key: activeBrandKey });
       return;
@@ -2335,6 +2373,14 @@ export default function App() {
       case "ads":
         return (
           <AdsRouteContainer hasBrand={hasBrand} activeBrandKey={activeBrandKey} />
+        );
+      case "weekly-reports":
+        return (
+          <WeeklyReportsRouteContainer
+            hasBrand={hasBrand}
+            activeBrandKey={activeBrandKey}
+            isManager={isAuthor}
+          />
         );
       case "session-analytics":
         return (

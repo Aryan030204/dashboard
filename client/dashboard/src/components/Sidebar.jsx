@@ -26,6 +26,7 @@ import {
   Target,
   Wallet,
   Megaphone,
+  Presentation,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -82,6 +83,7 @@ const NAV_ITEMS = [
       { id: "pnl", label: "P&L", icon: Wallet },
       { id: "ads", label: "Ads", icon: Megaphone },
       { id: "requests", label: "Requests", icon: ClipboardList },
+      { id: "weekly-reports", label: "Weekly Reports", icon: Presentation },
     ],
   },
   {

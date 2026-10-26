@@ -1,4 +1,5 @@
 import { captureApiFailure } from "../observability.js";
+import { chunkedUpload } from "./chunkedUpload.js";
 
 function resolveApiBase() {
   const envBase = (import.meta.env.VITE_API_BASE || "").trim();
@@ -1886,6 +1887,147 @@ export async function getHealthMonitorIncidents(filters = {}) {
   const res = await doGet("/health-monitor/incidents", params);
   if (res.error) return { error: true, status: res.status, data: res.data };
   return { error: false, data: res.data || { incidents: [], page: 1, pageSize: 25, total: 0 } };
+}
+
+// ---- Weekly Reports ---------------------------------------------------------
+// The gateway only reads brand context from headers/query args, so brand_key is
+// always sent in the query string (including POST/DELETE), never only in a body.
+function weeklyReportsPath(path, brandKey, extra = {}) {
+  return `/weekly-reports${path}${qs({ brand_key: normalizeBrandKey(brandKey), ...extra })}`;
+}
+
+export function weeklyReportErrorMessage(res, fallback = "Something went wrong.") {
+  const message = res?.data?.error;
+  return typeof message === "string" && message.trim() ? message : fallback;
+}
+
+export async function listWeeklyReports({ brandKey, signal } = {}) {
+  const res = await doGet("/weekly-reports", { brand_key: normalizeBrandKey(brandKey) }, { signal });
+  if (res.error) return res;
+  return { error: false, data: Array.isArray(res.data?.reports) ? res.data.reports : [] };
+}
+
+export async function checkWeeklyReport({ brandKey, title, reportingWeek, signal } = {}) {
+  const res = await doGet(
+    "/weekly-reports/check",
+    {
+      brand_key: normalizeBrandKey(brandKey),
+      title,
+      reporting_week: reportingWeek,
+    },
+    { signal },
+  );
+  if (res.error) return res;
+  return { error: false, data: res.data || {} };
+}
+
+export async function publishWeeklyReport({ brandKey, id }) {
+  return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/publish`, brandKey), {});
+}
+
+export async function unpublishWeeklyReport({ brandKey, id }) {
+  return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/unpublish`, brandKey), {});
+}
+
+export async function cancelWeeklyReport({ brandKey, id }) {
+  return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/cancel`, brandKey), {});
+}
+
+export async function deleteWeeklyReport({ brandKey, id }) {
+  return doDelete(weeklyReportsPath(`/${encodeURIComponent(id)}`, brandKey));
+}
+
+// Slides are served as authenticated WebP, so they are fetched as blobs and the
+// caller turns them into object URLs (and revokes them).
+export async function fetchWeeklyReportSlide({ brandKey, id, slide, thumb = false, signal }) {
+  const url = `${API_BASE}${weeklyReportsPath(
+    `/${encodeURIComponent(id)}/slides/${encodeURIComponent(slide)}`,
+    brandKey,
+    { size: thumb ? "thumb" : undefined },
+  )}`;
+  try {
+    const res = await fetchWithAuth(url, { signal });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      captureFailure("/weekly-reports/slides", { status: res.status, method: "GET", brandKey });
+      return { error: true, status: res.status, data: json };
+    }
+    return { error: false, blob: await res.blob() };
+  } catch (error) {
+    if (error?.name === "AbortError" || signal?.aborted) {
+      return { error: true, aborted: true };
+    }
+    captureFailure("/weekly-reports/slides", { method: "GET", brandKey });
+    return { error: true };
+  }
+}
+
+// One XHR request (XHR, not fetch, because only XHR reports upload progress). Resolves to
+// { status, data } | { networkError: true } | { aborted: true }; it never rejects.
+function xhrRequest({ method, url, json, body, signal, onProgress }) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve({ aborted: true });
+      return;
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    Object.entries(authHeaders()).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+    if (json !== undefined) xhr.setRequestHeader("Content-Type", "application/json");
+    else if (body) xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+    };
+    xhr.onload = () => {
+      let data = {};
+      try {
+        data = JSON.parse(xhr.responseText || "{}");
+      } catch {
+        data = {};
+      }
+      resolve({ status: xhr.status, data });
+    };
+    xhr.onerror = () => resolve({ networkError: true });
+    xhr.onabort = () => resolve({ aborted: true });
+    signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(json !== undefined ? JSON.stringify(json) : (body ?? null));
+  });
+}
+
+// Transport for chunkedUpload: adds the brand and the token, and replays a request once after a 401
+// (an expired access token) so a long upload survives a token refresh.
+function weeklyReportsUploadTransport(brandKey) {
+  return async function send({ method, path, json, body, signal, onProgress }) {
+    const url = `${API_BASE}${weeklyReportsPath(path, brandKey)}`;
+    const once = () => xhrRequest({ method, url, json, body, signal, onProgress });
+    let result = await once();
+    if (result.status === 401 && !signal?.aborted) {
+      if (await ensureFreshToken()) result = await once();
+    }
+    return result;
+  };
+}
+
+// Uploads a deck in small chunks (see lib/chunkedUpload.js for why). Returns { promise, abort }.
+// The promise resolves to { error, status, data, aborted }, as the single-request upload did.
+export function uploadWeeklyReport({ brandKey, file, title, reportingWeek, onProgress }) {
+  const controller = new AbortController();
+
+  const promise = chunkedUpload({
+    file,
+    title,
+    reportingWeek,
+    onProgress,
+    signal: controller.signal,
+    send: weeklyReportsUploadTransport(brandKey),
+  }).then((result) => {
+    if (result.error && !result.aborted) {
+      captureFailure("/weekly-reports/uploads", { status: result.status, method: "POST", brandKey });
+    }
+    return result;
+  });
+
+  return { promise, abort: () => controller.abort() };
 }
 
 export async function getSessionAnalyticsSummary(args = {}) {

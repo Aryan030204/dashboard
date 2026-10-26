@@ -1,4 +1,4 @@
-import { Box, Typography, useTheme } from "@mui/material";
+import { Box, ToggleButton, ToggleButtonGroup, Typography, useTheme } from "@mui/material";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { SectionCard } from "./shared.jsx";
 import {
@@ -11,10 +11,16 @@ import {
 const SCORE_INFO =
   "Share of scored users classified as high, medium or low intent by score percentile. Sessions that are still being scored or were excluded are not included.";
 const BEHAVIOR_INFO =
-  "Share of sessions by what the visitor did. Low: under 5 seconds, or no clicks and no scrolls. Medium: over 5 seconds with some interaction. High: over 5 seconds with clicks and a product view, add to cart or checkout. Every closed session is counted; bots are left out.";
+  "Intent by what the visitor did. Low: under 5 seconds, or no clicks and no scrolls. Medium: over 5 seconds with some interaction. High: over 5 seconds with clicks and a product view, add to cart or checkout. Every session is counted once it has been quiet for 30 minutes; bots are left out. Visitors are counted once, at their best level.";
 
-// `metric` picks what the donut counts: "users" (score basis) or "sessions" (behaviour basis).
-export default function IntentDistributionDonut({ distribution, metric = "users", basis = "score" }) {
+// `metric` picks what the donut counts: "users" or "sessions". `onMetricChange` (behaviour basis only)
+// shows the Visitors / Sessions switch; Clarity counts sessions.
+export default function IntentDistributionDonut({
+  distribution,
+  metric = "users",
+  basis = "score",
+  onMetricChange,
+}) {
   const theme = useTheme();
   const bySessions = metric === "sessions";
   const items = distribution?.items || [];
@@ -27,6 +33,21 @@ export default function IntentDistributionDonut({ distribution, metric = "users"
     <SectionCard
       title="Intent Distribution"
       info={basis === "behavior" ? BEHAVIOR_INFO : SCORE_INFO}
+      action={
+        onMetricChange ? (
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={metric}
+            onChange={(_, next) => next && onMetricChange(next)}
+            aria-label="Count"
+            sx={{ "& .MuiToggleButton-root": { textTransform: "none", fontSize: 12, px: 1, py: 0.25 } }}
+          >
+            <ToggleButton value="users">Visitors</ToggleButton>
+            <ToggleButton value="sessions">Sessions</ToggleButton>
+          </ToggleButtonGroup>
+        ) : null
+      }
     >
       <Box
         sx={{
