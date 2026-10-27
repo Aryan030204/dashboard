@@ -96,6 +96,8 @@ function makeConn(overrides = {}) {
     buckets: () => DEFAULT_BUCKETS,
     behavior: () => DEFAULT_BEHAVIOR,
     started: () => [{ cur_started: "300", prev_started: "200" }],
+    live: () => [],
+    closedBest: () => [],
     trend: () => [
       { date: "2026-10-10", product_views: "100", add_to_carts: "20", checkout_starts: "5" },
       { date: "2026-10-12", product_views: "90", add_to_carts: "18", checkout_starts: "4" },
@@ -127,6 +129,8 @@ function makeConn(overrides = {}) {
     if (sql.includes("FROM product_behavior_daily")) return handlers.rollup(sql, options);
     if (sql.includes("event_name = 'checkout_started'")) return handlers.productCheckouts(sql, options);
     if (sql.includes("FROM behavioral_events")) return handlers.productViews(sql, options);
+    if (sql.includes("FROM intent_actor_cursors")) return handlers.live(sql, options);
+    if (sql.includes("best_rank")) return handlers.closedBest(sql, options);
     if (sql.includes(") levelled")) return handlers.behavior(sql, options);
     if (sql.includes("GROUP BY intent_bucket")) return handlers.buckets(sql, options);
     if (sql.includes("FROM intent_sessions")) return handlers.totals(sql, options);
@@ -475,7 +479,7 @@ describe("intentFunnelService", () => {
       const conn = makeConn();
       await newService().getIntentFunnel({ ...SPEC, start: "2026-09-01", end: "2026-10-12", conn });
       // totals, buckets, trend, product rollup, paths, paths total, behaviour levels, sessions started
-      expect(conn.query).toHaveBeenCalledTimes(8);
+      expect(conn.query).toHaveBeenCalledTimes(9);
     });
 
     test("cached results are keyed by brand and never cross tenants", async () => {
@@ -610,6 +614,54 @@ describe("intentFunnelService", () => {
           "WHEN click_count > 0 AND (product_view_count > 0 OR add_to_cart_count > 0 OR checkout_started_count > 0) THEN 'high' " +
           "ELSE 'medium' END",
       );
+    });
+
+    test("live sessions are merged at their current level and the total reconciles", async () => {
+      const START = new Date("2026-10-12T10:00:00Z");
+      const cursors = [
+        // a 2-second bounce: low straight away
+        { actor_id: "bounce", session_start: START, last_event_at: new Date(START.getTime() + 2000),
+          events_seq: { 1: { event_name: "page_viewed" } } },
+        // browsing, clicked a product and added to cart: high, and the visitor was already counted as low
+        { actor_id: "shopper", session_start: START, last_event_at: new Date(START.getTime() + 300000),
+          events_seq: JSON.stringify({ 1: { event_name: "page_viewed" }, 2: { event_name: "product_viewed" },
+            3: { event_name: "click" }, 4: { event_name: "product_added_to_cart" } }) },
+      ];
+      const conn = makeConn({ live: () => cursors, closedBest: () => [{ actor_id: "shopper", best_rank: 1 }] });
+      const out = await newService().getIntentFunnel({ ...SPEC, conn });
+      const items = Object.fromEntries(out.behavior.distribution.items.map((i) => [i.level, i]));
+      expect(items.low).toMatchObject({ sessions: 51, users: 41 });    // 50 -> 51 sessions; visitors 41 +1 (the bounce) -1 (the shopper moved up)
+      expect(items.high).toMatchObject({ sessions: 11, users: 10 });   // +1 session, +1 visitor (the shopper)
+      expect(out.behavior.live.sessions).toBe(2);
+      expect(out.sessionsStarted).toMatchObject({ live: 2 });
+      expect(out.sessionsStarted.closed + out.sessionsStarted.live + out.sessionsStarted.other).toBe(out.sessionsStarted.value);
+    });
+
+    test("without the open-session table the levels cover closed sessions only", async () => {
+      const missing = Object.assign(new Error("no table"), { code: "ER_NO_SUCH_TABLE", errno: 1146 });
+      const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn({ live: () => { throw missing; } }) });
+      expect(out.meta.sections.liveSessions).toEqual({ available: false, reason: "table_missing" });
+      expect(out.behavior.distribution.totalSessions).toBe(100);
+      expect(out.sessionsStarted.live).toBe(0);
+    });
+
+    test("the live query only reads a recent window, ignores far-future times, and binds only dates", () => {
+      const { sql, params } = _internal.buildLiveSessionsQuery({ curStart: "2026-10-27", endExclusive: "2026-10-28" });
+      const flat = sql.replace(/\s+/g, " ");
+      expect(flat).toContain("UTC_TIMESTAMP() + INTERVAL 14 HOUR");
+      expect(flat).toContain("- INTERVAL 90 MINUTE");
+      expect(flat).toContain("LIMIT 20000");
+      expect(flat).not.toContain("2026-10");
+      expect(params).toEqual(["2026-10-27", "2026-10-28"]);
+    });
+
+    test("closed-level lookups are chunked and never include bots", () => {
+      const ids = Array.from({ length: 2500 }, (_, i) => `a${i}`);
+      const queries = _internal.buildClosedBestQueries({ actorIds: ids, curStart: "x", endExclusive: "y" });
+      expect(queries).toHaveLength(3);
+      expect(queries[0].params[0]).toHaveLength(1000);
+      expect(queries[2].params[0]).toHaveLength(500);
+      expect(queries[0].sql).toContain("lvl <> 'bot'");
     });
 
     test("a database without the column degrades only this section; no sessions gives zeros", async () => {

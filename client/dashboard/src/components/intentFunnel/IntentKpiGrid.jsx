@@ -148,8 +148,10 @@ function SessionsStartedCard({ sessions }) {
           color="text.secondary"
           sx={{ maxWidth: { sm: 360 }, textAlign: { xs: "left", sm: "right" } }}
         >
-          Every visit counts from its first page view. {formatCount(sessions.closed)} (
-          {sessions.closedPct.toFixed(1)}%) have closed, and only those are analysed in the cards and charts below.
+          Every visit counts from its first page view. Analysed: {formatCount(sessions.closed)} finished
+          {sessions.live != null ? ` + ${formatCount(sessions.live)} live (counted at their current level)` : ""}
+          {sessions.other > 0 ? ` · ${formatCount(sessions.other)} not yet analysed or without a visitor id` : ""}.
+          {" "}Covered: {(sessions.coveredPct ?? sessions.closedPct).toFixed(1)}%.
         </Typography>
       </Box>
     </Card>

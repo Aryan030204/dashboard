@@ -167,8 +167,8 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
         ) : null}
         {useBehavior ? (
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-            Counts every session once the visitor has been quiet for 30 minutes, so the newest hour is not
-            included yet. Each visitor is counted once, at their best level.
+            Counts every session. A session still in progress is counted at its current level and moves up if the
+            visitor does more within 30 minutes. Each visitor is counted once, at their best level.
           </Typography>
         ) : null}
 

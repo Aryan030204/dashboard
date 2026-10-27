@@ -6,6 +6,13 @@ const {
   normalizeTimezone,
   shiftDays,
 } = require("../shared/utils/date");
+const {
+  LIVE_WINDOW_MINUTES,
+  LIVE_ROW_LIMIT,
+  FUTURE_TOLERANCE_HOURS,
+  classifyOpenSessions,
+  applyLive,
+} = require("./intentLiveSessions");
 
 // Read-only aggregation over the intent pipeline tables of one brand database.
 // The pipeline owns scoring (predictive_score / intent_bucket / intent_status);
@@ -268,10 +275,12 @@ function buildBehaviorQuery({ prevStart, curStart, endExclusive }) {
   return { sql, params: [curStart, prevStart, endExclusive] };
 }
 
-function buildBehavior(rows) {
+// `live` (optional): { sessions: [{ actorId, level }], closedBest: Map, truncated } from the open-session
+// cursors, merged in at each session's current level (see intentLiveSessions.js).
+function buildBehavior(rows, live = null) {
   const row = rows?.[0] || {};
   // same shape as a score bucket row, so buildKpis can be reused
-  const byLevel = {};
+  let byLevel = {};
   INTENT_LEVELS.forEach((level) => {
     byLevel[level] = {
       cur_users: num(row[`cur_${level}_users`]),
@@ -280,6 +289,8 @@ function buildBehavior(rows) {
       prev_sessions: num(row[`prev_${level}_sessions`]),
     };
   });
+  const liveSessions = live?.sessions || [];
+  if (liveSessions.length) byLevel = applyLive(byLevel, liveSessions, live.closedBest);
   byLevel.bot = { cur_sessions: num(row.cur_bot_sessions) };
   const items = INTENT_LEVELS.map((level) => ({
     level,
@@ -303,7 +314,59 @@ function buildBehavior(rows) {
     },
     // same card shape as the score-based KPIs, for the three intent cards only
     kpis: buildKpis({}, byLevel).filter((kpi) => INTENT_LEVELS.includes(kpi.id)),
+    live: { sessions: liveSessions.length, truncated: Boolean(live?.truncated) },
   };
+}
+
+// Open sessions (intent_actor_cursors: one row per visitor, their latest session) that are still live: last
+// event within LIVE_WINDOW_MINUTES of the newest believable cursor time, and started in the period. Time is
+// measured against the newest cursor, not the wall clock, because event times are the store's local clock
+// and the pipeline may be behind; a cursor stamped further ahead than any clock can be is ignored so one bad
+// timestamp cannot become "now". Older open cursors are the backlog the pipeline's sweep is still closing.
+function buildLiveSessionsQuery({ curStart, endExclusive }) {
+  const believable = `session_id <> '' AND last_event_at <= UTC_TIMESTAMP() + INTERVAL ${FUTURE_TOLERANCE_HOURS} HOUR`;
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+        actor_id, session_start, last_event_at, events_seq
+      FROM intent_actor_cursors
+      WHERE ${believable}
+        AND last_event_at >= (
+          SELECT MAX(last_event_at) FROM intent_actor_cursors WHERE ${believable}
+        ) - INTERVAL ${LIVE_WINDOW_MINUTES} MINUTE
+        AND session_start >= ? AND session_start < ?
+      ORDER BY last_event_at DESC
+      LIMIT ${LIVE_ROW_LIMIT}
+    `,
+    params: [curStart, endExclusive],
+  };
+}
+
+// Best closed level (3 high, 2 medium, 1 low) per visitor, for just the visitors with a live session, so a
+// visitor is counted once. Bots are left out, as in the main behaviour query. IN lists are chunked.
+const CLOSED_BEST_CHUNK = 1000;
+function buildClosedBestQueries({ actorIds, curStart, endExclusive }) {
+  const queries = [];
+  for (let i = 0; i < actorIds.length; i += CLOSED_BEST_CHUNK) {
+    queries.push({
+      sql: `
+        SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+          actor_id,
+          MAX(CASE lvl WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END) AS best_rank
+        FROM (
+          SELECT actor_id, ${BEHAVIOR_LEVEL_SQL} AS lvl
+          FROM intent_sessions
+          WHERE actor_id IN (?)
+            AND session_start >= ? AND session_start < ?
+            AND session_time_spent_ms IS NOT NULL
+        ) closed
+        WHERE lvl <> 'bot'
+        GROUP BY actor_id
+      `,
+      params: [actorIds.slice(i, i + CLOSED_BEST_CHUNK), curStart, endExclusive],
+    });
+  }
+  return queries;
 }
 
 // Sessions that started in the period, from the pipeline's daily rollup (intent_daily_summary.sessions_started:
@@ -324,19 +387,27 @@ function buildSessionsStartedQuery({ prevStart, start, end }) {
 }
 
 // null while the pipeline has not filled sessions_started for the period yet (older rollup rows).
-function buildSessionsStarted(rows, totals) {
+// `liveCount`: open sessions classified at their current level (see buildBehavior). Analysed (closed rows)
+// plus live plus other adds up to the total; "other" is whatever is not in either: the backlog the sweep is
+// still closing, sessions without a visitor id, and future-dated events.
+function buildSessionsStarted(rows, totals, liveCount = 0) {
   const row = rows?.[0];
   if (!row || row.cur_started == null) return null;
   const value = num(row.cur_started);
   const closed = num(totals?.cur_visitors_sessions);
+  const live = num(liveCount);
   return {
     id: "sessionsStarted",
     label: "Total Sessions",
     value,
     delta: row.prev_started == null ? null : pctChange(value, row.prev_started),
     closed,
-    // share of the started sessions that already have a closed, analysed row
+    live,
+    other: Math.max(0, value - closed - live),
+    // share of the started sessions that already have an analysed (closed) row
     closedPct: Math.min(100, safePct(closed, value)),
+    // share covered by the intent levels: closed rows plus live sessions
+    coveredPct: Math.min(100, safePct(closed + live, value)),
   };
 }
 
@@ -826,7 +897,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       throw err;
     }
 
-    const [trendRes, rollupRes, pathsRes, pathsTotalRes, behaviorRes, startedRes] = await Promise.all([
+    const [trendRes, rollupRes, pathsRes, pathsTotalRes, behaviorRes, startedRes, liveRes] = await Promise.all([
       selectOptional(conn, buildTrendQuery({ start, end }), "trend", meta, brandKey),
       selectOptional(conn, buildProductRollupQuery({ start, end, sortKey }), "topProducts", meta, brandKey),
       selectOptional(conn, buildPathsQuery({ start, end, pathStart }), "paths", meta, brandKey),
@@ -847,7 +918,29 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         meta,
         brandKey,
       ),
+      // optional: the pipeline's open-session table; without it the levels cover closed sessions only
+      selectOptional(conn, buildLiveSessionsQuery({ curStart: start, endExclusive }), "liveSessions", meta, brandKey),
     ]);
+
+    // Live (not yet closed) sessions, at their current level. Their visitors' best closed level comes from a
+    // second, uncached lookup for just those visitors.
+    let live = null;
+    if (liveRes.ok && behaviorRes.ok) {
+      const sessions = classifyOpenSessions(liveRes.rows);
+      const closedBest = new Map();
+      const actorIds = [...new Set(sessions.map((s) => s.actorId))];
+      if (actorIds.length) {
+        const lookups = await Promise.all(
+          buildClosedBestQueries({ actorIds, curStart: start, endExclusive }).map((query) =>
+            selectOptional(conn, query, "liveSessions", meta, null),
+          ),
+        );
+        lookups.forEach((res) =>
+          (res.rows || []).forEach((r) => closedBest.set(String(r.actor_id), num(r.best_rank))),
+        );
+      }
+      live = { sessions, closedBest, truncated: (liveRes.rows || []).length >= LIVE_ROW_LIMIT };
+    }
 
     // Brand databases without the rollup table fall back to scanning the raw events.
     let topProducts = rollupRes.ok ? rollupProducts(rollupRes.rows) : [];
@@ -879,8 +972,10 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         checkouts: num(row.checkout_starts),
       })),
       distribution: buildDistribution(totals, buckets),
-      behavior: behaviorRes.ok ? buildBehavior(behaviorRes.rows) : null,
-      sessionsStarted: startedRes.ok ? buildSessionsStarted(startedRes.rows, totals) : null,
+      behavior: behaviorRes.ok ? buildBehavior(behaviorRes.rows, live) : null,
+      sessionsStarted: startedRes.ok
+        ? buildSessionsStarted(startedRes.rows, totals, live?.sessions?.length || 0)
+        : null,
       conversionRates: buildConversion(buckets),
       topProducts,
       paths: pathsRes.ok
@@ -911,6 +1006,8 @@ module.exports = {
     buildBucketQuery,
     buildSessionsStartedQuery,
     buildSessionsStarted,
+    buildLiveSessionsQuery,
+    buildClosedBestQueries,
     buildBehaviorQuery,
     buildBehavior,
     BEHAVIOR_LEVEL_SQL,

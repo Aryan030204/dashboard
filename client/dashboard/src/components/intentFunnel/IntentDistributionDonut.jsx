@@ -11,7 +11,7 @@ import {
 const SCORE_INFO =
   "Share of scored users classified as high, medium or low intent by score percentile. Sessions that are still being scored or were excluded are not included.";
 const BEHAVIOR_INFO =
-  "Intent by what the visitor did. Low: under 5 seconds, or no clicks and no scrolls. Medium: over 5 seconds with some interaction. High: over 5 seconds with clicks and a product view, add to cart or checkout. Every session is counted once it has been quiet for 30 minutes; bots are left out. Visitors are counted once, at their best level.";
+  "Intent by what the visitor did. Low: under 5 seconds, or no clicks and no scrolls. Medium: over 5 seconds with some interaction. High: over 5 seconds with clicks and a product view, add to cart or checkout. Every session is counted; one still in progress is counted at its current level and can move up. Bots are left out once identified. Visitors are counted once, at their best level.";
 
 // `metric` picks what the donut counts: "users" or "sessions". `onMetricChange` (behaviour basis only)
 // shows the Visitors / Sessions switch; Clarity counts sessions.
