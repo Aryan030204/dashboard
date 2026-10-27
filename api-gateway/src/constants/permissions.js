@@ -51,6 +51,8 @@ const ALL_PERMISSIONS = Object.freeze([
   "daily_insight_view",
   "health_monitor_panel",
   "web_vitals_panel",
+  "pnl_panel",
+  "ads_panel",
 ]);
 
 module.exports = { ALL_PERMISSIONS };
