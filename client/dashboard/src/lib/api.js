@@ -1436,6 +1436,233 @@ export async function getWebVitalsPages(args = {}) {
   };
 }
 
+export async function getPnlSummary(args = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      granularity: args.granularity || "daily",
+    },
+    args,
+  );
+  const json = await getJSON("/pnl/summary", params);
+  return {
+    brandKey: json?.brandKey || null,
+    granularity: json?.granularity || "daily",
+    start: json?.start || null,
+    end: json?.end || null,
+    previousStart: json?.previousStart || null,
+    previousEnd: json?.previousEnd || null,
+    channel: json?.channel || null,
+    productId: json?.productId || null,
+    kpis: json?.kpis || {},
+    lineItems: Array.isArray(json?.lineItems) ? json.lineItems : [],
+    filters: json?.filters || {},
+    metaAdSpend: json?.metaAdSpend || null,
+    googleAdSpend: json?.googleAdSpend || null,
+    // { days, expectedDays, previousDays } - how many dates in the range the
+    // worker has actually built rows for, so the page can tell "nothing was
+    // earned" apart from "nothing has been synced yet".
+    coverage: json?.coverage || null,
+    error: json?.__error,
+  };
+}
+
+export async function getMetaAdsStatus(args = {}) {
+  return doGet("/pnl/meta-ads/status", appendBrandKey({}, args));
+}
+
+// brand_key goes in the query string on every write below (not just the JSON
+// body): the gateway resolves brand context from query args/headers only, so
+// a body-only brand_key silently falls back to the caller's primary brand.
+export async function connectMetaAds({ brand_key, ad_account_ids, access_token, token_type }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/meta-ads/connect${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    ad_account_ids,
+    access_token,
+    token_type: token_type || "user",
+  });
+}
+
+export async function disconnectMetaAds({ brand_key }) {
+  const params = qs({ brand_key: normalizeBrandKey(brand_key) });
+  return doDelete(`/pnl/meta-ads/disconnect${params}`);
+}
+
+export async function getMetaOauthConfig(args = {}) {
+  return doGet("/pnl/meta-ads/oauth/config", appendBrandKey({}, args));
+}
+
+// Lists the ad accounts a Meta user token can see, so the brand can pick one
+// after the OAuth redirect. Token goes in the body, not the query string.
+export async function listMetaOauthAdAccounts({ brand_key, access_token }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/meta-ads/oauth/ad-accounts${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    access_token,
+  });
+}
+
+// Exchanges the authorization code Meta just redirected back with for a
+// System-business access token, parked server-side against the brand. Never
+// sent to the browser — returns the ad accounts that token can see so the
+// brand can pick one.
+export async function exchangeMetaOauthCode({ brand_key, code, redirect_uri }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/meta-ads/oauth/exchange${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    code,
+    redirect_uri,
+  });
+}
+
+// Final step of "Continue with Meta": the brand picked which ad account to
+// connect. Reads the token parked by exchangeMetaOauthCode and stores it.
+export async function connectMetaOauth({ brand_key, ad_account_ids }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/meta-ads/oauth/connect${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    ad_account_ids,
+  });
+}
+
+// ---- Google Ads connector (P&L page) ---------------------------------------
+// "Connect with Google" sends the brand through Google's OAuth consent
+// screen; the backend exchanges the resulting code for a refresh token
+// server-side (never sent to the browser) and stores it encrypted in Mongo
+// for the pipeline's Google Ads sync. connectGoogleAds (paste a refresh
+// token directly) stays as a fallback. Either way the token is never sent
+// back by the status endpoint.
+export async function getGoogleAdsStatus(args = {}) {
+  return doGet("/pnl/google-ads/status", appendBrandKey({}, args));
+}
+
+// brand_key goes in the query string (see connectMetaAds); the token goes in
+// the body only. customer_ids is an array - one or more customer ids picked
+// (or typed, on the manual-paste fallback).
+export async function connectGoogleAds({ brand_key, customer_ids, login_customer_id, token }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/google-ads/connect${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    customer_ids,
+    login_customer_id: login_customer_id || null,
+    token,
+  });
+}
+
+export async function disconnectGoogleAds({ brand_key }) {
+  const params = qs({ brand_key: normalizeBrandKey(brand_key) });
+  return doDelete(`/pnl/google-ads/disconnect${params}`);
+}
+
+export async function getGoogleOauthConfig(args = {}) {
+  return doGet("/pnl/google-ads/oauth/config", appendBrandKey({}, args));
+}
+
+// Exchanges the authorization code Google just redirected back with for a
+// refresh token, parked server-side against the brand. Returns
+// { verified, accounts, listError } - accounts is every customer id the
+// login can see (for the checkbox picker), empty if listing failed
+// (listError explains why; the brand can still type an id manually).
+export async function exchangeGoogleOauthCode({ brand_key, code, redirect_uri }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/google-ads/oauth/exchange${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    code,
+    redirect_uri,
+  });
+}
+
+// Final step: the brand picked which customer id(s) to connect. Reads the
+// refresh token parked by exchangeGoogleOauthCode and stores it for real.
+export async function connectGoogleOauth({ brand_key, customer_ids, login_customer_id }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/google-ads/oauth/connect${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    customer_ids,
+    login_customer_id: login_customer_id || null,
+  });
+}
+
+// The brand's single total_config document: { config: { gstPct, costs: {field: {value, valueType} | null}, ... } }
+export async function getPnlCostConfigs(args = {}) {
+  return doGet("/pnl/cost-configs", appendBrandKey({}, args));
+}
+
+// Whole-document save; fields left out of `costs` are untouched.
+export async function savePnlTotalConfig({ brand_key, gst_pct, costs, notes }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  const body = { brand_key: brandKey };
+  if (gst_pct !== undefined) body.gst_pct = gst_pct;
+  if (costs !== undefined) body.costs = costs;
+  if (notes !== undefined) body.notes = notes;
+  return doPut(`/pnl/cost-configs${qs({ brand_key: brandKey })}`, body);
+}
+
+export async function savePnlCostConfig({ brand_key, category, value, value_type }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPut(`/pnl/cost-configs/${encodeURIComponent(category)}${qs({ brand_key: brandKey })}`, {
+    brand_key: brandKey,
+    value,
+    value_type,
+  });
+}
+
+export async function clearPnlCostConfig({ brand_key, category }) {
+  const params = qs({ brand_key: normalizeBrandKey(brand_key) });
+  return doDelete(`/pnl/cost-configs/${encodeURIComponent(category)}${params}`);
+}
+
+// ---- Per-product COGS (P&L cost configuration section) --------------------
+// "Download Template" gives the brand a CSV of their products (product_id,
+// title, and any cogs already saved); they fill in a flat cogs value per
+// product and re-upload it. The upload replaces the brand's whole
+// product_config document and rolls the sum into the "cogs" cost line above.
+
+export async function getProductCogsConfig(args = {}) {
+  return doGet("/pnl/product-config", appendBrandKey({}, args));
+}
+
+export async function downloadProductCogsTemplate({ brand_key }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  const fallbackName = `product-cogs-template-${brandKey || "brand"}.csv`;
+  const url = `${resolveApiBase()}/pnl/product-config/template${qs({ brand_key: brandKey })}`;
+  try {
+    const res = await fetch(url, {
+      credentials: "include",
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) return { error: true, status: res.status };
+    const blob = await res.blob();
+    const fromHeader = filenameFromDisposition(res.headers.get("Content-Disposition"));
+    return { error: false, blob, filename: fromHeader || fallbackName };
+  } catch (e) {
+    console.error("API error product-config csv", e);
+    return { error: true };
+  }
+}
+
+export async function uploadProductCogsTemplate({ brand_key, file }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  const path = "/pnl/product-config/upload";
+  const url = `${API_BASE}${path}${qs({ brand_key: brandKey })}`;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const res = await fetchWithAuth(url, { method: "POST", body: form });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      captureFailure(path, { status: res.status, method: "POST", brandKey });
+      return { error: true, status: res.status, data: json };
+    }
+    return { error: false, data: json };
+  } catch {
+    captureFailure(path, { method: "POST", brandKey });
+    return { error: true };
+  }
+}
+
 export async function getMonthlyTrend(args) {
   const base = { start: args.start, end: args.end };
   if (args.compare_start) base.compare_start = args.compare_start;
@@ -2001,4 +2228,53 @@ export async function deleteAlert(id) {
 
 export async function setAlertActive(id, isActive) {
   return doPost(`/alerts/${id}/status`, { is_active: isActive ? 1 : 0 });
+}
+
+// --- Ads page (/pnl/ads/*) ---------------------------------------------------
+// Campaign / ad / product ad performance the P&L worker syncs alongside its
+// spend rollups. Every reader takes { brand_key, start, end }.
+
+function adsRangeParams(args = {}, extra = {}) {
+  return appendBrandKey({ start: args.start, end: args.end, ...extra }, args);
+}
+
+export async function getAdsOverview(args = {}) {
+  return doGet("/pnl/ads/overview", adsRangeParams(args));
+}
+
+export async function getAdsCampaigns(args = {}) {
+  return doGet("/pnl/ads/campaigns", adsRangeParams(args, { channel: args.channel || "all" }));
+}
+
+export async function getAdsCampaignAds(args = {}) {
+  return doGet(
+    `/pnl/ads/campaigns/${encodeURIComponent(args.campaignId)}/ads`,
+    adsRangeParams(args, { channel: args.channel }),
+  );
+}
+
+export async function getAdsProducts(args = {}) {
+  return doGet("/pnl/ads/products", adsRangeParams(args));
+}
+
+export async function getAdsLandingPages(args = {}) {
+  return doGet("/pnl/ads/landing-pages", adsRangeParams(args));
+}
+
+export async function getAdsAlertRules(args = {}) {
+  return doGet("/pnl/ads/alert-rules", appendBrandKey({}, args));
+}
+
+export async function saveAdsAlertRules({ brand_key, rules }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPut(`/pnl/ads/alert-rules${qs({ brand_key: brandKey })}`, { brand_key: brandKey, rules });
+}
+
+export async function getAdsAlertEvents(args = {}) {
+  return doGet("/pnl/ads/alert-events", appendBrandKey({ limit: args.limit || 50 }, args));
+}
+
+export async function triggerAdsSync({ brand_key }) {
+  const brandKey = normalizeBrandKey(brand_key);
+  return doPost(`/pnl/ads/sync${qs({ brand_key: brandKey })}`, { brand_key: brandKey });
 }

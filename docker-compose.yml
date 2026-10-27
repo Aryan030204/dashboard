@@ -218,6 +218,12 @@ services:
       - saas-net
       - shared-net
 
+    # Pipeline (aws-pipeline-ec2) runs as a host venv process, not a
+    # container, so reach it via the Docker host-gateway alias rather than
+    # localhost (which inside this container means itself).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:3006/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
       interval: 10s
