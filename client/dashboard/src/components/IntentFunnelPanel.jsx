@@ -7,9 +7,10 @@ import IntentKpiGrid from "./intentFunnel/IntentKpiGrid.jsx";
 import IntentFunnelBars from "./intentFunnel/IntentFunnelBars.jsx";
 import IntentTrendChart from "./intentFunnel/IntentTrendChart.jsx";
 import IntentDistributionDonut from "./intentFunnel/IntentDistributionDonut.jsx";
+import IntentSourceOverlap from "./intentFunnel/IntentSourceOverlap.jsx";
 import IntentConversionRates from "./intentFunnel/IntentConversionRates.jsx";
 import TopProductsByIntent from "./intentFunnel/TopProductsByIntent.jsx";
-import PathExplorationSankey from "./intentFunnel/PathExplorationSankey.jsx";
+import FunnelExploration from "./intentFunnel/FunnelExploration.jsx";
 import { prepareTrend } from "./intentFunnel/intentFunnelUtils.js";
 
 // The UI tab value -> the sort value the API whitelists.
@@ -25,9 +26,6 @@ const rowSx = (columns) => ({
 export default function IntentFunnelPanel({ brandKey, start, end }) {
   const [granularity, setGranularity] = useState("daily");
   const [topProductsSort, setTopProductsSort] = useState("views");
-  const [pathStart, setPathStart] = useState("page_viewed");
-  const [topN, setTopN] = useState(5);
-  const [intentFilter, setIntentFilter] = useState("all");
   // "behavior": rule-based over every session, each visitor at their best level (the same idea as Microsoft
   // Clarity's user intent). "score": percentile buckets of the intent score. Both come in the same response;
   // until the user picks one, behaviour is shown whenever the server sent it.
@@ -59,9 +57,6 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
         start: startKey,
         end: endKey,
         sort: API_SORT[topProductsSort],
-        intent: intentFilter,
-        pathStart,
-        pathTop: topN,
       },
       { signal: controller.signal },
     ).then((res) => {
@@ -74,16 +69,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
       setLoading(false);
     });
     return () => controller.abort();
-  }, [
-    brandKey,
-    startKey,
-    endKey,
-    topProductsSort,
-    pathStart,
-    topN,
-    intentFilter,
-    reloadKey,
-  ]);
+  }, [brandKey, startKey, endKey, topProductsSort, reloadKey]);
 
   const trend = useMemo(
     () => prepareTrend(data?.trend || [], granularity),
@@ -190,6 +176,13 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
           />
         </Box>
 
+        <IntentSourceOverlap
+          brandKey={brandKey}
+          start={startKey}
+          end={endKey}
+          basis={useBehavior ? "behavior" : "score"}
+        />
+
         <IntentFunnelBars funnel={data.funnel} />
 
         <Box sx={rowSx("minmax(0, 1fr) minmax(0, 1.4fr)")}>
@@ -201,14 +194,9 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
           />
         </Box>
 
-        <PathExplorationSankey
-          paths={data.paths}
-          pathStart={pathStart}
-          onPathStartChange={setPathStart}
-          topN={topN}
-          onTopNChange={setTopN}
-          intentFilter={intentFilter}
-          onIntentFilterChange={setIntentFilter}
+        <FunnelExploration
+          products={data.topProducts}
+          rankedByViews={topProductsSort === "views"}
         />
       </Box>
     );

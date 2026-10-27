@@ -1386,6 +1386,21 @@ export async function getIntentFunnel(args = {}, options = {}) {
   return doGet("/metrics/intent-funnel", params, options);
 }
 
+// Intent Funnel "User Overlap by UTM Source" card. Its own request so the card can refetch alone.
+// `intent` is a list of levels (high / medium / low); `basis` is "behavior" or "score".
+export async function getIntentSourceOverlap(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      intent: Array.isArray(args.intent) ? args.intent.join(",") : args.intent,
+      basis: args.basis,
+    },
+    args,
+  );
+  return doGet("/metrics/intent-funnel/source-overlap", params, options);
+}
+
 export async function getWebVitalsSnapshot(args = {}) {
   const params = appendBrandKey({ date: args.date }, args);
   const json = await getJSON("/web-vitals/snapshot", params);
