@@ -696,29 +696,37 @@ function buildConversion(buckets) {
 }
 
 // ---- User overlap by UTM source ------------------------------------------------
-// Which traffic sources the same visitors arrive through. The circles are the three biggest sources of the
-// range; each region is the set of sources a visitor (actor_id) was seen in. Region values are sessions of
-// those visitors, except the all-three region, which only counts sessions that reached checkout.
+// Which traffic sources the same visitors arrive through. There are always three circles: Google, Meta and
+// Others (every other source, including sessions without a UTM source). Each region is the set of those
+// groups a visitor (actor_id) was seen in. Region values are sessions of those visitors, except the
+// all-three region, which only counts sessions that reached checkout.
 const OVERLAP_BASES = Object.freeze(["behavior", "score"]);
-const OVERLAP_TOP_SOURCES = 3;
+const OVERLAP_SOURCES = Object.freeze([
+  { key: "google", label: "Google" },
+  { key: "meta", label: "Meta" },
+  { key: "others", label: "Others" },
+]);
+const OVERLAP_TOP_SOURCES = OVERLAP_SOURCES.length;
 
-// Constant SQL, never request input. Empty source -> direct; the same Meta / Google alias sets as
-// adsPerformance.service.js; any other source keeps its own (lowercased) name.
+// Constant SQL, never request input. The same Meta / Google alias sets as adsPerformance.service.js;
+// anything else (and no UTM source at all) is 'others'.
 const SOURCE_NORMALIZE_SQL = `CASE
-        WHEN utm_source IS NULL OR TRIM(utm_source) = '' THEN 'direct'
         WHEN LOWER(TRIM(utm_source)) IN ('facebook', 'fb', 'instagram', 'ig', 'meta', 'an', 'messenger') THEN 'meta'
         WHEN LOWER(TRIM(utm_source)) IN ('google', 'youtube', 'gdn', 'adwords') THEN 'google'
-        ELSE LOWER(TRIM(utm_source))
+        ELSE 'others'
       END`;
 
-// One row per session of the range with its normalised source, restricted to the chosen intent levels on
-// the chosen basis. `levels` come from the INTENT_LEVELS whitelist and are bound as parameters.
-function buildOverlapBase({ basis, levels, curStart, endExclusive }) {
-  const marks = levels.map(() => "?").join(", ");
-  const levelFilter =
-    basis === "score"
-      ? `AND intent_status = 'scored' AND intent_bucket IN (${marks})`
-      : `AND session_time_spent_ms IS NOT NULL AND ${BEHAVIOR_LEVEL_SQL} IN (${marks})`;
+// One row per session of the range with its source group. `intent` is "all" (every session, like the KPI
+// cards) or one level from the INTENT_LEVELS whitelist, applied on the chosen basis and bound as a parameter.
+function buildOverlapBase({ basis, intent, curStart, endExclusive }) {
+  const filtered = INTENT_LEVELS.includes(intent);
+  let levelFilter = "";
+  if (filtered) {
+    levelFilter =
+      basis === "score"
+        ? "AND intent_status = 'scored' AND intent_bucket = ?"
+        : `AND session_time_spent_ms IS NOT NULL AND ${BEHAVIOR_LEVEL_SQL} = ?`;
+  }
   const sql = `
       SELECT
         actor_id,
@@ -728,7 +736,7 @@ function buildOverlapBase({ basis, levels, curStart, endExclusive }) {
       WHERE session_start >= ? AND session_start < ?
         AND actor_id IS NOT NULL
         ${levelFilter}`;
-  return { sql, params: [curStart, endExclusive, ...levels] };
+  return { sql, params: [curStart, endExclusive, ...(filtered ? [intent] : [])] };
 }
 
 function buildOverlapTopSourcesQuery(base) {
@@ -747,20 +755,9 @@ function buildOverlapTopSourcesQuery(base) {
   };
 }
 
-function buildOverlapTotalQuery(base) {
-  return {
-    sql: `
-    SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
-      COUNT(*) AS sessions
-    FROM (${base.sql}) base
-  `,
-    params: base.params,
-  };
-}
-
-// Sessions are grouped per visitor first (flags for which of the top sources they appear in), then the
-// visitors are grouped by flag combination: one row per Venn region. `sources` is padded to three entries
-// with '' (a source is never empty after normalisation), so the SQL shape is always the same.
+// Sessions are grouped per visitor first (flags for which of the three source groups they appear in), then
+// the visitors are grouped by flag combination: one row per Venn region. `sources` is padded to three
+// entries with '' (a source group is never empty), so the SQL shape is always the same.
 function buildOverlapRegionsQuery(base, sources) {
   const padded = Array.from({ length: OVERLAP_TOP_SOURCES }, (_, i) => sources[i] ?? "");
   return {
@@ -786,14 +783,6 @@ function buildOverlapRegionsQuery(base, sources) {
   `,
     params: [...padded, ...padded, ...padded, ...base.params],
   };
-}
-
-function sourceLabel(key) {
-  if (key === "meta") return "Meta";
-  if (key === "google") return "Google";
-  if (key === "direct") return "Direct";
-  const text = String(key || "").replace(/[_-]+/g, " ").trim();
-  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "Unknown";
 }
 
 // Every non-empty combination of the drawn sources, so the response has a stable shape: regions with no
@@ -835,32 +824,14 @@ function buildOverlapRegions(sources, rows) {
 }
 
 // ---- Intent report: the page's KPI cards, per day --------------------------------
-// The same figures as the KPI cards at the top of the page (unique visitors, the three intent cards, product
-// views, page views, add to cart, checkouts, and Total Sessions), for every day of a range plus the range
-// as a whole. Each figure is computed exactly like its card: users are distinct actors, sessions are rows,
-// and the intent cards follow the page's basis (score buckets, or the behaviour rules).
-const REPORT_KPI_IDS = Object.freeze([
-  "visitors",
-  "high",
-  "medium",
-  "low",
-  "productViews",
-  "pageViews",
-  "addToCart",
-  "checkouts",
-]);
+// The figures of the KPI cards at the top of the page that the report table shows (unique visitors and the
+// three intent cards, plus Total Sessions), for every day of a range. Each figure is computed exactly like
+// its card: users are distinct actors, sessions are rows, and the intent cards follow the page's basis
+// (score buckets, or the behaviour rules). The table shows the sessions of each.
+const REPORT_KPI_IDS = Object.freeze(["visitors", "high", "medium", "low"]);
 
-// [kpi id, per-actor column]
-const REPORT_FLAG_COLUMNS = Object.freeze([
-  ["productViews", "pv"],
-  ["pageViews", "pg"],
-  ["addToCart", "atc"],
-  ["checkouts", "co"],
-]);
-
-// `byDay` groups per calendar day (and actor); otherwise the whole range is one group per actor, which is
-// what makes the range row's visitor counts distinct across days.
-function buildReportQuery({ basis, byDay, start, endExclusive }) {
+// One row per calendar day, from one scan of intent_sessions grouped per day and actor.
+function buildReportQuery({ basis, start, endExclusive }) {
   const levelExpr =
     basis === "score"
       ? `CASE WHEN intent_status = 'scored' AND intent_bucket IN ('high', 'medium', 'low') THEN intent_bucket END`
@@ -872,9 +843,6 @@ function buildReportQuery({ basis, byDay, start, endExclusive }) {
       : { high: "h > 0", medium: "h = 0 AND m > 0", low: "h = 0 AND m = 0 AND l > 0" };
 
   const outer = ["COUNT(*) AS visitors_users", "COALESCE(SUM(sessions), 0) AS visitors_sessions"];
-  REPORT_FLAG_COLUMNS.forEach(([id, col]) => {
-    outer.push(`COALESCE(SUM(${col} > 0), 0) AS ${id}_users`, `COALESCE(SUM(${col}), 0) AS ${id}_sessions`);
-  });
   [["high", "h"], ["medium", "m"], ["low", "l"]].forEach(([level, col]) => {
     outer.push(
       `COALESCE(SUM(${levelUsers[level]}), 0) AS ${level}_users`,
@@ -882,20 +850,15 @@ function buildReportQuery({ basis, byDay, start, endExclusive }) {
     );
   });
 
-  const dayColumn = byDay ? "DATE_FORMAT(session_start, '%Y-%m-%d') AS report_day," : "";
   const sql = `
     SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
-      ${byDay ? "report_day," : ""}
+      report_day,
       ${outer.join(",\n      ")}
     FROM (
       SELECT
-        ${dayColumn}
+        DATE_FORMAT(session_start, '%Y-%m-%d') AS report_day,
         actor_id,
         COUNT(*) AS sessions,
-        SUM(product_view_count > 0) AS pv,
-        SUM(page_view_count > 0) AS pg,
-        SUM(add_to_cart_count > 0) AS atc,
-        SUM(checkout_started_count > 0) AS co,
         COALESCE(SUM(lvl = 'high'), 0) AS h,
         COALESCE(SUM(lvl = 'medium'), 0) AS m,
         COALESCE(SUM(lvl = 'low'), 0) AS l
@@ -903,17 +866,14 @@ function buildReportQuery({ basis, byDay, start, endExclusive }) {
         SELECT
           session_start,
           actor_id,
-          product_view_count,
-          page_view_count,
-          add_to_cart_count,
-          checkout_started_count,
           ${levelExpr} AS lvl
         FROM intent_sessions
         WHERE session_start >= ? AND session_start < ?
       ) s
-      GROUP BY ${byDay ? "report_day, actor_id" : "actor_id"}
+      GROUP BY report_day, actor_id
     ) per_actor
-    ${byDay ? "GROUP BY report_day\n    ORDER BY report_day" : ""}
+    GROUP BY report_day
+    ORDER BY report_day
   `;
   return { sql, params: [start, endExclusive] };
 }
@@ -949,7 +909,7 @@ function eachDate(start, end) {
 }
 
 // Every date of the range is returned (days without sessions as zeros), oldest first.
-function buildReport({ start, end, dayRows, totalRow, startedRows }) {
+function buildReport({ start, end, dayRows, startedRows }) {
   const byDay = new Map((dayRows || []).map((row) => [row.report_day, row]));
   const started = startedRows
     ? new Map(startedRows.map((row) => [row.report_day, row.sessions_started]))
@@ -962,14 +922,7 @@ function buildReport({ start, end, dayRows, totalRow, startedRows }) {
     sessionsStarted: startedFor(date),
     kpis: readReportKpis(byDay.get(date)),
   }));
-  const startedValues = days.map((day) => day.sessionsStarted).filter((value) => value != null);
-  return {
-    total: {
-      sessionsStarted: startedValues.length ? startedValues.reduce((sum, value) => sum + value, 0) : null,
-      kpis: readReportKpis(totalRow),
-    },
-    days,
-  };
+  return { days };
 }
 
 // Small in-process TTL cache (same approach as metricsCacheService's MEM_CACHE).
@@ -1174,33 +1127,30 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
   async function getSourceOverlap(spec) {
     const { conn, start, end, brandKey } = spec;
     const basis = OVERLAP_BASES.includes(spec.basis) ? spec.basis : "behavior";
-    const requested = Array.isArray(spec.intents) ? spec.intents : [];
-    const levels = INTENT_LEVELS.filter((level) => requested.includes(level));
-    const activeLevels = levels.length ? levels : [...INTENT_LEVELS];
-    const filters = { start, end, intent: activeLevels, basis };
-    const empty = { sources: [], regions: [], otherSessions: 0 };
+    const intent = INTENT_FILTERS.includes(spec.intent) ? spec.intent : "all";
+    const filters = { start, end, intent, basis };
+    const empty = { sources: [], regions: [] };
 
     const base = buildOverlapBase({
       basis,
-      levels: activeLevels,
+      intent,
       curStart: start,
       endExclusive: shiftDays(end, 1),
     });
 
     try {
-      const [topRows, totalRows] = await Promise.all([
-        select(conn, buildOverlapTopSourcesQuery(base), brandKey),
-        select(conn, buildOverlapTotalQuery(base), brandKey),
-      ]);
-      const sources = (topRows || []).map((row) => ({
-        key: String(row.src),
-        label: sourceLabel(row.src),
-        sessions: num(row.sessions),
-        users: num(row.users),
-      }));
-      if (!sources.length) {
+      const topRows = await select(conn, buildOverlapTopSourcesQuery(base), brandKey);
+      if (!topRows?.length) {
         return { filters, meta: { available: true }, ...empty };
       }
+      // always the three fixed groups, in a fixed order; a group with no sessions is a zero
+      const bySource = new Map(topRows.map((row) => [String(row.src), row]));
+      const sources = OVERLAP_SOURCES.map(({ key, label }) => ({
+        key,
+        label,
+        sessions: num(bySource.get(key)?.sessions),
+        users: num(bySource.get(key)?.users),
+      }));
       const regionRows = await select(
         conn,
         buildOverlapRegionsQuery(
@@ -1209,13 +1159,11 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         ),
         brandKey,
       );
-      const drawnSessions = sources.reduce((sum, source) => sum + source.sessions, 0);
       return {
         filters,
         meta: { available: true },
         sources,
         regions: buildOverlapRegions(sources, regionRows),
-        otherSessions: Math.max(0, num(totalRows?.[0]?.sessions) - drawnSessions),
       };
     } catch (err) {
       if (isMissingTable(err) || isSchemaMismatch(err)) {
@@ -1233,8 +1181,8 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
     }
   }
 
-  // Intent report table: the KPI figures per day and for the whole range. Separate request from the page
-  // payload, so the card has its own date range. Older brand databases answer `available: false`.
+  // Intent report table: the KPI figures per day. Separate request from the page payload, so the card has
+  // its own date range. Older brand databases answer `available: false`.
   async function getIntentReport(spec) {
     const { conn, start, end, brandKey } = spec;
     const basis = OVERLAP_BASES.includes(spec.basis) ? spec.basis : "behavior";
@@ -1243,9 +1191,8 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
     const meta = { available: true, sections: {} };
 
     try {
-      const [dayRows, totalRows, startedRes] = await Promise.all([
-        select(conn, buildReportQuery({ basis, byDay: true, start, endExclusive }), brandKey),
-        select(conn, buildReportQuery({ basis, byDay: false, start, endExclusive }), brandKey),
+      const [dayRows, startedRes] = await Promise.all([
+        select(conn, buildReportQuery({ basis, start, endExclusive }), brandKey),
         // optional: needs intent_daily_summary.sessions_started, added by the pipeline's rollup
         selectOptional(conn, buildReportStartedQuery({ start, end }), "sessionsStarted", meta, brandKey),
       ]);
@@ -1256,7 +1203,6 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
           start,
           end,
           dayRows,
-          totalRow: totalRows?.[0],
           startedRows: startedRes.ok ? startedRes.rows : null,
         }),
       };
@@ -1268,7 +1214,6 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
             available: false,
             reason: isMissingTable(err) ? "intent_tables_missing" : "schema_unsupported",
           },
-          total: null,
           days: [],
         };
       }

@@ -17,7 +17,7 @@ const SPEC = { brandKey: "BBB", start: "2026-10-10", end: "2026-10-12", basis: "
 
 function kpiRow(overrides = {}) {
   const row = {};
-  ["visitors", "high", "medium", "low", "productViews", "pageViews", "addToCart", "checkouts"].forEach((id) => {
+  ["visitors", "high", "medium", "low"].forEach((id) => {
     row[`${id}_users`] = 0;
     row[`${id}_sessions`] = 0;
   });
@@ -25,10 +25,13 @@ function kpiRow(overrides = {}) {
 }
 
 const DAY_ROWS = [
-  kpiRow({ report_day: "2026-10-10", visitors_users: "10", visitors_sessions: "14", high_users: "2", checkouts_users: "1" }),
-  kpiRow({ report_day: "2026-10-12", visitors_users: "20", visitors_sessions: "25", productViews_users: "9", productViews_sessions: "11" }),
+  kpiRow({
+    report_day: "2026-10-10",
+    visitors_users: "10", visitors_sessions: "14",
+    high_users: "2", high_sessions: "3", medium_users: "4", medium_sessions: "5", low_users: "4", low_sessions: "6",
+  }),
+  kpiRow({ report_day: "2026-10-12", visitors_users: "20", visitors_sessions: "25", low_sessions: "11" }),
 ];
-const TOTAL_ROW = kpiRow({ visitors_users: "27", visitors_sessions: "39", high_users: "5" });
 const STARTED_ROWS = [
   { report_day: "2026-10-10", sessions_started: "100" },
   { report_day: "2026-10-11", sessions_started: "120" },
@@ -38,14 +41,12 @@ const STARTED_ROWS = [
 function makeConn(overrides = {}) {
   const handlers = {
     days: () => DAY_ROWS,
-    total: () => [TOTAL_ROW],
     started: () => STARTED_ROWS,
     ...overrides,
   };
   const query = jest.fn(async (sql, options) => {
     if (sql.includes("FROM intent_daily_summary")) return handlers.started(sql, options);
-    if (sql.includes("ORDER BY report_day")) return handlers.days(sql, options);
-    if (sql.includes("FROM intent_sessions")) return handlers.total(sql, options);
+    if (sql.includes("FROM intent_sessions")) return handlers.days(sql, options);
     throw new Error(`unexpected sql: ${sql}`);
   });
   return { query };
@@ -64,34 +65,31 @@ describe("intentFunnelService.getIntentReport", () => {
     expect(out.days.map((d) => d.date)).toEqual(["2026-10-10", "2026-10-11", "2026-10-12"]);
 
     expect(out.days[0].kpis.visitors).toEqual({ users: 10, sessions: 14 });
-    expect(out.days[0].kpis.high.users).toBe(2);
-    expect(out.days[0].kpis.checkouts.users).toBe(1);
-    expect(out.days[2].kpis.productViews).toEqual({ users: 9, sessions: 11 });
+    expect(out.days[0].kpis.high).toEqual({ users: 2, sessions: 3 });
+    expect(out.days[0].kpis.medium).toEqual({ users: 4, sessions: 5 });
+    expect(out.days[0].kpis.low).toEqual({ users: 4, sessions: 6 });
+    expect(out.days[2].kpis.low.sessions).toBe(11);
     // a day without sessions is a row of zeros, not a missing row
     expect(out.days[1].kpis.visitors).toEqual({ users: 0, sessions: 0 });
-    expect(Object.keys(out.days[1].kpis)).toEqual([
-      "visitors", "high", "medium", "low", "productViews", "pageViews", "addToCart", "checkouts",
-    ]);
   });
 
-  test("the range total is its own query (visitors are distinct across days, not summed)", async () => {
+  test("only the KPIs the report shows are computed, and there is no range total", async () => {
     const conn = makeConn();
     const out = await newService().getIntentReport({ ...SPEC, conn });
-    // 10 + 20 daily visitors, but 27 distinct visitors in the whole range
-    expect(out.total.kpis.visitors).toEqual({ users: 27, sessions: 39 });
-    expect(out.total.kpis.high.users).toBe(5);
-
-    const totalCall = conn.query.mock.calls.find(
-      ([sql]) => sql.includes("FROM intent_sessions") && !sql.includes("ORDER BY report_day"),
-    );
-    expect(totalCall[0]).toContain("GROUP BY actor_id");
-    expect(totalCall[0]).not.toContain("report_day");
+    expect(Object.keys(out.days[0].kpis)).toEqual(["visitors", "high", "medium", "low"]);
+    expect(out).not.toHaveProperty("total");
+    // one scan of intent_sessions plus the rollup read
+    expect(conn.query).toHaveBeenCalledTimes(2);
+    const sessionsSql = conn.query.mock.calls.find(([sql]) => sql.includes("FROM intent_sessions"))[0];
+    // none of the columns for KPIs the table does not show (the behaviour rules still read their own inputs)
+    expect(sessionsSql).not.toContain("AS pv");
+    expect(sessionsSql).not.toContain("AS atc");
+    expect(sessionsSql).not.toContain("page_view_count");
   });
 
   test("Total Sessions come from the daily rollup; a day it has not filled yet is null", async () => {
     const out = await newService().getIntentReport({ ...SPEC, conn: makeConn() });
     expect(out.days.map((d) => d.sessionsStarted)).toEqual([100, 120, null]);
-    expect(out.total.sessionsStarted).toBe(220);
   });
 
   test("without the rollup column the report still works, Total Sessions are null", async () => {
@@ -106,14 +104,13 @@ describe("intentFunnelService.getIntentReport", () => {
     expect(out.meta.available).toBe(true);
     expect(out.meta.sections.sessionsStarted).toMatchObject({ available: false });
     expect(out.days.every((d) => d.sessionsStarted === null)).toBe(true);
-    expect(out.total.sessionsStarted).toBeNull();
-    expect(out.total.kpis.visitors.users).toBe(27);
+    expect(out.days[0].kpis.visitors.sessions).toBe(14);
   });
 
   describe("intent levels follow the page's basis", () => {
     test("behaviour counts a visitor once, at their best level", () => {
       const { sql } = _internal.buildReportQuery({
-        basis: "behavior", byDay: true, start: "2026-10-10", endExclusive: "2026-10-13",
+        basis: "behavior", start: "2026-10-10", endExclusive: "2026-10-13",
       });
       expect(sql).toContain("h = 0 AND m > 0");
       expect(sql).toContain("h = 0 AND m = 0 AND l > 0");
@@ -123,7 +120,7 @@ describe("intentFunnelService.getIntentReport", () => {
 
     test("score counts a visitor in every bucket they had a session in, scored sessions only", () => {
       const { sql } = _internal.buildReportQuery({
-        basis: "score", byDay: false, start: "2026-10-10", endExclusive: "2026-10-13",
+        basis: "score", start: "2026-10-10", endExclusive: "2026-10-13",
       });
       expect(sql).toContain("intent_status = 'scored'");
       expect(sql).toContain("intent_bucket IN ('high', 'medium', 'low')");
@@ -145,24 +142,23 @@ describe("intentFunnelService.getIntentReport", () => {
     test("dates are bound parameters, never part of the SQL, and no query selects *", async () => {
       const conn = makeConn();
       await newService().getIntentReport({ ...SPEC, conn });
-      expect(conn.query).toHaveBeenCalledTimes(3);
       conn.query.mock.calls.forEach(([sql, options]) => {
         expect(sql).not.toMatch(/select\s+\*/i);
         expect(sql).not.toContain("BBB");
         expect(sql).not.toContain("2026-10");
         expect(Array.isArray(options.replacements)).toBe(true);
       });
-      const dayCall = conn.query.mock.calls.find(([sql]) => sql.includes("ORDER BY report_day"));
+      const dayCall = conn.query.mock.calls.find(([sql]) => sql.includes("FROM intent_sessions"));
       expect(dayCall[1].replacements).toEqual(["2026-10-10", "2026-10-13"]);
     });
 
     test("results are cached per brand and never cross tenants", async () => {
       const service = newService();
-      const connB = makeConn({ total: () => [kpiRow({ visitors_users: "5" })] });
+      const connB = makeConn({ days: () => [kpiRow({ report_day: "2026-10-10", visitors_sessions: "5" })] });
       const a = await service.getIntentReport({ ...SPEC, brandKey: "BBB", conn: makeConn() });
       const b = await service.getIntentReport({ ...SPEC, brandKey: "PTS", conn: connB });
-      expect(a.total.kpis.visitors.users).toBe(27);
-      expect(b.total.kpis.visitors.users).toBe(5);
+      expect(a.days[0].kpis.visitors.sessions).toBe(14);
+      expect(b.days[0].kpis.visitors.sessions).toBe(5);
       expect(connB.query).toHaveBeenCalled();
     });
   });
@@ -176,14 +172,13 @@ describe("intentFunnelService.getIntentReport", () => {
       });
       expect(out.meta).toEqual({ available: false, reason: "intent_tables_missing" });
       expect(out.days).toEqual([]);
-      expect(out.total).toBeNull();
     });
 
     test("an older intent_sessions layout is reported as unsupported", async () => {
       const bad = Object.assign(new Error("Unknown column"), { code: "ER_BAD_FIELD_ERROR", errno: 1054 });
       const out = await newService().getIntentReport({
         ...SPEC,
-        conn: makeConn({ total: () => { throw bad; } }),
+        conn: makeConn({ days: () => { throw bad; } }),
       });
       expect(out.meta).toEqual({ available: false, reason: "schema_unsupported" });
     });
@@ -195,7 +190,7 @@ describe("intentFunnelService.getIntentReport", () => {
       ).rejects.toThrow("timeout");
       const boom = Object.assign(new Error("connection lost"), { code: "PROTOCOL_CONNECTION_LOST" });
       await expect(
-        newService().getIntentReport({ ...SPEC, conn: makeConn({ total: () => { throw boom; } }) }),
+        newService().getIntentReport({ ...SPEC, conn: makeConn({ days: () => { throw boom; } }) }),
       ).rejects.toThrow("connection lost");
     });
   });

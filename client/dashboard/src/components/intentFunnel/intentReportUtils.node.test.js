@@ -2,89 +2,73 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   REPORT_COLUMNS,
-  buildPresets,
   buildReportCsv,
+  buildReportFilename,
   cellDisplay,
   csvEscape,
-  formatRangeLabel,
-  rawValue,
+  formatReportDate,
+  sessionValue,
   sortDaysDescending,
   validateRange,
 } from "./intentReportUtils.js";
 
-const kpi = (users, sessions = users) => ({ users, sessions });
-const row = {
-  sessionsStarted: 1000,
+const kpi = (users, sessions) => ({ users, sessions });
+const day = {
+  date: "2026-10-28",
+  sessionsStarted: 15026,
   kpis: {
-    visitors: kpi(200, 260),
-    high: kpi(20, 25),
-    medium: kpi(80, 100),
-    low: kpi(100, 135),
-    productViews: kpi(100, 140),
-    pageViews: kpi(180, 240),
-    addToCart: kpi(25, 30),
-    checkouts: kpi(5, 6),
+    visitors: kpi(13034, 15874),
+    high: kpi(3965, 4700),
+    medium: kpi(819, 1000),
+    low: kpi(8251, 10174),
+    // KPIs that are not report columns must never leak into the table
+    productViews: kpi(8908, 9500),
+    pageViews: kpi(13023, 14000),
+    addToCart: kpi(1754, 1800),
+    checkouts: kpi(1111, 1150),
   },
 };
 
-test("the columns are the KPI cards of the page, Total Sessions first", () => {
+test("the report has exactly six columns in this order, and no other KPI", () => {
   assert.deepEqual(
     REPORT_COLUMNS.map((column) => column.label),
-    [
-      "Total Sessions",
-      "Unique Visitors",
-      "High Intent Users",
-      "Medium Intent Users",
-      "Low Intent Users",
-      "Product Page Views",
-      "Page Views",
-      "Add to Cart",
-      "Checkouts Started",
-    ],
+    ["Date", "Total Sessions", "Unique Visitors", "High Intent Users", "Medium Intent Users", "Low Intent Users"],
+  );
+  const labels = REPORT_COLUMNS.map((column) => column.label).join(" ");
+  ["Product", "Page Views", "Add to Cart", "Checkouts", "Orders", "Conversion", "Prev Step"].forEach((word) =>
+    assert.ok(!labels.includes(word), word),
   );
 });
 
-test("rawValue reads visitors or sessions, and Total Sessions as it is", () => {
-  assert.equal(rawValue(row, "visitors", "users"), 200);
-  assert.equal(rawValue(row, "visitors", "sessions"), 260);
-  assert.equal(rawValue(row, "sessionsStarted", "sessions"), 1000);
-  assert.equal(rawValue({ kpis: {} }, "visitors", "users"), 0);
-  assert.equal(rawValue({ sessionsStarted: null, kpis: {} }, "sessionsStarted", "users"), null);
+test("every figure is the session value of its KPI, never the visitor value", () => {
+  assert.equal(sessionValue(day, "sessionsStarted"), 15026);
+  assert.equal(sessionValue(day, "visitors"), 15874);
+  assert.equal(sessionValue(day, "high"), 4700);
+  assert.equal(sessionValue(day, "medium"), 1000);
+  assert.equal(sessionValue(day, "low"), 10174);
 });
 
-test("count mode shows grouped numbers; a missing Total Sessions shows a dash", () => {
-  assert.deepEqual(cellDisplay(row, "visitors", { mode: "count", unit: "users" }), { text: "200", csv: "200" });
-  assert.equal(cellDisplay({ ...row, sessionsStarted: 123456 }, "sessionsStarted", {}).text, "1,23,456");
-  assert.deepEqual(cellDisplay({ sessionsStarted: null, kpis: {} }, "sessionsStarted", {}), { text: "-", csv: "" });
+test("a missing KPI is zero, but a Total Sessions the rollup has not filled is a dash", () => {
+  assert.equal(sessionValue({ kpis: {} }, "visitors"), 0);
+  assert.equal(sessionValue(undefined, "high"), 0);
+  assert.equal(sessionValue({ sessionsStarted: null, kpis: {} }, "sessionsStarted"), null);
+  assert.deepEqual(cellDisplay({ sessionsStarted: null, kpis: {} }, "sessionsStarted"), { text: "-", csv: "" });
+  assert.deepEqual(cellDisplay({ sessionsStarted: 0, kpis: {} }, "sessionsStarted"), { text: "0", csv: "0" });
 });
 
-test("percent mode: previous step follows the funnel, share is of unique visitors", () => {
-  const prev = { mode: "percent", unit: "users", base: "prevStep" };
-  assert.equal(cellDisplay(row, "productViews", prev).text, "50.0%"); // 100 / 200 visitors
-  assert.equal(cellDisplay(row, "addToCart", prev).text, "25.0%"); // 25 / 100 product page views
-  assert.equal(cellDisplay(row, "checkouts", prev).text, "20.0%"); // 5 / 25 add to cart
-  const share = { mode: "percent", unit: "users", base: "share" };
-  assert.equal(cellDisplay(row, "addToCart", share).text, "12.5%"); // 25 / 200
-  assert.equal(cellDisplay(row, "checkouts", share).text, "2.5%"); // 5 / 200
-  assert.equal(cellDisplay(row, "high", share).text, "10.0%"); // 20 / 200
+test("cells group digits the Indian way on screen and stay plain numbers in the CSV", () => {
+  assert.deepEqual(cellDisplay(day, "visitors"), { text: "15,874", csv: "15874" });
+  assert.deepEqual(cellDisplay({ kpis: { visitors: kpi(0, 1234567) } }, "visitors"), {
+    text: "12,34,567",
+    csv: "1234567",
+  });
 });
 
-test("percent mode keeps Total Sessions and Unique Visitors as counts", () => {
-  const options = { mode: "percent", unit: "users", base: "prevStep" };
-  assert.equal(cellDisplay(row, "visitors", options).text, "200");
-  assert.equal(cellDisplay(row, "sessionsStarted", options).text, "1,000");
-});
-
-test("percent mode uses the chosen unit for both parts of the share", () => {
-  const options = { mode: "percent", unit: "sessions", base: "share" };
-  assert.equal(cellDisplay(row, "checkouts", options).text, "2.3%"); // 6 / 260
-});
-
-test("a share is capped at 100 and a zero denominator is a dash", () => {
-  const odd = { kpis: { visitors: kpi(10), checkouts: kpi(40) } };
-  assert.equal(cellDisplay(odd, "checkouts", { mode: "percent", base: "share" }).text, "100.0%");
-  const empty = { kpis: { visitors: kpi(0), checkouts: kpi(3) } };
-  assert.equal(cellDisplay(empty, "checkouts", { mode: "percent", base: "share" }).text, "-");
+test("the date reads like '28 Oct 2026'", () => {
+  assert.equal(formatReportDate("2026-10-28"), "28 Oct 2026");
+  assert.equal(formatReportDate("2026-01-05"), "5 Jan 2026");
+  assert.equal(formatReportDate("nope"), "");
+  assert.deepEqual(cellDisplay(day, "date"), { text: "28 Oct 2026", csv: "28 Oct 2026" });
 });
 
 test("days are listed newest first without mutating the input", () => {
@@ -92,13 +76,6 @@ test("days are listed newest first without mutating the input", () => {
   assert.deepEqual(sortDaysDescending(days).map((d) => d.date), ["2026-10-12", "2026-10-11", "2026-10-10"]);
   assert.equal(days[0].date, "2026-10-10");
   assert.deepEqual(sortDaysDescending(null), []);
-});
-
-test("range labels read naturally", () => {
-  assert.equal(formatRangeLabel("2026-10-20", "2026-10-26"), "Oct 20 - Oct 26, 2026");
-  assert.equal(formatRangeLabel("2026-10-26", "2026-10-26"), "Oct 26, 2026");
-  assert.equal(formatRangeLabel("2025-12-30", "2026-01-02"), "Dec 30, 2025 - Jan 2, 2026");
-  assert.equal(formatRangeLabel("", ""), "Select dates");
 });
 
 test("validateRange rejects missing, reversed and over-long ranges", () => {
@@ -110,14 +87,6 @@ test("validateRange rejects missing, reversed and over-long ranges", () => {
   assert.match(validateRange("2025-10-25", "2026-10-26"), /at most 366/); // 367 days
 });
 
-test("presets end today, except 'Same as page' which keeps the page range", () => {
-  const presets = buildPresets("2026-10-26", { start: "2026-10-20", end: "2026-10-22" });
-  assert.deepEqual(presets[0], { id: "page", label: "Same as page", start: "2026-10-20", end: "2026-10-22" });
-  const week = presets.find((preset) => preset.id === "7d");
-  assert.deepEqual([week.start, week.end], ["2026-10-20", "2026-10-26"]);
-  presets.forEach((preset) => assert.equal(validateRange(preset.start, preset.end), ""));
-});
-
 test("csvEscape quotes commas, quotes and line breaks", () => {
   assert.equal(csvEscape("plain"), "plain");
   assert.equal(csvEscape("a,b"), '"a,b"');
@@ -125,17 +94,16 @@ test("csvEscape quotes commas, quotes and line breaks", () => {
   assert.equal(csvEscape(null), "");
 });
 
-test("the CSV has a header, the range row and every day, in the displayed mode", () => {
-  const csv = buildReportCsv(
-    [
-      { label: "Selected range", row },
-      { label: "2026-10-26", row },
-    ],
-    { mode: "percent", unit: "users", base: "share" },
-  );
+test("the CSV is the six columns and one row per day, in the order given", () => {
+  const csv = buildReportCsv([day, { date: "2026-10-27", sessionsStarted: null, kpis: { visitors: kpi(1, 2) } }]);
   const lines = csv.split("\r\n");
   assert.equal(lines.length, 3);
-  assert.equal(lines[0], ["Date", ...REPORT_COLUMNS.map((c) => c.label)].join(","));
-  // Total Sessions and Unique Visitors stay counts; the others are shares of visitors
-  assert.equal(lines[2], "2026-10-26,1000,200,10.0%,40.0%,50.0%,50.0%,90.0%,12.5%,2.5%");
+  assert.equal(lines[0], "Date,Total Sessions,Unique Visitors,High Intent Users,Medium Intent Users,Low Intent Users");
+  assert.equal(lines[1], "28 Oct 2026,15026,15874,4700,1000,10174");
+  assert.equal(lines[2], "27 Oct 2026,,2,0,0,0");
+  lines.forEach((line) => assert.equal(line.split(",").length, 6));
+});
+
+test("the file name carries the brand and the selected dates", () => {
+  assert.equal(buildReportFilename("BBB", "2026-10-22", "2026-10-28"), "intent-report_BBB_2026-10-22_to_2026-10-28.csv");
 });

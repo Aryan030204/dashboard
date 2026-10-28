@@ -4,14 +4,11 @@ import { Box, Button, ToggleButton, ToggleButtonGroup, Typography } from "@mui/m
 import { EmptyStateCard, SectionFallback } from "../routes/shared/RouteUi.jsx";
 import { getIntentFunnel } from "../lib/api.js";
 import IntentKpiGrid from "./intentFunnel/IntentKpiGrid.jsx";
-import IntentFunnelBars from "./intentFunnel/IntentFunnelBars.jsx";
-import IntentTrendChart from "./intentFunnel/IntentTrendChart.jsx";
 import IntentDistributionDonut from "./intentFunnel/IntentDistributionDonut.jsx";
 import IntentSourceOverlap from "./intentFunnel/IntentSourceOverlap.jsx";
-import IntentConversionRates from "./intentFunnel/IntentConversionRates.jsx";
 import TopProductsByIntent from "./intentFunnel/TopProductsByIntent.jsx";
-import FunnelExploration from "./intentFunnel/FunnelExploration.jsx";
-import { prepareTrend } from "./intentFunnel/intentFunnelUtils.js";
+import PathExplorationSankey from "./intentFunnel/PathExplorationSankey.jsx";
+import IntentReport from "./intentFunnel/IntentReport.jsx";
 
 // The UI tab value -> the sort value the API whitelists.
 const API_SORT = { views: "views", addToCart: "add_to_cart", checkouts: "checkouts" };
@@ -24,8 +21,10 @@ const rowSx = (columns) => ({
 });
 
 export default function IntentFunnelPanel({ brandKey, start, end }) {
-  const [granularity, setGranularity] = useState("daily");
   const [topProductsSort, setTopProductsSort] = useState("views");
+  // Funnel Exploration: the starting event and how many of the most common paths to show per step.
+  const [pathStart, setPathStart] = useState("page_viewed");
+  const [topN, setTopN] = useState(5);
   // "behavior": rule-based over every session, each visitor at their best level (the same idea as Microsoft
   // Clarity's user intent). "score": percentile buckets of the intent score. Both come in the same response;
   // until the user picks one, behaviour is shown whenever the server sent it.
@@ -57,6 +56,8 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
         start: startKey,
         end: endKey,
         sort: API_SORT[topProductsSort],
+        pathStart,
+        pathTop: topN,
       },
       { signal: controller.signal },
     ).then((res) => {
@@ -69,12 +70,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
       setLoading(false);
     });
     return () => controller.abort();
-  }, [brandKey, startKey, endKey, topProductsSort, reloadKey]);
-
-  const trend = useMemo(
-    () => prepareTrend(data?.trend || [], granularity),
-    [data?.trend, granularity],
-  );
+  }, [brandKey, startKey, endKey, topProductsSort, pathStart, topN, reloadKey]);
 
   const behavior = data?.behavior || null;
   const basis = intentBasis || (behavior ? "behavior" : "score");
@@ -162,11 +158,13 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
           <IntentKpiGrid kpis={kpis} sessionsStarted={data.sessionsStarted} />
         </Box>
 
-        <Box sx={rowSx("minmax(0, 1.7fr) minmax(0, 1fr)")}>
-          <IntentTrendChart
-            trend={trend}
-            granularity={granularity}
-            onGranularityChange={setGranularity}
+        {/* 1. User Overlap and Intent Distribution, side by side */}
+        <Box sx={rowSx("minmax(0, 1fr) minmax(0, 1fr)")}>
+          <IntentSourceOverlap
+            brandKey={brandKey}
+            start={startKey}
+            end={endKey}
+            basis={useBehavior ? "behavior" : "score"}
           />
           <IntentDistributionDonut
             distribution={useBehavior ? behavior.distribution : data.distribution}
@@ -176,27 +174,28 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
           />
         </Box>
 
-        <IntentSourceOverlap
-          brandKey={brandKey}
-          start={startKey}
-          end={endKey}
-          basis={useBehavior ? "behavior" : "score"}
+        {/* 2. Top Products by Intent, full width */}
+        <TopProductsByIntent
+          products={data.topProducts}
+          sortBy={topProductsSort}
+          onSortByChange={setTopProductsSort}
         />
 
-        <IntentFunnelBars funnel={data.funnel} />
+        {/* 3. Funnel Exploration, full width */}
+        <PathExplorationSankey
+          paths={data.paths}
+          pathStart={pathStart}
+          onPathStartChange={setPathStart}
+          topN={topN}
+          onTopNChange={setTopN}
+        />
 
-        <Box sx={rowSx("minmax(0, 1fr) minmax(0, 1.4fr)")}>
-          <IntentConversionRates conversionRates={data.conversionRates} />
-          <TopProductsByIntent
-            products={data.topProducts}
-            sortBy={topProductsSort}
-            onSortByChange={setTopProductsSort}
-          />
-        </Box>
-
-        <FunnelExploration
-          products={data.topProducts}
-          rankedByViews={topProductsSort === "views"}
+        {/* 4. Intent Report, full width, last */}
+        <IntentReport
+          brandKey={brandKey}
+          pageStart={startKey}
+          pageEnd={endKey}
+          basis={useBehavior ? "behavior" : "score"}
         />
       </Box>
     );

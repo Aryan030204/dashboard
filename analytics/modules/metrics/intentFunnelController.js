@@ -2,7 +2,6 @@ const { handleControllerError } = require('../../shared/middleware/handleControl
 const { daysInclusive } = require('../../shared/utils/date');
 const { normalizeMetricRequest } = require('./requestNormalizer');
 const {
-  INTENT_LEVELS,
   OVERLAP_BASES,
   INTENT_FILTERS,
   PRODUCT_SORTS,
@@ -81,7 +80,7 @@ function buildIntentFunnelController({ intentFunnelService }) {
       }
     },
 
-    // User overlap by UTM source. `intent` is a comma list of levels (default: all three).
+    // User overlap by UTM source. `intent` is "all" (default) or one of high / medium / low.
     getSourceOverlap: async (req, res) => {
       try {
         if (!req.query.start || !req.query.end) {
@@ -99,12 +98,8 @@ function buildIntentFunnelController({ intentFunnelService }) {
           return badRequest(res, `Date range cannot exceed ${MAX_RANGE_DAYS} days`);
         }
 
-        const intents = String(req.query.intent || '')
-          .toLowerCase()
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean);
-        if (intents.some((value) => !INTENT_LEVELS.includes(value))) {
+        const intent = String(req.query.intent || 'all').toLowerCase();
+        if (!INTENT_FILTERS.includes(intent)) {
           return badRequest(res, 'Invalid intent');
         }
 
@@ -119,7 +114,7 @@ function buildIntentFunnelController({ intentFunnelService }) {
             brandKey: spec.brandKey,
             start: spec.start,
             end: spec.end,
-            intents,
+            intent,
             basis,
           }),
         );

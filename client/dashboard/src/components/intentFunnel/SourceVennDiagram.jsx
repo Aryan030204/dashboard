@@ -5,6 +5,7 @@ import {
   VENN_GEOMETRY,
   formatValue,
   getRegionAnchor,
+  getRegionCaption,
   regionIndices,
 } from "./intentSourceOverlapUtils.js";
 
@@ -50,8 +51,14 @@ export default function SourceVennDiagram({ sources, regions, activeId, onActive
         fill="#000"
         fillOpacity={0}
         pointerEvents="all"
+        // keyboard access: each region can be focused to read its value
+        tabIndex={0}
+        aria-label={getRegionCaption(region, circles)}
+        style={{ outline: "none" }}
         onMouseEnter={() => onActiveChange(region.id)}
         onMouseLeave={() => onActiveChange(null)}
+        onFocus={() => onActiveChange(region.id)}
+        onBlur={() => onActiveChange(null)}
       />
     );
     return <g key={region.id}>{clipped(indices.slice(0, -1), circle, uid)}</g>;

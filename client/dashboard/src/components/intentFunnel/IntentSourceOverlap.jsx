@@ -1,48 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Box,
-  Button,
-  Checkbox,
-  ListItemText,
-  MenuItem,
-  Select,
-  Skeleton,
-  Typography,
-} from "@mui/material";
+import { Box, Button, MenuItem, Select, Skeleton, Typography } from "@mui/material";
 import { getIntentSourceOverlap } from "../../lib/api.js";
 import { SectionCard } from "./shared.jsx";
 import SourceVennDiagram from "./SourceVennDiagram.jsx";
 import {
-  OVERLAP_LEVELS,
-  OVERLAP_LEVEL_LABELS,
-  SOURCE_COLORS,
-  describeLevels,
-  formatValue,
+  OVERLAP_INTENT_OPTIONS,
   getRegionCaption,
-  getRegionLabel,
   hasOverlapData,
   orderRegions,
-  regionIndices,
-  sanitizeLevels,
 } from "./intentSourceOverlapUtils.js";
 
 const INFO =
-  "Sessions from visitors who arrived through more than one traffic source. The circles are the brand's three biggest UTM sources in this range. Each region counts the sessions of visitors seen in exactly those sources; the centre, where all three meet, counts only the sessions that reached checkout. Facebook, Instagram and Meta are grouped as Meta, Google and YouTube as Google, and sessions without a UTM source as Direct.";
-
-// Legend dot: the source colour for a single circle, split colours for an overlap.
-function regionSwatch(indices) {
-  const colors = indices.map((index) => SOURCE_COLORS[index]).filter(Boolean);
-  if (colors.length <= 1) return colors[0] || "transparent";
-  const step = 100 / colors.length;
-  const stops = colors.map((color, i) => `${color} ${i * step}% ${(i + 1) * step}%`);
-  return `linear-gradient(90deg, ${stops.join(", ")})`;
-}
+  "Sessions from visitors who arrived through more than one traffic source. The circles are Google (including YouTube), Meta (Facebook and Instagram) and Others (every other source, including sessions without a UTM source). Each region counts the sessions of visitors seen in exactly those sources; the centre, where all three meet, counts only the sessions that reached checkout.";
 
 function Message({ children, action }) {
   return (
     <Box
       sx={{
-        minHeight: 200,
+        minHeight: 220,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -63,7 +38,7 @@ function Message({ children, action }) {
 // Fetches its own data (separate from the page payload), so changing the intent dropdown refetches only
 // this card. `start` / `end` are YYYY-MM-DD strings; `basis` follows the page's Behaviour / Score switch.
 export default function IntentSourceOverlap({ brandKey, start, end, basis = "behavior" }) {
-  const [levels, setLevels] = useState(OVERLAP_LEVELS);
+  const [intent, setIntent] = useState("all");
   const [data, setData] = useState(null);
   const [status, setStatus] = useState("loading"); // loading | ready | error | unavailable
   const [reloadKey, setReloadKey] = useState(0);
@@ -80,7 +55,7 @@ export default function IntentSourceOverlap({ brandKey, start, end, basis = "beh
     setStatus("loading");
     setActiveId(null);
     getIntentSourceOverlap(
-      { brand_key: brandKey, start, end, intent: levels, basis },
+      { brand_key: brandKey, start, end, intent, basis },
       { signal: controller.signal },
     ).then((res) => {
       if (res.aborted) return;
@@ -93,12 +68,11 @@ export default function IntentSourceOverlap({ brandKey, start, end, basis = "beh
       setStatus("ready");
     });
     return () => controller.abort();
-  }, [brandKey, start, end, basis, levels, reloadKey]);
+  }, [brandKey, start, end, basis, intent, reloadKey]);
 
   const sources = useMemo(() => data?.sources || [], [data]);
   const regions = useMemo(() => orderRegions(data?.regions || [], sources), [data, sources]);
   const activeRegion = regions.find((region) => region.id === activeId) || null;
-  const otherSessions = Number(data?.otherSessions) || 0;
 
   const unavailable =
     status === "unavailable" || (status === "ready" && data?.meta?.available === false);
@@ -106,23 +80,20 @@ export default function IntentSourceOverlap({ brandKey, start, end, basis = "beh
 
   const intentSelect = (
     <Select
-      multiple
       size="small"
-      value={levels}
-      onChange={(event) => {
-        const next = event.target.value;
-        const picked = typeof next === "string" ? next.split(",") : next;
-        // keep at least one level selected
-        if (picked.length) setLevels(sanitizeLevels(picked));
-      }}
-      renderValue={() => describeLevels(levels)}
-      inputProps={{ "aria-label": "Intent filter" }}
-      sx={{ minWidth: 150, fontSize: 13, "& .MuiSelect-select": { py: 0.5 } }}
+      value={intent}
+      onChange={(event) => setIntent(event.target.value)}
+      inputProps={{ "aria-label": "Intent" }}
+      startAdornment={
+        <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
+          Intent
+        </Typography>
+      }
+      sx={{ minWidth: 170, fontSize: 13, "& .MuiSelect-select": { py: 0.5 } }}
     >
-      {OVERLAP_LEVELS.map((level) => (
-        <MenuItem key={level} value={level} dense>
-          <Checkbox size="small" checked={levels.includes(level)} sx={{ p: 0.5, mr: 0.5 }} />
-          <ListItemText primary={OVERLAP_LEVEL_LABELS[level]} />
+      {OVERLAP_INTENT_OPTIONS.map((option) => (
+        <MenuItem key={option.value} value={option.value} dense>
+          {option.label}
         </MenuItem>
       ))}
     </Select>
@@ -140,27 +111,26 @@ export default function IntentSourceOverlap({ brandKey, start, end, basis = "beh
           </Button>
         }
       >
-        Couldn&apos;t load source overlap. Please try again.
+        Couldn&apos;t load user overlap. Please try again.
       </Message>
     );
   } else if (unavailable) {
-    body = <Message>Source overlap isn&apos;t available for this brand yet.</Message>;
+    body = <Message>User overlap isn&apos;t available for this brand yet.</Message>;
   } else if (empty) {
-    body = <Message>No UTM data for the selected date range and intent.</Message>;
+    body = <Message>No sessions for the selected date range and intent.</Message>;
   } else if (data) {
     body = (
       <Box
         sx={{
           display: "flex",
-          // full-width card: diagram and legend side by side from the md breakpoint
-          flexDirection: { xs: "column", md: "row" },
-          alignItems: { xs: "center", md: "flex-start" },
-          gap: 2,
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 1,
           opacity: status === "loading" ? 0.6 : 1,
           transition: "opacity 0.2s ease",
         }}
       >
-        <Box sx={{ width: "100%", maxWidth: 340, flexShrink: 0 }}>
+        <Box sx={{ width: "100%", maxWidth: 340 }}>
           <SourceVennDiagram
             sources={sources}
             regions={regions}
@@ -168,76 +138,20 @@ export default function IntentSourceOverlap({ brandKey, start, end, basis = "beh
             onActiveChange={setActiveId}
           />
         </Box>
-
-        <Box sx={{ flex: 1, minWidth: 0, width: "100%" }}>
-          <Box component="ul" sx={{ listStyle: "none", m: 0, p: 0 }}>
-            {regions.map((region) => {
-              const indices = regionIndices(region, sources);
-              const active = region.id === activeId;
-              return (
-                <Box
-                  component="li"
-                  key={region.id}
-                  tabIndex={0}
-                  aria-label={getRegionCaption(region, sources)}
-                  onMouseEnter={() => setActiveId(region.id)}
-                  onMouseLeave={() => setActiveId(null)}
-                  onFocus={() => setActiveId(region.id)}
-                  onBlur={() => setActiveId(null)}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1,
-                    px: 1,
-                    py: 0.6,
-                    borderRadius: 1,
-                    bgcolor: active ? "action.hover" : "transparent",
-                    outline: "none",
-                    "&:focus-visible": { boxShadow: (theme) => `0 0 0 2px ${theme.palette.primary.main}` },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      flexShrink: 0,
-                      background: regionSwatch(indices),
-                    }}
-                  />
-                  <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
-                    {getRegionLabel(region, sources)}
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {formatValue(region.value)}
-                  </Typography>
-                </Box>
-              );
-            })}
-          </Box>
-
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            aria-live="polite"
-            sx={{ display: "block", mt: 1, minHeight: "2.6em" }}
-          >
-            {activeRegion
-              ? getRegionCaption(activeRegion, sources)
-              : "Hover a region or a row for details. The centre counts sessions that reached checkout."}
-          </Typography>
-          {otherSessions > 0 ? (
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-              {formatValue(otherSessions)} sessions from other sources are not shown.
-            </Typography>
-          ) : null}
-        </Box>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          aria-live="polite"
+          sx={{ minHeight: "1.5em", textAlign: "center" }}
+        >
+          {activeRegion ? getRegionCaption(activeRegion, sources) : ""}
+        </Typography>
       </Box>
     );
   }
 
   return (
-    <SectionCard title="User Overlap by UTM Source" info={INFO} action={intentSelect}>
+    <SectionCard title="User Overlap" subtitle="By UTM Source" info={INFO} action={intentSelect}>
       {body}
     </SectionCard>
   );

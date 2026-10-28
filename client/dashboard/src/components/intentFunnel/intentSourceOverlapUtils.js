@@ -1,14 +1,18 @@
 // Pure helpers for the "User Overlap by UTM Source" card (no React or MUI imports, so node can test them).
 
-export const OVERLAP_LEVELS = ["high", "medium", "low"];
+// The Intent dropdown: one value at a time. "all" applies no intent filter.
+export const OVERLAP_INTENT_OPTIONS = [
+  { value: "all", label: "All Intents" },
+  { value: "high", label: "High Intent" },
+  { value: "medium", label: "Medium Intent" },
+  { value: "low", label: "Low Intent" },
+];
 
-export const OVERLAP_LEVEL_LABELS = {
-  high: "High Intent",
-  medium: "Medium Intent",
-  low: "Low Intent",
-};
+export function isOverlapIntent(value) {
+  return OVERLAP_INTENT_OPTIONS.some((option) => option.value === value);
+}
 
-// One colour per circle, in the order the API returns the sources (biggest first).
+// One colour per circle, in the order the API returns the sources (Google, Meta, Others).
 export const SOURCE_COLORS = ["#3b82f6", "#8b5cf6", "#10b981"];
 
 // Three equal circles in a triangle. `centroid` is where all three overlap.
@@ -35,18 +39,6 @@ const numberFormat = new Intl.NumberFormat("en-IN");
 
 export function formatValue(value) {
   return numberFormat.format(Math.round(Number(value) || 0));
-}
-
-// The intent dropdown always keeps at least one level, in a fixed order.
-export function sanitizeLevels(levels) {
-  const picked = OVERLAP_LEVELS.filter((level) => (levels || []).includes(level));
-  return picked.length ? picked : [...OVERLAP_LEVELS];
-}
-
-export function describeLevels(levels) {
-  const picked = sanitizeLevels(levels);
-  if (picked.length === OVERLAP_LEVELS.length) return "All intents";
-  return picked.map((level) => OVERLAP_LEVEL_LABELS[level]).join(", ");
 }
 
 // Which circles (indices into `sources`) a region belongs to.
