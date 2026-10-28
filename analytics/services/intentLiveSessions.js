@@ -53,10 +53,11 @@ function countEvents(sequence) {
   return counts;
 }
 
-// The same rule as BEHAVIOR_LEVEL_SQL in intentFunnelService.js (without the bot case).
-function classifyLevel({ durationMs, clicks, scrolls, productViews, addToCarts, checkouts }) {
+// The same rule as BEHAVIOR_LEVEL_SQL in intentFunnelService.js (without the bot case). A product view is a
+// supporting signal only: High needs a click plus an add to cart or a checkout started.
+function classifyLevel({ durationMs, clicks, scrolls, addToCarts, checkouts }) {
   if (durationMs < MIN_DURATION_MS || (clicks === 0 && scrolls === 0)) return "low";
-  if (clicks > 0 && (productViews > 0 || addToCarts > 0 || checkouts > 0)) return "high";
+  if (clicks > 0 && (addToCarts > 0 || checkouts > 0)) return "high";
   return "medium";
 }
 

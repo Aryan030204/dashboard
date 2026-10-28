@@ -47,11 +47,13 @@ describe("intentLiveSessions", () => {
 
   test("the rules match the SQL: under 5 s or no clicks/scrolls is low; clicks plus a key action is high", () => {
     const base = { durationMs: 60000, clicks: 0, scrolls: 0, productViews: 0, addToCarts: 0, checkouts: 0 };
-    expect(classifyLevel({ ...base, durationMs: 4999, clicks: 3, productViews: 2 })).toBe("low");
+    expect(classifyLevel({ ...base, durationMs: 4999, clicks: 3, addToCarts: 1 })).toBe("low");   // too short for any level above Low
     expect(classifyLevel({ ...base })).toBe("low");                                      // long, but nothing done
     expect(classifyLevel({ ...base, scrolls: 2 })).toBe("medium");
     expect(classifyLevel({ ...base, clicks: 1 })).toBe("medium");                        // a click but no key action
-    expect(classifyLevel({ ...base, clicks: 1, productViews: 1 })).toBe("high");
+    expect(classifyLevel({ ...base, clicks: 1, productViews: 1 })).toBe("medium");   // a product view alone is not High
+    expect(classifyLevel({ ...base, clicks: 3, productViews: 5 })).toBe("medium");
+    expect(classifyLevel({ ...base, clicks: 0, scrolls: 2, productViews: 5 })).toBe("medium");
     expect(classifyLevel({ ...base, clicks: 1, addToCarts: 1 })).toBe("high");
     expect(classifyLevel({ ...base, clicks: 1, checkouts: 1 })).toBe("high");
     expect(classifyLevel({ ...base, productViews: 3 })).toBe("low");                     // viewing products, but no click or scroll

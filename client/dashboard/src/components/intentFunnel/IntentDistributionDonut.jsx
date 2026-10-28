@@ -7,14 +7,15 @@ import {
   formatCount,
   formatPct,
 } from "./intentFunnelUtils.js";
+import { resolveDonutView } from "./viewModels.js";
 
 const SCORE_INFO =
-  "Share of scored users classified as high, medium or low intent by score percentile. Sessions that are still being scored or were excluded are not included.";
+  "Share of scored sessions, or of scored visitors, classified as high, medium or low intent by score percentile. A visitor is counted once, in the level of their highest-scoring session, so the levels add up to the scored visitors. Sessions that are still being scored or were excluded are not included.";
 const BEHAVIOR_INFO =
-  "Intent by what the visitor did. Low: under 5 seconds, or no clicks and no scrolls. Medium: over 5 seconds with some interaction. High: over 5 seconds with clicks and a product view, add to cart or checkout. Every session is counted; one still in progress is counted at its current level and can move up. Bots are left out once identified. Visitors are counted once, at their best level.";
+  "Intent by what the visitor did. Low: under 5 seconds, or no clicks and no scrolls. Medium: over 5 seconds with some interaction. High: over 5 seconds with clicks and an add to cart or checkout started; a product view alone is not enough. Every session is counted; one still in progress is counted at its current level and can move up. Bots are left out once identified. Visitors are counted once, at their best level.";
 
-// `metric` picks what the donut counts: "users" or "sessions". `onMetricChange` (behaviour basis only)
-// shows the Visitors / Sessions switch; Clarity counts sessions.
+// `metric` picks what the donut counts: "users" (visitors) or "sessions", in BOTH the Score and the Behaviour basis.
+// `onMetricChange` shows the Visitors / Sessions switch; Clarity counts sessions, so compare with Sessions.
 export default function IntentDistributionDonut({
   distribution,
   metric = "users",
@@ -22,12 +23,8 @@ export default function IntentDistributionDonut({
   onMetricChange,
 }) {
   const theme = useTheme();
-  const bySessions = metric === "sessions";
-  const items = distribution?.items || [];
-  const total = (bySessions ? distribution?.totalSessions : distribution?.total) || 0;
-  const valueKey = bySessions ? "sessions" : "users";
-  const pctKey = bySessions ? "sessionsPct" : "pct";
-  const botsExcluded = distribution?.botsExcluded || 0;
+  const view = resolveDonutView({ distribution, metric, basis });
+  const { bySessions, items, total, botsExcluded } = view;
 
   return (
     <SectionCard
@@ -63,7 +60,7 @@ export default function IntentDistributionDonut({
             <PieChart>
               <Pie
                 data={items}
-                dataKey={valueKey}
+                dataKey="value"
                 nameKey="level"
                 innerRadius={58}
                 outerRadius={88}
@@ -103,7 +100,7 @@ export default function IntentDistributionDonut({
               {formatCount(total)}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {bySessions ? "Sessions" : "Users"}
+              {view.centerLabel}
             </Typography>
           </Box>
         </Box>
@@ -128,11 +125,16 @@ export default function IntentDistributionDonut({
                   {INTENT_LABELS[item.level]}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {formatCount(item[valueKey])} ({formatPct(item[pctKey])})
+                  {formatCount(item.value)} ({formatPct(item.pct)})
                 </Typography>
               </Box>
             </Box>
           ))}
+          {view.note ? (
+            <Typography variant="caption" color="text.secondary">
+              {view.note}
+            </Typography>
+          ) : null}
           {bySessions && botsExcluded > 0 ? (
             <Typography variant="caption" color="text.secondary">
               {formatCount(botsExcluded)} bot sessions excluded

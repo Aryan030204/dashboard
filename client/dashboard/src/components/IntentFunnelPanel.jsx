@@ -184,8 +184,8 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
           />
           <IntentDistributionDonut
             distribution={useBehavior ? behavior.distribution : data.distribution}
-            metric={useBehavior ? donutMetric : "users"}
-            onMetricChange={useBehavior ? setDonutMetric : undefined}
+            metric={donutMetric}
+            onMetricChange={setDonutMetric}
             basis={useBehavior ? "behavior" : "score"}
           />
         </Box>

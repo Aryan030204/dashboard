@@ -204,11 +204,65 @@ function buildBucketQuery({ prevStart, curStart, endExclusive }) {
   return { sql, params };
 }
 
+// Score view, visitors: every visitor gets exactly ONE level, the bucket of their highest-scoring scored session
+// in the period (ties broken by session id), the same rule the pipeline uses for a visitor's intent
+// (intent_engine/actor_scorer.py recompute_actors). So High + Medium + Low add up to the scored visitors, which is
+// the "unique visitors" of the score population. Counting COUNT(DISTINCT actor_id) per bucket instead, as this
+// page used to, put a visitor with a Low and a High session in both. GROUP_CONCAT ... ORDER BY puts the best
+// session's bucket first, and SUBSTRING_INDEX keeps only that one (a long list truncated by
+// group_concat_max_len still starts with it). Visitors with only pending or excluded sessions have no level and
+// are not in this population. One scan of intent_sessions for both periods, one result row.
+function buildScoreVisitorsQuery({ prevStart, curStart, endExclusive }) {
+  const outer = [];
+  ["cur", "prev"].forEach((period) => {
+    INTENT_LEVELS.forEach((level) => {
+      outer.push(`COALESCE(SUM(${period}_best = '${level}'), 0) AS ${period}_${level}_users`);
+    });
+  });
+  const sql = `
+    SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+      ${outer.join(",\n      ")}
+    FROM (
+      SELECT
+        actor_id,
+        SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN is_cur = 1 THEN intent_bucket END
+                                     ORDER BY predictive_score DESC, session_id), ',', 1) AS cur_best,
+        SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN is_cur = 0 THEN intent_bucket END
+                                     ORDER BY predictive_score DESC, session_id), ',', 1) AS prev_best
+      FROM (
+        SELECT actor_id, session_id, intent_bucket, predictive_score, session_start >= ? AS is_cur
+        FROM intent_sessions
+        WHERE session_start >= ? AND session_start < ?
+          AND intent_status = 'scored'
+          AND intent_bucket IN ('high', 'medium', 'low')
+      ) scored
+      GROUP BY actor_id
+    ) per_actor
+  `;
+  return { sql, params: [curStart, prevStart, endExclusive] };
+}
+
+// { high: { cur_users, prev_users }, medium: {...}, low: {...} } from the one result row, or null.
+function buildScoreVisitors(rows) {
+  const row = rows?.[0];
+  if (!row) return null;
+  const out = {};
+  INTENT_LEVELS.forEach((level) => {
+    out[level] = { cur_users: num(row[`cur_${level}_users`]), prev_users: num(row[`prev_${level}_users`]) };
+  });
+  return out;
+}
+
 // Behaviour-based intent: what the visitor actually did in each session, not where the session's score
 // falls among the brand's other sessions. Written to line up with Microsoft Clarity's User Intent:
 //   low    - under 5 seconds on the site, or any length with no clicks and no scrolls
-//   high   - over 5 seconds with clicks and at least one key action (product view, add to cart, checkout)
-//   medium - over 5 seconds with some interaction, but no key action
+//   high   - over 5 seconds with clicks and a strong intent signal: add to cart or checkout started
+//   medium - over 5 seconds with some interaction, but no strong signal
+// A product view is a supporting engagement signal, not a High trigger on its own: on a store most clicking
+// visitors view a product, so counting it made High far too easy (about 31% of sessions against about 13%
+// when only add to cart and checkout count). add_to_cart_count counts product_added_to_cart events (one per
+// product per session, the pipeline de-duplicates them) and checkout_started_count counts checkout_started
+// events; only "greater than 0" is used, so a repeated event cannot count twice.
 // It reads every closed session (scored, excluded as zero-signal, or still pending), so one-page bounces
 // land in "low" instead of disappearing. Bots are counted separately and left out of the three levels.
 // The score-based buckets above stay percentile based (about 28% of a brand's sessions are always "high").
@@ -216,14 +270,14 @@ const BEHAVIOR_MIN_DURATION_MS = 5000;
 const BEHAVIOR_LEVEL_SQL = `CASE
         WHEN intent_exclusion_reason = 'bot' THEN 'bot'
         WHEN session_time_spent_ms < ${BEHAVIOR_MIN_DURATION_MS} OR (click_count = 0 AND scroll_count = 0) THEN 'low'
-        WHEN click_count > 0 AND (product_view_count > 0 OR add_to_cart_count > 0 OR checkout_started_count > 0) THEN 'high'
+        WHEN click_count > 0 AND (add_to_cart_count > 0 OR checkout_started_count > 0) THEN 'high'
         ELSE 'medium'
       END`;
 const BEHAVIOR_RULES = Object.freeze({
   minDurationSeconds: BEHAVIOR_MIN_DURATION_MS / 1000,
   low: "Under 5 seconds, or no clicks and no scrolls",
   medium: "Over 5 seconds with some interaction",
-  high: "Over 5 seconds with clicks and a product view, add to cart or checkout",
+  high: "Over 5 seconds with clicks and an add to cart or checkout started",
 });
 
 // Short column tags for the per-actor counters below.
@@ -369,10 +423,35 @@ function buildClosedBestQueries({ actorIds, curStart, endExclusive }) {
   return queries;
 }
 
-// Sessions that started in the period, from the pipeline's daily rollup (intent_daily_summary.sessions_started:
-// distinct sessions with any event that day). A session exists from its first event, but intent_sessions only
-// gets its row once the visitor returns after the timeout, so the closed-session figures elsewhere on this
-// page are a fraction of what Shopify or Clarity count as sessions. One indexed query over the rollup.
+// Total Sessions: ONE canonical definition. A session is a row of intent_sessions (finished: closed by the
+// visitor coming back, or by the pipeline's idle-session sweep) or, until it finishes, the visitor's open session
+// in intent_actor_cursors. Total = finished rows + open sessions that started in the period. Everything else on the
+// page is a part of that: the intent distribution counts the finished sessions without bots plus the live open
+// ones, so
+//     total = bots + analysed + live + waiting        (waiting = open sessions older than the live window)
+// and the card shows each of those. The daily rollup (intent_daily_summary.sessions_started, built the same way by
+// the pipeline) only supplies the previous period for the change figure, and is kept as `rollup` to show how far
+// behind it is. It used to be COUNT(DISTINCT session_id) over behavioral_events, a different population that
+// missed click-only sessions.
+//
+// Open sessions started in the period, all of them (not only the live window). A range on the indexed
+// last_event_at, the same future-time guard as the live query, then session_start picks the ones that began in the
+// period. One indexed read, no events table.
+function buildOpenSessionsCountQuery({ curStart, endExclusive }) {
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+        COUNT(*) AS open_sessions
+      FROM intent_actor_cursors
+      WHERE session_id <> ''
+        AND last_event_at >= ? AND last_event_at <= UTC_TIMESTAMP() + INTERVAL ${FUTURE_TOLERANCE_HOURS} HOUR
+        AND session_start >= ? AND session_start < ?
+    `,
+    params: [curStart, curStart, endExclusive],
+  };
+}
+
+// The rollup's sessions_started for the period and the one before it (null columns: not filled yet).
 function buildSessionsStartedQuery({ prevStart, start, end }) {
   return {
     sql: `
@@ -386,28 +465,42 @@ function buildSessionsStartedQuery({ prevStart, start, end }) {
   };
 }
 
-// null while the pipeline has not filled sessions_started for the period yet (older rollup rows).
-// `liveCount`: open sessions classified at their current level (see buildBehavior). Analysed (closed rows)
-// plus live plus other adds up to the total; "other" is whatever is not in either: the backlog the sweep is
-// still closing, sessions without a visitor id, and future-dated events.
-function buildSessionsStarted(rows, totals, liveCount = 0) {
-  const row = rows?.[0];
-  if (!row || row.cur_started == null) return null;
-  const value = num(row.cur_started);
+// `totals`: the finished sessions of the period (cur_visitors_sessions, every row, bots included).
+// `openRows`: result of buildOpenSessionsCountQuery, or null when the cursor table is unavailable.
+// `liveCount`: open sessions classified at their current level; `bots`: finished bot sessions.
+// Returns null when there is nothing to show (no rollup column and no open-session count).
+function buildSessionsStarted(rollupRows, totals, liveCount = 0, openRows = null, bots = 0) {
+  const row = rollupRows?.[0];
+  const rollup = row && row.cur_started != null ? num(row.cur_started) : null;
+  const openKnown = Array.isArray(openRows) && openRows.length > 0;
+  if (rollup == null && !openKnown) return null;
+
   const closed = num(totals?.cur_visitors_sessions);
   const live = num(liveCount);
+  const open = openKnown ? num(openRows[0].open_sessions) : null;
+  // canonical total; when open sessions cannot be read, the rollup is the best figure, never below what is analysed
+  const value = open != null ? closed + open : Math.max(rollup, closed + live);
+  const waiting = open != null ? Math.max(0, open - live) : 0;
+  const botSessions = num(bots);
+  const analysed = Math.max(0, closed - botSessions);
+  const previous = row && row.prev_started != null ? row.prev_started : null;
   return {
     id: "sessionsStarted",
     label: "Total Sessions",
     value,
-    delta: row.prev_started == null ? null : pctChange(value, row.prev_started),
+    delta: previous == null ? null : pctChange(value, previous),
     closed,
+    analysed,
+    bots: botSessions,
     live,
-    other: Math.max(0, value - closed - live),
-    // share of the started sessions that already have an analysed (closed) row
+    waiting,
+    other: open != null ? 0 : Math.max(0, value - closed - live),
+    // the rollup's own figure and how far it is behind the live tables (negative: ahead), for reconciliation
+    rollup,
+    rollupBehind: rollup == null ? null : value - rollup,
+    // share of all sessions that already have an analysed (finished) row, and the share the levels cover
     closedPct: Math.min(100, safePct(closed, value)),
-    // share covered by the intent levels: closed rows plus live sessions
-    coveredPct: Math.min(100, safePct(closed + live, value)),
+    coveredPct: Math.min(100, safePct(analysed + live, value)),
   };
 }
 
@@ -673,14 +766,19 @@ function buildPathCoverage(rows, totalRow) {
   return { sessions: included, totalSessions: total, pct: total > 0 ? safePct(included, total) : 100 };
 }
 
-function buildKpis(totals, buckets) {
+// `visitors` (optional, the Score view): exclusive visitor counts per level, one level per visitor (see
+// buildScoreVisitorsQuery). Without it the level cards fall back to distinct visitors per bucket.
+function buildKpis(totals, buckets, visitors = null) {
   const value = (key, period, unit) => num(totals?.[`${period}_${key}_${unit}`]);
   const bucketValue = (level, period, unit) => num(buckets?.[level]?.[`${period}_${unit}`]);
 
   return KPI_DEFS.map((def) => {
     const isLevel = INTENT_LEVELS.includes(def.source);
-    const read = (period, unit) =>
-      isLevel ? bucketValue(def.source, period, unit) : value(def.source, period, unit);
+    const read = (period, unit) => {
+      if (!isLevel) return value(def.source, period, unit);
+      if (unit === "users" && visitors?.[def.source]) return num(visitors[def.source][`${period}_users`]);
+      return bucketValue(def.source, period, unit);
+    };
     const users = read("cur", "users");
     const sessions = read("cur", "sessions");
     return {
@@ -721,20 +819,25 @@ function buildFunnel(totals) {
   });
 }
 
-function buildDistribution(totals, buckets) {
+// `visitors` (the Score view): one level per visitor, the bucket of their highest-scoring session. Then
+// Low + Medium + High is the number of scored visitors, each counted once. Without it (older data) each
+// bucket's distinct visitors are used, a visitor with sessions in two buckets is in both, and `visitorBasis`
+// says so.
+function buildDistribution(totals, buckets, visitors = null) {
+  const exclusive = Boolean(visitors);
   const items = INTENT_LEVELS.map((level) => ({
     level,
-    users: num(buckets?.[level]?.cur_users),
+    users: exclusive ? num(visitors[level]?.cur_users) : num(buckets?.[level]?.cur_users),
     sessions: num(buckets?.[level]?.cur_sessions),
   }));
   const userSum = items.reduce((sum, item) => sum + item.users, 0);
   const sessionSum = items.reduce((sum, item) => sum + item.sessions, 0);
   return {
-    // total is the sum of the segments, so the donut always adds up. A visitor with sessions
-    // in two buckets counts once in each; the distinct figure is uniqueScoredUsers.
     total: userSum,
     totalSessions: sessionSum,
-    uniqueScoredUsers: num(totals?.cur_scored_users),
+    // "best_session": each visitor once, at their highest-scoring session; "per_bucket": see above
+    visitorBasis: exclusive ? "best_session" : "per_bucket",
+    uniqueScoredUsers: exclusive ? userSum : num(totals?.cur_scored_users),
     items: items.map((item) => ({
       ...item,
       pct: safePct(item.users, userSum),
@@ -849,7 +952,9 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         funnel: "intent_sessions",
         distribution: "intent_sessions",
         behavior: "intent_sessions",
-        sessionsStarted: "intent_daily_summary",
+        scoreVisitors: "intent_sessions",
+        // finished rows + open sessions; the rollup only supplies the previous period
+        sessionsStarted: "intent_sessions + intent_actor_cursors",
         conversion: "intent_sessions",
         trend: "intent_daily_summary",
         // refreshed by the pipeline every 15 minutes; raw behavioral_events only as a
@@ -897,7 +1002,9 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       throw err;
     }
 
-    const [trendRes, rollupRes, pathsRes, pathsTotalRes, behaviorRes, startedRes, liveRes] = await Promise.all([
+    const [
+      trendRes, rollupRes, pathsRes, pathsTotalRes, behaviorRes, startedRes, liveRes, openRes, visitorsRes,
+    ] = await Promise.all([
       selectOptional(conn, buildTrendQuery({ start, end }), "trend", meta, brandKey),
       selectOptional(conn, buildProductRollupQuery({ start, end, sortKey }), "topProducts", meta, brandKey),
       selectOptional(conn, buildPathsQuery({ start, end, pathStart }), "paths", meta, brandKey),
@@ -920,7 +1027,24 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       ),
       // optional: the pipeline's open-session table; without it the levels cover closed sessions only
       selectOptional(conn, buildLiveSessionsQuery({ curStart: start, endExclusive }), "liveSessions", meta, brandKey),
+      // optional: how many sessions are still open (the canonical Total Sessions = finished rows + these)
+      selectOptional(
+        conn,
+        buildOpenSessionsCountQuery({ curStart: start, endExclusive }),
+        "openSessions",
+        meta,
+        brandKey,
+      ),
+      // Score view visitors: one level per visitor, the bucket of their highest-scoring session
+      selectOptional(
+        conn,
+        buildScoreVisitorsQuery({ prevStart, curStart: start, endExclusive }),
+        "scoreVisitors",
+        meta,
+        brandKey,
+      ),
     ]);
+    const scoreVisitors = visitorsRes.ok ? buildScoreVisitors(visitorsRes.rows) : null;
 
     // Live (not yet closed) sessions, at their current level. Their visitors' best closed level comes from a
     // second, uncached lookup for just those visitors.
@@ -961,9 +1085,33 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       buckets[row.intent_bucket] = row;
     });
 
+    const behavior = behaviorRes.ok ? buildBehavior(behaviorRes.rows, live) : null;
+    const liveCount = live?.sessions?.length || 0;
+    const botSessions = behavior?.distribution?.botsExcluded || 0;
+    const sessionsStarted =
+      startedRes.ok || openRes.ok
+        ? buildSessionsStarted(
+            startedRes.ok ? startedRes.rows : null,
+            totals,
+            liveCount,
+            openRes.ok ? openRes.rows : null,
+            botSessions,
+          )
+        : null;
+    if (sessionsStarted && behavior) {
+      // The intent distribution covers analysed + live; what is left of the total is bots (counted, not levelled)
+      // and the waiting backlog. Zero means every session is accounted for.
+      sessionsStarted.distributionGap =
+        sessionsStarted.value -
+        sessionsStarted.bots -
+        sessionsStarted.waiting -
+        sessionsStarted.other -
+        behavior.distribution.totalSessions;
+    }
+
     return {
       ...base,
-      kpis: buildKpis(totals, buckets),
+      kpis: buildKpis(totals, buckets, scoreVisitors),
       funnel: buildFunnel(totals),
       trend: (trendRes.rows || []).map((row) => ({
         date: row.date,
@@ -971,11 +1119,9 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         addToCart: num(row.add_to_carts),
         checkouts: num(row.checkout_starts),
       })),
-      distribution: buildDistribution(totals, buckets),
-      behavior: behaviorRes.ok ? buildBehavior(behaviorRes.rows, live) : null,
-      sessionsStarted: startedRes.ok
-        ? buildSessionsStarted(startedRes.rows, totals, live?.sessions?.length || 0)
-        : null,
+      distribution: buildDistribution(totals, buckets, scoreVisitors),
+      behavior,
+      sessionsStarted,
       conversionRates: buildConversion(buckets),
       topProducts,
       paths: pathsRes.ok
@@ -1006,6 +1152,11 @@ module.exports = {
     buildBucketQuery,
     buildSessionsStartedQuery,
     buildSessionsStarted,
+    buildOpenSessionsCountQuery,
+    buildScoreVisitorsQuery,
+    buildScoreVisitors,
+    buildDistribution,
+    buildKpis,
     buildLiveSessionsQuery,
     buildClosedBestQueries,
     buildBehaviorQuery,

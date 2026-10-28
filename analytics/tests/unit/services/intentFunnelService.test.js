@@ -61,6 +61,16 @@ const DEFAULT_BUCKETS = [
   },
 ];
 
+// Score view visitors: ONE level per visitor (the bucket of their highest-scoring session), so these add up to the
+// scored visitors. They differ from the per-bucket distinct counts in DEFAULT_BUCKETS on purpose (a visitor with a
+// low and a high session is in both of those, in only one of these).
+const DEFAULT_SCORE_VISITORS = [
+  {
+    cur_high_users: 8, cur_medium_users: 17, cur_low_users: 27,
+    prev_high_users: 3, prev_medium_users: 16, prev_low_users: 30,
+  },
+];
+
 // behaviour-based levels: one row; users are counted once at their best level, bots are left out of the levels
 const DEFAULT_BEHAVIOR = [
   {
@@ -95,6 +105,8 @@ function makeConn(overrides = {}) {
     totals: () => [DEFAULT_TOTALS],
     buckets: () => DEFAULT_BUCKETS,
     behavior: () => DEFAULT_BEHAVIOR,
+    openSessions: () => [{ open_sessions: "20" }],
+    scoreVisitors: () => DEFAULT_SCORE_VISITORS,
     started: () => [{ cur_started: "300", prev_started: "200" }],
     live: () => [],
     closedBest: () => [],
@@ -129,8 +141,10 @@ function makeConn(overrides = {}) {
     if (sql.includes("FROM product_behavior_daily")) return handlers.rollup(sql, options);
     if (sql.includes("event_name = 'checkout_started'")) return handlers.productCheckouts(sql, options);
     if (sql.includes("FROM behavioral_events")) return handlers.productViews(sql, options);
+    if (sql.includes("open_sessions")) return handlers.openSessions(sql, options);
     if (sql.includes("FROM intent_actor_cursors")) return handlers.live(sql, options);
     if (sql.includes("best_rank")) return handlers.closedBest(sql, options);
+    if (sql.includes("GROUP_CONCAT")) return handlers.scoreVisitors(sql, options);
     if (sql.includes(") levelled")) return handlers.behavior(sql, options);
     if (sql.includes("GROUP BY intent_bucket")) return handlers.buckets(sql, options);
     if (sql.includes("FROM intent_sessions")) return handlers.totals(sql, options);
@@ -213,15 +227,17 @@ describe("intentFunnelService", () => {
     const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn() });
 
     const byId = Object.fromEntries(out.kpis.map((k) => [k.id, k]));
-    expect(byId.high).toMatchObject({ value: 9, sessions: 10 });
-    expect(byId.medium).toMatchObject({ value: 18, sessions: 20 });
-    expect(byId.low).toMatchObject({ value: 28, sessions: 30 });
-    expect(byId.high.delta).toBeCloseTo(125); // 4 -> 9 users
+    // visitors: one level each (the bucket of their highest-scoring session); sessions: per bucket
+    expect(byId.high).toMatchObject({ value: 8, sessions: 10 });
+    expect(byId.medium).toMatchObject({ value: 17, sessions: 20 });
+    expect(byId.low).toMatchObject({ value: 27, sessions: 30 });
+    expect(byId.high.delta).toBeCloseTo((5 / 3) * 100); // 3 -> 8 visitors
 
-    // total is the sum of the segments (9 + 18 + 28); the distinct figure is separate
-    expect(out.distribution.total).toBe(55);
+    // total = Low + Medium + High = the scored visitors, each counted once
+    expect(out.distribution.total).toBe(52);
     expect(out.distribution.totalSessions).toBe(60);
-    expect(out.distribution.uniqueScoredUsers).toBe(55);
+    expect(out.distribution.uniqueScoredUsers).toBe(52);
+    expect(out.distribution.visitorBasis).toBe("best_session");
     expect(out.distribution.items.map((i) => i.level)).toEqual(["high", "medium", "low"]);
     const pctSum = out.distribution.items.reduce((sum, i) => sum + i.pct, 0);
     expect(pctSum).toBeCloseTo(100);
@@ -252,6 +268,7 @@ describe("intentFunnelService", () => {
     const conn = makeConn({
       totals: () => [totalsRow()],
       buckets: () => [],
+      scoreVisitors: () => [{ cur_high_users: 0, cur_medium_users: 0, cur_low_users: 0, prev_high_users: 0, prev_medium_users: 0, prev_low_users: 0 }],
       trend: () => [],
       rollup: () => [],
       productViews: () => [],
@@ -478,8 +495,9 @@ describe("intentFunnelService", () => {
     test("all independent queries run in one round (no per-day / per-bucket / per-product queries)", async () => {
       const conn = makeConn();
       await newService().getIntentFunnel({ ...SPEC, start: "2026-09-01", end: "2026-10-12", conn });
-      // totals, buckets, trend, product rollup, paths, paths total, behaviour levels, sessions started
-      expect(conn.query).toHaveBeenCalledTimes(9);
+      // totals, buckets, trend, product rollup, paths, paths total, behaviour levels, sessions started, live
+      // sessions, open-session count, score visitors
+      expect(conn.query).toHaveBeenCalledTimes(11);
     });
 
     test("cached results are keyed by brand and never cross tenants", async () => {
@@ -522,19 +540,32 @@ describe("intentFunnelService", () => {
   });
 
   describe("correctness guards", () => {
-    test("distribution segments always add up to the total, even when a visitor is in two buckets", async () => {
-      // 55 distinct scored visitors, but a visitor can have sessions in several buckets
+    test("a visitor with sessions in two buckets is counted once: the segments add up to the scored visitors", async () => {
+      // 90 visitor-bucket pairs (a visitor can have sessions in several buckets), but 55 scored visitors, one level each
       const buckets = [
         { ...DEFAULT_BUCKETS[0], cur_users: 40, cur_sessions: 50 },
         { ...DEFAULT_BUCKETS[1], cur_users: 30, cur_sessions: 35 },
         { ...DEFAULT_BUCKETS[2], cur_users: 20, cur_sessions: 25 },
       ];
-      const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn({ buckets: () => buckets }) });
-      const { total, totalSessions, uniqueScoredUsers, items } = out.distribution;
+      const visitors = [{ cur_high_users: 15, cur_medium_users: 20, cur_low_users: 20, prev_high_users: 0, prev_medium_users: 0, prev_low_users: 0 }];
+      const out = await newService().getIntentFunnel({
+        ...SPEC, conn: makeConn({ buckets: () => buckets, scoreVisitors: () => visitors }),
+      });
+      const { total, totalSessions, uniqueScoredUsers, items, visitorBasis } = out.distribution;
       expect(total).toBe(items.reduce((sum, i) => sum + i.users, 0));
       expect(totalSessions).toBe(items.reduce((sum, i) => sum + i.sessions, 0));
-      expect(total).toBe(90);
+      expect(total).toBe(55);                       // not 90
       expect(uniqueScoredUsers).toBe(55);
+      expect(visitorBasis).toBe("best_session");
+      expect(items.reduce((sum, i) => sum + i.pct, 0)).toBeCloseTo(100);
+    });
+
+    test("without the visitor query the old per-bucket count is used and labelled as such", async () => {
+      const bad = Object.assign(new Error("Unknown column"), { code: "ER_BAD_FIELD_ERROR", errno: 1054 });
+      const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn({ scoreVisitors: () => { throw bad; } }) });
+      expect(out.distribution.visitorBasis).toBe("per_bucket");
+      expect(out.distribution.total).toBe(55);      // 9 + 18 + 28, a visitor may be in two buckets
+      expect(out.meta.sections.scoreVisitors).toEqual({ available: false, reason: "schema_unsupported" });
     });
 
     test("funnel percentages never exceed 100 when later steps outnumber product viewers", async () => {
@@ -558,7 +589,7 @@ describe("intentFunnelService", () => {
       const core = conn.query.mock.calls
         .map(([sql]) => sql)
         .filter((sql) => sql.includes("FROM intent_sessions"));
-      expect(core).toHaveLength(3); // totals, score buckets, behaviour levels
+      expect(core).toHaveLength(4); // totals, score buckets, behaviour levels, score visitors
       core.forEach((sql) => expect(sql).toMatch(/SELECT \/\*\+ MAX_EXECUTION_TIME\(30000\) \*\//));
     });
 
@@ -604,14 +635,15 @@ describe("intentFunnelService", () => {
       expect(sql).not.toContain("2026-10");
       expect(params).toEqual(["2026-10-10", "2026-10-07", "2026-10-13"]);
       const out = await newService().getIntentFunnel({ ...SPEC, conn: makeConn() });
-      expect(out.distribution.items.map((i) => i.users)).toEqual([9, 18, 28]);
+      expect(out.distribution.items.map((i) => i.users)).toEqual([8, 17, 27]);
+      expect(out.distribution.items.map((i) => i.sessions)).toEqual([10, 20, 30]);   // score sessions unchanged
     });
 
     test("the rules are in SQL in the Clarity order: bots out, then low, then high, else medium", () => {
       expect(_internal.BEHAVIOR_LEVEL_SQL.replace(/\s+/g, " ")).toBe(
         "CASE WHEN intent_exclusion_reason = 'bot' THEN 'bot' " +
           "WHEN session_time_spent_ms < 5000 OR (click_count = 0 AND scroll_count = 0) THEN 'low' " +
-          "WHEN click_count > 0 AND (product_view_count > 0 OR add_to_cart_count > 0 OR checkout_started_count > 0) THEN 'high' " +
+          "WHEN click_count > 0 AND (add_to_cart_count > 0 OR checkout_started_count > 0) THEN 'high' " +
           "ELSE 'medium' END",
       );
     });
@@ -634,7 +666,8 @@ describe("intentFunnelService", () => {
       expect(items.high).toMatchObject({ sessions: 11, users: 10 });   // +1 session, +1 visitor (the shopper)
       expect(out.behavior.live.sessions).toBe(2);
       expect(out.sessionsStarted).toMatchObject({ live: 2 });
-      expect(out.sessionsStarted.closed + out.sessionsStarted.live + out.sessionsStarted.other).toBe(out.sessionsStarted.value);
+      const card = out.sessionsStarted;
+      expect(card.analysed + card.bots + card.live + card.waiting + card.other).toBe(card.value);
     });
 
     test("without the open-session table the levels cover closed sessions only", async () => {
@@ -672,6 +705,146 @@ describe("intentFunnelService", () => {
       const empty = _internal.buildBehavior([]);
       assertFinite(empty);
       expect(empty.distribution.total).toBe(0);
+    });
+  });
+
+  describe("behaviour High: a product view alone is not a High signal", () => {
+    test("the SQL never lists product views as a High trigger", () => {
+      const sql = _internal.BEHAVIOR_LEVEL_SQL.replace(/\s+/g, " ");
+      const high = sql.slice(sql.indexOf("THEN 'low'"), sql.indexOf("THEN 'high'"));
+      expect(high).toContain("add_to_cart_count > 0");
+      expect(high).toContain("checkout_started_count > 0");
+      expect(high).not.toContain("product_view_count");
+    });
+
+    test("the rule text shown to people says add to cart or checkout", async () => {
+      const { behavior } = await newService().getIntentFunnel({ ...SPEC, conn: makeConn() });
+      expect(behavior.rules.high).toContain("add to cart or checkout");
+      expect(behavior.rules.high).not.toContain("product view");
+    });
+  });
+
+  describe("score visitors: one level per visitor, the bucket of their highest-scoring session", () => {
+    test("the query ranks each visitor's sessions by score and keeps only the best one's bucket", () => {
+      const { sql, params } = _internal.buildScoreVisitorsQuery({
+        prevStart: "2026-10-07", curStart: "2026-10-10", endExclusive: "2026-10-13",
+      });
+      const flat = sql.replace(/\s+/g, " ");
+      expect(flat).toContain("ORDER BY predictive_score DESC, session_id");
+      expect(flat).toContain("SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN is_cur = 1 THEN intent_bucket END");
+      expect(flat).toContain("', ', 1)".replace(" ", "")) ;
+      expect(flat).toContain("GROUP BY actor_id");
+      expect(flat).toContain("intent_status = 'scored'");              // pending and excluded sessions have no level
+      expect(flat).toContain("COALESCE(SUM(cur_best = 'high'), 0) AS cur_high_users");
+      expect(flat).not.toContain("COUNT(DISTINCT");                    // no per-bucket distinct counting
+      expect(flat).not.toContain("2026-10");
+      expect(params).toEqual(["2026-10-10", "2026-10-07", "2026-10-13"]);
+    });
+
+    test("it carries the same execution timeout as the other session queries", () => {
+      const { sql } = _internal.buildScoreVisitorsQuery({ prevStart: "a", curStart: "b", endExclusive: "c" });
+      expect(sql).toMatch(/SELECT \/\*\+ MAX_EXECUTION_TIME\(30000\) \*\//);
+    });
+
+    test("one session, many Low sessions, Low + High, Low + Medium + High: each visitor is in exactly one level", () => {
+      // The SQL gives one row of exclusive counts; the builders must pass them through untouched and add up.
+      // Visitors: A one session (low); B three low sessions (low); C low + high (high); D low + medium + high (high);
+      // E medium only (medium). Exclusive counts: high 2 (C, D), medium 1 (E), low 2 (A, B).
+      const row = [{ cur_high_users: 2, cur_medium_users: 1, cur_low_users: 2, prev_high_users: 0, prev_medium_users: 0, prev_low_users: 0 }];
+      const visitors = _internal.buildScoreVisitors(row);
+      const buckets = {
+        high: { cur_sessions: 3, cur_users: 2 }, medium: { cur_sessions: 2, cur_users: 2 }, low: { cur_sessions: 7, cur_users: 4 },
+      };
+      const distribution = _internal.buildDistribution({}, buckets, visitors);
+      expect(distribution.items.map((i) => [i.level, i.users])).toEqual([["high", 2], ["medium", 1], ["low", 2]]);
+      expect(distribution.total).toBe(5);                                       // five visitors, five levels
+      expect(distribution.totalSessions).toBe(12);                              // sessions are untouched
+      const kpis = _internal.buildKpis({}, buckets, visitors).filter((k) => ["high", "medium", "low"].includes(k.id));
+      expect(kpis.map((k) => [k.id, k.value, k.sessions])).toEqual([["high", 2, 3], ["medium", 1, 2], ["low", 2, 7]]);
+    });
+
+    test("a visitor with only pending or excluded sessions is not in the levels", () => {
+      // no scored session, so the query returns no level for them: nothing is counted
+      const visitors = _internal.buildScoreVisitors([{ cur_high_users: 0, cur_medium_users: 0, cur_low_users: 0 }]);
+      expect(_internal.buildDistribution({}, {}, visitors).total).toBe(0);
+      expect(_internal.buildScoreVisitors([])).toBeNull();
+    });
+  });
+
+  describe("Total Sessions: one canonical definition that reconciles with the distribution", () => {
+    const totals = { cur_visitors_sessions: 12378 };
+
+    test("total = finished rows + open sessions; everything else is a part of it", () => {
+      const card = _internal.buildSessionsStarted([{ cur_started: "12228", prev_started: "10000" }], totals, 1, [{ open_sessions: "40" }], 25);
+      expect(card.value).toBe(12418);                       // 12,378 finished + 40 open
+      expect(card).toMatchObject({ closed: 12378, bots: 25, analysed: 12353, live: 1, waiting: 39, other: 0 });
+      expect(card.analysed + card.bots + card.live + card.waiting + card.other).toBe(card.value);
+    });
+
+    test("the rollup's figure can be behind the live tables and the card says by how much", () => {
+      // the case seen in production: the rollup said 12,228 while 12,378 sessions were already finished
+      const card = _internal.buildSessionsStarted([{ cur_started: "12228", prev_started: "10000" }], totals, 1, [{ open_sessions: "1" }], 0);
+      expect(card.value).toBeGreaterThanOrEqual(card.closed);          // never below what is already analysed
+      expect(card.rollup).toBe(12228);
+      expect(card.rollupBehind).toBe(card.value - 12228);
+      expect(card.rollupBehind).toBeGreaterThan(0);
+    });
+
+    test("the change figure compares with the rollup's previous period", () => {
+      const card = _internal.buildSessionsStarted([{ cur_started: "100", prev_started: "100" }], { cur_visitors_sessions: 150 }, 0, [{ open_sessions: "50" }], 0);
+      expect(card.value).toBe(200);
+      expect(card.delta).toBeCloseTo(100);
+    });
+
+    test("without the open-session table the rollup is used, never below the analysed sessions", () => {
+      const card = _internal.buildSessionsStarted([{ cur_started: "100" }], { cur_visitors_sessions: 150 }, 3, null, 0);
+      expect(card.value).toBe(153);                         // max(rollup, finished + live)
+      expect(card.waiting).toBe(0);
+    });
+
+    test("with no rollup column the open-session count alone is enough", () => {
+      const card = _internal.buildSessionsStarted(null, { cur_visitors_sessions: 90 }, 2, [{ open_sessions: "10" }], 0);
+      expect(card.value).toBe(100);
+      expect(card.delta).toBeNull();
+      expect(card.rollup).toBeNull();
+    });
+
+    test("with neither source there is no card", () => {
+      expect(_internal.buildSessionsStarted(null, totals, 0, null, 0)).toBeNull();
+      expect(_internal.buildSessionsStarted([{ cur_started: null }], totals, 0, [], 0)).toBeNull();
+    });
+
+    test("the open-session count is one indexed read of the cursor table, with the future-time guard", () => {
+      const { sql, params } = _internal.buildOpenSessionsCountQuery({ curStart: "2026-10-28", endExclusive: "2026-10-29" });
+      const flat = sql.replace(/\s+/g, " ");
+      expect(flat).toContain("FROM intent_actor_cursors");
+      expect(flat).toContain("session_id <> ''");
+      expect(flat).toContain("last_event_at >= ?");
+      expect(flat).toContain("UTC_TIMESTAMP() + INTERVAL 14 HOUR");
+      expect(flat).not.toContain("behavioral_events");
+      expect(params).toEqual(["2026-10-28", "2026-10-28", "2026-10-29"]);
+    });
+
+    test("end to end: the distribution plus bots plus the waiting backlog equals Total Sessions (gap 0)", async () => {
+      // finished rows 104 (100 in the levels + 4 bots), 20 open of which 2 are live
+      const cursors = [
+        { actor_id: "a", session_start: new Date("2026-10-12T10:00:00Z"), last_event_at: new Date("2026-10-12T10:00:02Z"), events_seq: { 1: { event_name: "page_viewed" } } },
+        { actor_id: "b", session_start: new Date("2026-10-12T10:00:00Z"), last_event_at: new Date("2026-10-12T10:00:01Z"), events_seq: { 1: { event_name: "page_viewed" } } },
+      ];
+      const conn = makeConn({ totals: () => [{ ...DEFAULT_TOTALS, cur_visitors_sessions: 104 }], live: () => cursors, closedBest: () => [] });
+      const out = await newService().getIntentFunnel({ ...SPEC, conn });
+      const card = out.sessionsStarted;
+      expect(card.value).toBe(124);
+      expect(out.behavior.distribution.totalSessions).toBe(102);                  // 100 finished + 2 live
+      expect(card.distributionGap).toBe(0);
+      expect(card.bots + card.waiting + out.behavior.distribution.totalSessions).toBe(card.value);
+    });
+
+    test("click-only and scroll-only sessions are sessions: they are rows of intent_sessions, whatever events they hold", () => {
+      // The canonical total counts rows, so a session whose events are all clicks (no page view in the events
+      // table, which is why the old events-based count missed it) is in the closed count like any other.
+      const card = _internal.buildSessionsStarted(null, { cur_visitors_sessions: 3 }, 0, [{ open_sessions: "0" }], 0);
+      expect(card.value).toBe(3);
     });
   });
 

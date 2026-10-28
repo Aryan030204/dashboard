@@ -19,6 +19,7 @@ import {
   formatCount,
   toneBackground,
 } from "./intentFunnelUtils.js";
+import { sessionsBreakdown } from "./viewModels.js";
 
 const KPI_ICONS = {
   visitors: Users,
@@ -118,6 +119,7 @@ function ModeToggle({ mode, onChange }) {
 // Sessions that started in the period (every visit counts from its first event), shown across the
 // full width above the other cards. The cards below only count sessions that have already closed.
 function SessionsStartedCard({ sessions }) {
+  const breakdown = sessionsBreakdown(sessions);
   return (
     <Card sx={{ p: { xs: 1.25, md: 1.75 }, minWidth: 0, gridColumn: "1 / -1" }}>
       <Box
@@ -148,10 +150,11 @@ function SessionsStartedCard({ sessions }) {
           color="text.secondary"
           sx={{ maxWidth: { sm: 360 }, textAlign: { xs: "left", sm: "right" } }}
         >
-          Every visit counts from its first page view. Analysed: {formatCount(sessions.closed)} finished
-          {sessions.live != null ? ` + ${formatCount(sessions.live)} live (counted at their current level)` : ""}
-          {sessions.other > 0 ? ` · ${formatCount(sessions.other)} not yet analysed or without a visitor id` : ""}.
-          {" "}Covered: {(sessions.coveredPct ?? sessions.closedPct).toFixed(1)}%.
+          {breakdown.lines.map((line) => `${line.label} ${formatCount(line.value)}`).join(" + ")}
+          {" "}= {formatCount(sessions.value)}. Live sessions are counted at their current level.
+          {breakdown.rollupBehind > 0
+            ? ` The daily rollup is ${formatCount(breakdown.rollupBehind)} behind.`
+            : ""}
         </Typography>
       </Box>
     </Card>
