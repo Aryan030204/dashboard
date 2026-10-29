@@ -1092,4 +1092,7 @@ function buildProductConversionService() {
 module.exports = {
   buildProductConversionService,
   normalizeProductConversionRequest,
+  // also used by the intent funnel's product dropdown (same Redis top-products cache)
+  getDefaultRedisClient,
+  getInventoryTopProductSalesCache,
 };

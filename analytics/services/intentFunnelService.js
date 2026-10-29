@@ -47,10 +47,22 @@ const PATH_STARTS = Object.freeze([
   "product_added_to_cart",
 ]);
 
-const PATH_STEPS = 5;
+// Path length: how many steps (columns) the Funnel Exploration shows. Branches per step are fixed.
+const PATH_STEPS_DEFAULT = 5;
+const PATH_STEPS_MIN = 3;
+const PATH_STEPS_MAX = 8;
+const PATH_BRANCHES_PER_STEP = 5;
 const PATH_TOP_MIN = 3;
 const PATH_TOP_MAX = 8;
 const PATH_ROW_LIMIT = 500;
+// Live paths (a product or an intent level is chosen) read sessions instead of the daily rollup, so
+// they are bounded: at most this many PDP events / sessions are read per request.
+const PATH_LIVE_EVENT_CAP = 50000;
+const PATH_LIVE_SESSION_CAP = 40000;
+const PATH_LIVE_CHUNK = 2000;
+const PATH_LIVE_BATCH = 1000;
+// Same cap as the rollup (pipeline/rollups.py SEQUENCE_MAX_STEPS) so live and rollup paths agree.
+const PATH_SEQUENCE_MAX_STEPS = 15;
 const PRODUCT_RESULT_LIMIT = 10;
 // Upper bound on distinct products scanned per request (catalog-sized).
 const PRODUCT_SCAN_LIMIT = 500;
@@ -664,7 +676,7 @@ function mergeProducts(viewRows, checkoutRows, sortKey) {
 
 // Turns recorded event sequences ("a>b>c") into step-by-step nodes and links.
 // A session whose sequence ends before the last step flows into "exit".
-function buildPaths(rows, { topN }) {
+function buildPaths(rows, { topN = PATH_BRANCHES_PER_STEP, steps: stepCount = PATH_STEPS_DEFAULT } = {}) {
   const nodeIndex = new Map();
   const nodes = [];
   const linkMap = new Map();
@@ -694,7 +706,7 @@ function buildPaths(rows, { topN }) {
     if (events.length === 0) return;
 
     const steps = [];
-    for (let step = 0; step < PATH_STEPS; step += 1) {
+    for (let step = 0; step < stepCount; step += 1) {
       steps.push(step < events.length ? events[step] : "exit");
     }
     steps.forEach((event, step) => {
@@ -709,7 +721,7 @@ function buildPaths(rows, { topN }) {
 
   // Keep the top N nodes per step and the links between kept nodes.
   const kept = new Set();
-  for (let step = 0; step < PATH_STEPS; step += 1) {
+  for (let step = 0; step < stepCount; step += 1) {
     nodes
       .map((node, idx) => ({ node, idx }))
       .filter(({ node }) => node.step === step)
@@ -734,7 +746,7 @@ function buildPaths(rows, { topN }) {
     }
   });
 
-  const stepTotals = Array.from({ length: PATH_STEPS }, (_, step) =>
+  const stepTotals = Array.from({ length: stepCount }, (_, step) =>
     keptNodes.filter((node) => node.step === step).reduce((sum, node) => sum + node.value, 0),
   );
   const decorated = keptNodes.map((node) => ({
@@ -752,6 +764,155 @@ function buildPaths(rows, { topN }) {
       sessions: total,
     })),
   };
+}
+
+// ---- Live paths (product / intent filtered) -----------------------------------------------------------------
+// intent_sessions.event_sequence is { "<step>": { "<event_name>": "<event_id>" } }. Events come back in step
+// order, with the id of each one, so a journey can start at one specific event (a product's PDP view).
+function parseEventSequence(raw) {
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  const ordered = [];
+  Object.keys(parsed).forEach((key) => {
+    const step = Number.parseInt(key, 10);
+    const sub = parsed[key];
+    if (!Number.isFinite(step) || !sub || typeof sub !== "object") return;
+    const name = Object.keys(sub)[0];
+    if (!name || !String(name).trim()) return;
+    ordered.push({ step, name: String(name).trim(), id: sub[name] == null ? "" : String(sub[name]) });
+  });
+  return ordered.sort((a, b) => a.step - b.step);
+}
+
+// The event names of one session's journey, consecutive duplicates collapsed and capped at the rollup's
+// 15 steps. `fromEventId` starts the journey at that event (null when the session does not contain it).
+function pathFromSequence(raw, { fromEventId = null, maxSteps = PATH_SEQUENCE_MAX_STEPS } = {}) {
+  let events = parseEventSequence(raw);
+  if (fromEventId !== null) {
+    const at = events.findIndex((event) => event.id === String(fromEventId));
+    if (at < 0) return null;
+    events = events.slice(at);
+  }
+  const names = [];
+  for (const event of events) {
+    if (names[names.length - 1] === event.name) continue;
+    names.push(event.name);
+    if (names.length >= maxSteps) break;
+  }
+  return names;
+}
+
+// The intent level filter of a session query. The level is only ever bound as a parameter; the SQL
+// pieces are constants. Same rules as the KPI cards and the overlap card.
+function buildPathLevelFilter({ basis, intent }) {
+  if (!INTENT_LEVELS.includes(intent)) return { sql: "", params: [] };
+  if (basis === "score") {
+    return { sql: "AND intent_status = 'scored' AND intent_bucket = ?", params: [intent] };
+  }
+  return {
+    sql: `AND session_time_spent_ms IS NOT NULL AND ${BEHAVIOR_LEVEL_SQL} = ?`,
+    params: [intent],
+  };
+}
+
+// Product ids are numeric Shopify ids; anything else is rejected. The rollup normalises "123.0" to "123",
+// so both spellings are matched.
+function normalizePathProductId(raw) {
+  const value = String(raw ?? "").trim().replace(/\.0$/, "");
+  return /^\d{1,20}$/.test(value) ? value : null;
+}
+
+function clampPathSteps(raw) {
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value)) return PATH_STEPS_DEFAULT;
+  return Math.min(PATH_STEPS_MAX, Math.max(PATH_STEPS_MIN, value));
+}
+
+// First product_viewed event of a product per session, in the range.
+function buildPathProductEventsQuery({ start, endExclusive, productId }) {
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+        event_id,
+        session_id
+      FROM behavioral_events
+      WHERE event_name = 'product_viewed'
+        AND product_id IN (?, ?)
+        AND occurred_at >= ? AND occurred_at < ?
+        AND session_id IS NOT NULL
+      ORDER BY occurred_at, id
+      LIMIT ${PATH_LIVE_EVENT_CAP}
+    `,
+    params: [productId, `${productId}.0`, start, endExclusive],
+  };
+}
+
+function buildPathSessionsByIdQuery({ sessionIds, level }) {
+  const marks = sessionIds.map(() => "?").join(", ");
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+        session_id,
+        event_sequence
+      FROM intent_sessions
+      WHERE session_id IN (${marks})
+        ${level.sql}
+    `,
+    params: [...sessionIds, ...level.params],
+  };
+}
+
+// Sessions of the range, oldest first, one chunk at a time (keyset: the last row of the previous chunk).
+function buildPathSessionScanQuery({ start, endExclusive, level, after }) {
+  const keyset = after ? "AND (session_start > ? OR (session_start = ? AND id > ?))" : "";
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+        id,
+        session_start,
+        event_sequence
+      FROM intent_sessions
+      WHERE session_start >= ? AND session_start < ?
+        ${level.sql}
+        ${keyset}
+      ORDER BY session_start, id
+      LIMIT ${PATH_LIVE_CHUNK}
+    `,
+    params: [start, endExclusive, ...level.params, ...(after ? [after.start, after.start, after.id] : [])],
+  };
+}
+
+// Top products as the inventory pipeline caches them (Redis `inventory_top_product_sales:<shop>`).
+function parseTopProductsCache(raw, limit) {
+  if (!raw) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.products) ? parsed.products : [];
+  const seen = new Set();
+  const products = [];
+  list.forEach((entry) => {
+    const rawId = String(entry?.product_id ?? "").replace(/^gid:\/\/shopify\/Product\//, "");
+    const id = normalizePathProductId(rawId);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    products.push({
+      id,
+      name: entry?.product_title ? String(entry.product_title) : `Product ${id}`,
+      rank: num(entry?.rank) || products.length + 1,
+    });
+  });
+  return products.sort((a, b) => a.rank - b.rank).slice(0, limit);
 }
 
 function emptyPaths() {
@@ -869,6 +1030,254 @@ function buildConversion(buckets) {
   });
 }
 
+// ---- User overlap by UTM source ------------------------------------------------
+// Which traffic sources the same visitors arrive through. There are always three circles: Google, Meta and
+// Others (every other source, including sessions without a UTM source). Each region is the set of those
+// groups a visitor (actor_id) was seen in. Region values are sessions of those visitors, except the
+// all-three region, which only counts sessions that reached checkout.
+const OVERLAP_BASES = Object.freeze(["behavior", "score"]);
+const OVERLAP_SOURCES = Object.freeze([
+  { key: "google", label: "Google" },
+  { key: "meta", label: "Meta" },
+  { key: "others", label: "Others" },
+]);
+const OVERLAP_TOP_SOURCES = OVERLAP_SOURCES.length;
+
+// Constant SQL, never request input. The same Meta / Google alias sets as adsPerformance.service.js;
+// anything else (and no UTM source at all) is 'others'.
+const SOURCE_NORMALIZE_SQL = `CASE
+        WHEN LOWER(TRIM(utm_source)) IN ('facebook', 'fb', 'instagram', 'ig', 'meta', 'an', 'messenger') THEN 'meta'
+        WHEN LOWER(TRIM(utm_source)) IN ('google', 'youtube', 'gdn', 'adwords') THEN 'google'
+        ELSE 'others'
+      END`;
+
+// One row per session of the range with its source group. `intent` is "all" (every session, like the KPI
+// cards) or one level from the INTENT_LEVELS whitelist, applied on the chosen basis and bound as a parameter.
+//
+// intent_sessions has no UTM columns: utm_source lives on behavioral_events (migration 003, filled by
+// pipeline/utm.py), whose session_id is the session's id. A session's source is the utm_source of its first
+// event that has one (its landing source); a session whose events carry none is 'others'. Events are read
+// for the range plus one day, because a session that starts near the end of the range keeps producing events.
+function buildOverlapBase({ basis, intent, curStart, endExclusive }) {
+  const filtered = INTENT_LEVELS.includes(intent);
+  let levelFilter = "";
+  if (filtered) {
+    levelFilter =
+      basis === "score"
+        ? "AND intent_status = 'scored' AND intent_bucket = ?"
+        : `AND session_time_spent_ms IS NOT NULL AND ${BEHAVIOR_LEVEL_SQL} = ?`;
+  }
+  const sql = `
+      SELECT
+        actor_id,
+        ${SOURCE_NORMALIZE_SQL} AS src,
+        (checkout_started_count > 0) AS checked_out
+      FROM intent_sessions
+      LEFT JOIN (
+        SELECT
+          session_id AS utm_session_id,
+          SUBSTRING_INDEX(GROUP_CONCAT(utm_source ORDER BY occurred_at SEPARATOR '\\n'), '\\n', 1) AS utm_source
+        FROM behavioral_events
+        WHERE occurred_at >= ? AND occurred_at < ?
+          AND session_id IS NOT NULL
+          AND utm_source IS NOT NULL AND utm_source <> ''
+        GROUP BY session_id
+      ) first_touch ON first_touch.utm_session_id = intent_sessions.session_id
+      WHERE session_start >= ? AND session_start < ?
+        AND actor_id IS NOT NULL
+        ${levelFilter}`;
+  return {
+    sql,
+    params: [curStart, shiftDays(endExclusive, 1), curStart, endExclusive, ...(filtered ? [intent] : [])],
+  };
+}
+
+function buildOverlapTopSourcesQuery(base) {
+  return {
+    sql: `
+    SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+      src,
+      COUNT(*) AS sessions,
+      COUNT(DISTINCT actor_id) AS users
+    FROM (${base.sql}) base
+    GROUP BY src
+    ORDER BY sessions DESC, src ASC
+    LIMIT ${OVERLAP_TOP_SOURCES}
+  `,
+    params: base.params,
+  };
+}
+
+// Sessions are grouped per visitor first (flags for which of the three source groups they appear in), then
+// the visitors are grouped by flag combination: one row per Venn region. `sources` is padded to three
+// entries with '' (a source group is never empty), so the SQL shape is always the same.
+function buildOverlapRegionsQuery(base, sources) {
+  const padded = Array.from({ length: OVERLAP_TOP_SOURCES }, (_, i) => sources[i] ?? "");
+  return {
+    sql: `
+    SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+      g1, g2, g3,
+      COUNT(*) AS users,
+      SUM(sessions) AS sessions,
+      SUM(checkout_sessions) AS checkout_sessions
+    FROM (
+      SELECT
+        actor_id,
+        MAX(src = ?) AS g1,
+        MAX(src = ?) AS g2,
+        MAX(src = ?) AS g3,
+        SUM(src IN (?, ?, ?)) AS sessions,
+        SUM(src IN (?, ?, ?) AND checked_out) AS checkout_sessions
+      FROM (${base.sql}) base
+      GROUP BY actor_id
+    ) per_actor
+    WHERE sessions > 0
+    GROUP BY g1, g2, g3
+  `,
+    params: [...padded, ...padded, ...padded, ...base.params],
+  };
+}
+
+// Every non-empty combination of the drawn sources, so the response has a stable shape: regions with no
+// visitors are returned as zeros rather than left out.
+function buildOverlapRegions(sources, rows) {
+  const flagKeys = ["g1", "g2", "g3"];
+  const byCombo = new Map();
+  (rows || []).forEach((row) => {
+    const combo = flagKeys.map((key, i) => (num(row[key]) > 0 && sources[i] ? sources[i].key : null));
+    const id = combo.filter(Boolean).join("+");
+    if (!id) return;
+    const previous = byCombo.get(id) || { users: 0, sessions: 0, checkoutSessions: 0 };
+    byCombo.set(id, {
+      users: previous.users + num(row.users),
+      sessions: previous.sessions + num(row.sessions),
+      checkoutSessions: previous.checkoutSessions + num(row.checkout_sessions),
+    });
+  });
+
+  const regions = [];
+  const count = sources.length;
+  for (let mask = 1; mask < 1 << count; mask += 1) {
+    const keys = sources.filter((_, i) => mask & (1 << i)).map((source) => source.key);
+    const id = keys.join("+");
+    const found = byCombo.get(id) || { users: 0, sessions: 0, checkoutSessions: 0 };
+    const kind = keys.length === 1 ? "only" : keys.length === OVERLAP_TOP_SOURCES ? "all" : "overlap";
+    regions.push({
+      id,
+      sources: keys,
+      kind,
+      users: found.users,
+      sessions: found.sessions,
+      checkoutSessions: found.checkoutSessions,
+      // the all-three region only counts sessions that reached checkout
+      value: kind === "all" ? found.checkoutSessions : found.sessions,
+    });
+  }
+  return regions;
+}
+
+// ---- Intent report: the page's KPI cards, per day --------------------------------
+// The figures of the KPI cards at the top of the page that the report table shows (unique visitors and the
+// three intent cards, plus Total Sessions), for every day of a range. Each figure is computed exactly like
+// its card: users are distinct actors, sessions are rows, and the intent cards follow the page's basis
+// (score buckets, or the behaviour rules). The table shows the sessions of each.
+const REPORT_KPI_IDS = Object.freeze(["visitors", "high", "medium", "low"]);
+
+// One row per calendar day, from one scan of intent_sessions grouped per day and actor.
+function buildReportQuery({ basis, start, endExclusive }) {
+  const levelExpr =
+    basis === "score"
+      ? `CASE WHEN intent_status = 'scored' AND intent_bucket IN ('high', 'medium', 'low') THEN intent_bucket END`
+      : `CASE WHEN session_time_spent_ms IS NULL THEN NULL ELSE ${BEHAVIOR_LEVEL_SQL} END`;
+  // score: a visitor counts in every bucket they had a session in; behaviour: once, at their best level
+  const levelUsers =
+    basis === "score"
+      ? { high: "h > 0", medium: "m > 0", low: "l > 0" }
+      : { high: "h > 0", medium: "h = 0 AND m > 0", low: "h = 0 AND m = 0 AND l > 0" };
+
+  const outer = ["COUNT(*) AS visitors_users", "COALESCE(SUM(sessions), 0) AS visitors_sessions"];
+  [["high", "h"], ["medium", "m"], ["low", "l"]].forEach(([level, col]) => {
+    outer.push(
+      `COALESCE(SUM(${levelUsers[level]}), 0) AS ${level}_users`,
+      `COALESCE(SUM(${col}), 0) AS ${level}_sessions`,
+    );
+  });
+
+  const sql = `
+    SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
+      report_day,
+      ${outer.join(",\n      ")}
+    FROM (
+      SELECT
+        DATE_FORMAT(session_start, '%Y-%m-%d') AS report_day,
+        actor_id,
+        COUNT(*) AS sessions,
+        COALESCE(SUM(lvl = 'high'), 0) AS h,
+        COALESCE(SUM(lvl = 'medium'), 0) AS m,
+        COALESCE(SUM(lvl = 'low'), 0) AS l
+      FROM (
+        SELECT
+          session_start,
+          actor_id,
+          ${levelExpr} AS lvl
+        FROM intent_sessions
+        WHERE session_start >= ? AND session_start < ?
+      ) s
+      GROUP BY report_day, actor_id
+    ) per_actor
+    GROUP BY report_day
+    ORDER BY report_day
+  `;
+  return { sql, params: [start, endExclusive] };
+}
+
+function buildReportStartedQuery({ start, end }) {
+  return {
+    sql: `
+      SELECT
+        DATE_FORMAT(summary_date, '%Y-%m-%d') AS report_day,
+        sessions_started
+      FROM intent_daily_summary
+      WHERE summary_date >= ? AND summary_date <= ?
+    `,
+    params: [start, end],
+  };
+}
+
+function readReportKpis(row) {
+  const kpis = {};
+  REPORT_KPI_IDS.forEach((id) => {
+    kpis[id] = { users: num(row?.[`${id}_users`]), sessions: num(row?.[`${id}_sessions`]) };
+  });
+  return kpis;
+}
+
+function eachDate(start, end) {
+  const dates = [];
+  for (let date = start, guard = 0; date <= end && guard <= MAX_RANGE_DAYS; guard += 1) {
+    dates.push(date);
+    date = shiftDays(date, 1);
+  }
+  return dates;
+}
+
+// Every date of the range is returned (days without sessions as zeros), oldest first.
+function buildReport({ start, end, dayRows, startedRows }) {
+  const byDay = new Map((dayRows || []).map((row) => [row.report_day, row]));
+  const started = startedRows
+    ? new Map(startedRows.map((row) => [row.report_day, row.sessions_started]))
+    : null;
+  const startedFor = (date) =>
+    started && started.get(date) != null ? num(started.get(date)) : null;
+
+  const days = eachDate(start, end).map((date) => ({
+    date,
+    sessionsStarted: startedFor(date),
+    kpis: readReportKpis(byDay.get(date)),
+  }));
+  return { days };
+}
+
 // Small in-process TTL cache (same approach as metricsCacheService's MEM_CACHE).
 // The page re-requests the whole payload when the user flips sort / path
 // controls, so the heavy SQL results are reused for a short time instead of
@@ -931,8 +1340,9 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
     const pathStart = PATH_STARTS.includes(spec.pathStart) ? spec.pathStart : PATH_STARTS[0];
     const topN = Math.min(
       PATH_TOP_MAX,
-      Math.max(PATH_TOP_MIN, Number.parseInt(spec.pathTop, 10) || 5),
+      Math.max(PATH_TOP_MIN, Number.parseInt(spec.pathTop, 10) || PATH_BRANCHES_PER_STEP),
     );
+    const pathSteps = clampPathSteps(spec.pathSteps);
     const intent = INTENT_FILTERS.includes(spec.intent) ? spec.intent : "all";
 
     const length = daysInclusive(start, end);
@@ -967,7 +1377,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       intentFilterSupported: false,
     };
 
-    const filters = { start, end, intent, sort: spec.sort || "views", pathStart, pathTop: topN };
+    const filters = { start, end, intent, sort: spec.sort || "views", pathStart, pathTop: topN, pathSteps };
     const base = { filters, meta };
 
     const totalsQuery = buildTotalsQuery({ prevStart, curStart: start, endExclusive });
@@ -1126,26 +1536,277 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       topProducts,
       paths: pathsRes.ok
         ? {
-            ...buildPaths(pathsRes.rows, { topN }),
+            ...buildPaths(pathsRes.rows, { topN, steps: pathSteps }),
             coverage: buildPathCoverage(pathsRes.rows, pathsTotalRes.rows?.[0]),
           }
         : emptyPaths(),
     };
   }
 
-  return { getIntentFunnel };
+  // Source overlap card: a separate request from the main payload, so the page stays fast and the card can
+  // refetch on its own. Brand databases without the UTM columns answer `available: false` instead of failing.
+  async function getSourceOverlap(spec) {
+    const { conn, start, end, brandKey } = spec;
+    const basis = OVERLAP_BASES.includes(spec.basis) ? spec.basis : "behavior";
+    const intent = INTENT_FILTERS.includes(spec.intent) ? spec.intent : "all";
+    const filters = { start, end, intent, basis };
+    const empty = { sources: [], regions: [] };
+
+    const base = buildOverlapBase({
+      basis,
+      intent,
+      curStart: start,
+      endExclusive: shiftDays(end, 1),
+    });
+
+    try {
+      const topRows = await select(conn, buildOverlapTopSourcesQuery(base), brandKey);
+      if (!topRows?.length) {
+        return { filters, meta: { available: true }, ...empty };
+      }
+      // always the three fixed groups, in a fixed order; a group with no sessions is a zero
+      const bySource = new Map(topRows.map((row) => [String(row.src), row]));
+      const sources = OVERLAP_SOURCES.map(({ key, label }) => ({
+        key,
+        label,
+        sessions: num(bySource.get(key)?.sessions),
+        users: num(bySource.get(key)?.users),
+      }));
+      const regionRows = await select(
+        conn,
+        buildOverlapRegionsQuery(
+          base,
+          sources.map((source) => source.key),
+        ),
+        brandKey,
+      );
+      return {
+        filters,
+        meta: { available: true },
+        sources,
+        regions: buildOverlapRegions(sources, regionRows),
+      };
+    } catch (err) {
+      if (isMissingTable(err) || isSchemaMismatch(err)) {
+        return {
+          filters,
+          meta: {
+            available: false,
+            // an older brand database layout: no intent table, or no utm_source / intent column yet
+            reason: isMissingTable(err) ? "intent_tables_missing" : "schema_unsupported",
+          },
+          ...empty,
+        };
+      }
+      throw err;
+    }
+  }
+
+  // Intent report table: the KPI figures per day. Separate request from the page payload, so the card has
+  // its own date range. Older brand databases answer `available: false`.
+  async function getIntentReport(spec) {
+    const { conn, start, end, brandKey } = spec;
+    const basis = OVERLAP_BASES.includes(spec.basis) ? spec.basis : "behavior";
+    const filters = { start, end, basis };
+    const endExclusive = shiftDays(end, 1);
+    const meta = { available: true, sections: {} };
+
+    try {
+      const [dayRows, startedRes] = await Promise.all([
+        select(conn, buildReportQuery({ basis, start, endExclusive }), brandKey),
+        // optional: needs intent_daily_summary.sessions_started, added by the pipeline's rollup
+        selectOptional(conn, buildReportStartedQuery({ start, end }), "sessionsStarted", meta, brandKey),
+      ]);
+      return {
+        filters,
+        meta: { available: true, sections: meta.sections },
+        ...buildReport({
+          start,
+          end,
+          dayRows,
+          startedRows: startedRes.ok ? startedRes.rows : null,
+        }),
+      };
+    } catch (err) {
+      if (isMissingTable(err) || isSchemaMismatch(err)) {
+        return {
+          filters,
+          meta: {
+            available: false,
+            reason: isMissingTable(err) ? "intent_tables_missing" : "schema_unsupported",
+          },
+          days: [],
+        };
+      }
+      throw err;
+    }
+  }
+
+  // Funnel Exploration for a product and/or an intent level. Unlike the rollup-backed paths of
+  // getIntentFunnel this reads sessions, so it is bounded (see PATH_LIVE_*) and says so in the answer.
+  //  - product chosen: every session that viewed that product's PDP in the range; the journey starts at
+  //    that PDP view and follows the events after it.
+  //  - intent only: the sessions of the range in that intent level whose journey starts with `pathStart`.
+  // The result has the same shape as `paths` of getIntentFunnel, so the same Sankey draws it.
+  async function getPaths(spec) {
+    const { conn, start, end, brandKey } = spec;
+    const steps = clampPathSteps(spec.steps);
+    const basis = OVERLAP_BASES.includes(spec.basis) ? spec.basis : "behavior";
+    const intent = INTENT_FILTERS.includes(spec.intent) ? spec.intent : "all";
+    const productId = normalizePathProductId(spec.productId);
+    const pathStart = productId
+      ? "product_viewed"
+      : PATH_STARTS.includes(spec.pathStart)
+        ? spec.pathStart
+        : PATH_STARTS[0];
+    const filters = { start, end, intent, basis, pathStart, steps, productId };
+    const level = buildPathLevelFilter({ basis, intent });
+    const endExclusive = shiftDays(end, 1);
+    const run = ({ sql, params }) => conn.query(sql, { type: QueryTypes.SELECT, replacements: params });
+
+    const compute = async () => {
+      const counts = new Map();
+      let used = 0;
+      let scanned = 0;
+      let capped = false;
+      const add = (names) => {
+        if (!names || names.length === 0) return;
+        if (!productId && names[0] !== pathStart) return;
+        const key = names.slice(0, steps).join(">");
+        counts.set(key, (counts.get(key) || 0) + 1);
+        used += 1;
+      };
+
+      if (productId) {
+        const events = await run(buildPathProductEventsQuery({ start, endExclusive, productId }));
+        capped = events.length >= PATH_LIVE_EVENT_CAP;
+        // the first view of the product in each session is where its journey starts
+        const firstView = new Map();
+        events.forEach((row) => {
+          const sessionId = String(row.session_id);
+          if (!firstView.has(sessionId)) firstView.set(sessionId, String(row.event_id));
+        });
+        const sessionIds = [...firstView.keys()];
+        for (let i = 0; i < sessionIds.length; i += PATH_LIVE_BATCH) {
+          const batch = sessionIds.slice(i, i + PATH_LIVE_BATCH);
+          const rows = await run(buildPathSessionsByIdQuery({ sessionIds: batch, level }));
+          rows.forEach((row) => {
+            scanned += 1;
+            add(
+              pathFromSequence(row.event_sequence, {
+                fromEventId: firstView.get(String(row.session_id)),
+                maxSteps: PATH_SEQUENCE_MAX_STEPS,
+              }),
+            );
+          });
+        }
+      } else {
+        let after = null;
+        let lastChunkFull = false;
+        while (scanned < PATH_LIVE_SESSION_CAP) {
+          const rows = await run(buildPathSessionScanQuery({ start, endExclusive, level, after }));
+          if (rows.length === 0) {
+            lastChunkFull = false;
+            break;
+          }
+          rows.forEach((row) => {
+            scanned += 1;
+            add(pathFromSequence(row.event_sequence, { maxSteps: PATH_SEQUENCE_MAX_STEPS }));
+          });
+          lastChunkFull = rows.length >= PATH_LIVE_CHUNK;
+          if (!lastChunkFull) break;
+          const last = rows[rows.length - 1];
+          after = { start: last.session_start, id: last.id };
+        }
+        capped = scanned >= PATH_LIVE_SESSION_CAP && lastChunkFull;
+      }
+
+      const rows = [...counts.entries()].map(([sequence, sessions]) => ({ sequence, sessions }));
+      return { rows, used, scanned, capped };
+    };
+
+    try {
+      const out = brandKey
+        ? await cache(`${brandKey}|paths|${JSON.stringify(filters)}`, compute)
+        : await compute();
+      return {
+        filters,
+        meta: { available: true, live: true, capped: out.capped, scannedSessions: out.scanned },
+        paths: {
+          ...buildPaths(out.rows, { topN: PATH_BRANCHES_PER_STEP, steps }),
+          // a capped scan has no known total, so there is no coverage percentage to show
+          coverage: out.capped
+            ? { sessions: out.used, totalSessions: null, pct: null }
+            : { sessions: out.used, totalSessions: out.used, pct: 100 },
+          live: true,
+          capped: out.capped,
+        },
+      };
+    } catch (err) {
+      if (isMissingTable(err) || isSchemaMismatch(err)) {
+        return {
+          filters,
+          meta: {
+            available: false,
+            reason: isMissingTable(err) ? "intent_tables_missing" : "schema_unsupported",
+          },
+          paths: emptyPaths(),
+        };
+      }
+      throw err;
+    }
+  }
+
+  // The product dropdown of the Funnel Exploration: the store's top products as already cached in Redis
+  // by the inventory pipeline. `readTopProductsCache(brandKey)` returns the raw cached JSON (or null); it is
+  // injected by the controller so this service stays free of Redis. When Redis has nothing for the brand, the
+  // top products of the rollup (most viewed in the range) are used instead.
+  async function getPathProducts(spec, { readTopProductsCache } = {}) {
+    const { conn, start, end, brandKey } = spec;
+    const limit = PRODUCT_RESULT_LIMIT;
+
+    let raw = null;
+    try {
+      raw = readTopProductsCache ? await readTopProductsCache(brandKey) : null;
+    } catch (err) {
+      logger.warn(`[intent-funnel] top products cache unavailable: ${err?.message}`);
+    }
+    const cached = parseTopProductsCache(raw, limit);
+    if (cached.length > 0) {
+      return { source: "redis", products: cached.map(({ id, name }) => ({ id, name })) };
+    }
+
+    const meta = { sections: {} };
+    const res = await selectOptional(
+      conn,
+      buildProductRollupQuery({ start, end, sortKey: PRODUCT_SORTS.views }),
+      "topProducts",
+      meta,
+      brandKey,
+    );
+    const fallback = res.ok ? rollupProducts(res.rows) : [];
+    return { source: "rollup", products: fallback.map(({ id, name }) => ({ id, name })) };
+  }
+
+  return { getIntentFunnel, getSourceOverlap, getIntentReport, getPaths, getPathProducts };
 }
 
 module.exports = {
   buildIntentFunnelService,
   createQueryCache,
+  INTENT_LEVELS,
+  OVERLAP_BASES,
   INTENT_FILTERS,
   PRODUCT_SORTS,
   PATH_STARTS,
   PATH_TOP_MIN,
   PATH_TOP_MAX,
+  PATH_STEPS_MIN,
+  PATH_STEPS_MAX,
+  PATH_STEPS_DEFAULT,
   MAX_RANGE_DAYS,
   isQueryTimeout,
+  normalizePathProductId,
   // exported for unit tests
   _internal: {
     buildTotalsQuery,
@@ -1170,9 +1831,28 @@ module.exports = {
     buildPathsQuery,
     buildPathsTotalQuery,
     buildPaths,
+    parseEventSequence,
+    pathFromSequence,
+    buildPathLevelFilter,
+    buildPathProductEventsQuery,
+    buildPathSessionsByIdQuery,
+    buildPathSessionScanQuery,
+    parseTopProductsCache,
+    clampPathSteps,
+    PATH_LIVE_SESSION_CAP,
+    PATH_LIVE_EVENT_CAP,
+    PATH_LIVE_CHUNK,
     mergeProducts,
     extractProductIds,
     safePct,
     pctChange,
+    buildOverlapBase,
+    buildOverlapTopSourcesQuery,
+    buildOverlapRegionsQuery,
+    buildOverlapRegions,
+    SOURCE_NORMALIZE_SQL,
+    buildReportQuery,
+    buildReport,
+    eachDate,
   },
 };

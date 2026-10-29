@@ -288,7 +288,7 @@ function applyNumericFilters(rows, filters) {
   );
 }
 
-function FunnelDateRangePicker({ startDate, endDate, onApply }) {
+export function FunnelDateRangePicker({ startDate, endDate, onApply }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [month, setMonth] = useState(dayjs(endDate || dayjs()).month());
   const [year, setYear] = useState(dayjs(endDate || dayjs()).year());
