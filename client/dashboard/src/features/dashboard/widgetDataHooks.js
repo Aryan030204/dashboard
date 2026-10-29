@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { useAppSelector } from "../../state/hooks.js";
 import { useDashboardDataApi } from "./DashboardDataProvider.jsx";
+import { fetchPagespeedResults, pagespeedBrandName } from "../../lib/pagespeed.js";
 
 const WEB_VITAL_METRIC_KEYS = {
   FCP: "fcp",
@@ -83,37 +84,6 @@ function getPreviousDateWindow(startStr, endStr) {
   };
 }
 
-// Module-level cache + in-flight dedup for the pagespeed fetch. WebVitals and
-// WebPerformancePanel both call this with identical (brand, start, end) args
-// for the same dashboard load — without this, each fires its own raw fetch()
-// (this call bypasses DashboardDataProvider's cache, which only covers calls
-// made through useDashboardDataApi), doubling the request count.
-const pagespeedCache = new Map();
-const pagespeedInflight = new Map();
-
-function fetchPagespeedResults(brandName, start, end) {
-  if (!brandName || !start || !end) return Promise.resolve([]);
-  const key = `${brandName}|${start}|${end}`;
-
-  if (pagespeedCache.has(key)) return Promise.resolve(pagespeedCache.get(key));
-  if (pagespeedInflight.has(key)) return pagespeedInflight.get(key);
-
-  const request = fetch(
-    `/api/external-pagespeed/pagespeed?brand_key=${encodeURIComponent(brandName)}&start_date=${start}&end_date=${end}`,
-  )
-    .then((res) => res.json())
-    .then((json) => json.results || [])
-    .catch(() => [])
-    .then((results) => {
-      pagespeedCache.set(key, results);
-      pagespeedInflight.delete(key);
-      return results;
-    });
-
-  pagespeedInflight.set(key, request);
-  return request;
-}
-
 function calculatePageMetric(results, metricKey) {
   const grouped = {};
   results.forEach((item) => {
@@ -154,18 +124,7 @@ export function useDashboardWebVitalsData(query, metric = "FCP", options = {}) {
     .trim()
     .toUpperCase();
 
-  const brandName = useMemo(() => {
-    switch (activeBrandKey) {
-      case "TMC":
-        return "TMC";
-      case "BBB":
-        return "BlaBliBluLife";
-      case "PTS":
-        return "SkincarePersonalTouch";
-      default:
-        return activeBrandKey || "";
-    }
-  }, [activeBrandKey]);
+  const brandName = useMemo(() => pagespeedBrandName(activeBrandKey), [activeBrandKey]);
 
   const startDate = query?.start || null;
   const endDate = query?.end || null;
