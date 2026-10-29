@@ -12,7 +12,14 @@ const mockBrandContext = jest.fn((req, _res, next) => {
 });
 
 jest.mock("../../../modules/metrics/intentFunnelController", () => ({
-  buildIntentFunnelController: jest.fn(() => ({ getIntentFunnel: mockHandler })),
+  // every intent-funnel route is registered at router build time, so every handler must exist
+  buildIntentFunnelController: jest.fn(() => ({
+    getIntentFunnel: mockHandler,
+    getSourceOverlap: mockHandler,
+    getIntentReport: mockHandler,
+    getPaths: mockHandler,
+    getPathProducts: mockHandler,
+  })),
 }));
 
 jest.mock("../../../shared/middleware/brandContext", () => ({
