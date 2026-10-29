@@ -1380,10 +1380,36 @@ export async function getIntentFunnel(args = {}, options = {}) {
       intent: args.intent,
       path_start: args.pathStart,
       path_top: args.pathTop,
+      path_steps: args.pathSteps,
     },
     args,
   );
   return doGet("/metrics/intent-funnel", params, options);
+}
+
+// Intent Funnel "Funnel Exploration" for a product and/or an intent level (the unfiltered view comes with
+// getIntentFunnel). `productId` starts every journey at that product's PDP view; `intent` is "all" or one
+// level (high / medium / low) on `basis` ("behavior" or "score"); `steps` is the path length.
+export async function getIntentFunnelPaths(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      intent: args.intent,
+      basis: args.basis,
+      path_start: args.pathStart,
+      steps: args.steps,
+      product_id: args.productId || undefined,
+    },
+    args,
+  );
+  return doGet("/metrics/intent-funnel/paths", params, options);
+}
+
+// The store's top products (from the Redis cache) for the Funnel Exploration product dropdown.
+export async function getIntentFunnelPathProducts(args = {}, options = {}) {
+  const params = appendBrandKey({ start: args.start, end: args.end || args.start }, args);
+  return doGet("/metrics/intent-funnel/path-products", params, options);
 }
 
 // Intent Funnel "User Overlap by UTM Source" card. Its own request so the card can refetch alone.

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { Box, Button, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { EmptyStateCard, SectionFallback } from "../routes/shared/RouteUi.jsx";
-import { getIntentFunnel } from "../lib/api.js";
+import { getIntentFunnel, getIntentFunnelPathProducts, getIntentFunnelPaths } from "../lib/api.js";
+import { PATH_STEPS_DEFAULT } from "./intentFunnel/intentFunnelUtils.js";
 import IntentKpiGrid from "./intentFunnel/IntentKpiGrid.jsx";
 import IntentDistributionDonut from "./intentFunnel/IntentDistributionDonut.jsx";
 import IntentSourceOverlap from "./intentFunnel/IntentSourceOverlap.jsx";
@@ -22,9 +23,14 @@ const rowSx = (columns) => ({
 
 export default function IntentFunnelPanel({ brandKey, start, end }) {
   const [topProductsSort, setTopProductsSort] = useState("views");
-  // Funnel Exploration: the starting event and how many of the most common paths to show per step.
+  // Funnel Exploration: the starting event, the path length (steps), an intent level and a product. With a
+  // product or an intent level chosen the paths are read live (own request); otherwise they come with the page.
   const [pathStart, setPathStart] = useState("page_viewed");
-  const [topN, setTopN] = useState(5);
+  const [pathSteps, setPathSteps] = useState(PATH_STEPS_DEFAULT);
+  const [pathIntent, setPathIntent] = useState("all");
+  const [pathProduct, setPathProduct] = useState("");
+  const [pathProducts, setPathProducts] = useState([]);
+  const [livePaths, setLivePaths] = useState({ status: "idle", paths: null });
   // "behavior": rule-based over every session, each visitor at their best level (the same idea as Microsoft
   // Clarity's user intent). "score": percentile buckets of the intent score. Both come in the same response;
   // until the user picks one, behaviour is shown whenever the server sent it.
@@ -57,7 +63,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
         end: endKey,
         sort: API_SORT[topProductsSort],
         pathStart,
-        pathTop: topN,
+        pathSteps,
       },
       { signal: controller.signal },
     ).then((res) => {
@@ -70,7 +76,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
       setLoading(false);
     });
     return () => controller.abort();
-  }, [brandKey, startKey, endKey, topProductsSort, pathStart, topN, reloadKey]);
+  }, [brandKey, startKey, endKey, topProductsSort, pathStart, pathSteps, reloadKey]);
 
   const behavior = data?.behavior || null;
   const basis = intentBasis || (behavior ? "behavior" : "score");
@@ -82,6 +88,61 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
     const replacements = new Map((behavior.kpis || []).map((kpi) => [kpi.id, kpi]));
     return base.map((kpi) => replacements.get(kpi.id) || kpi);
   }, [data?.kpis, behavior, useBehavior]);
+
+  const pathBasis = useBehavior ? "behavior" : "score";
+  const liveActive = pathIntent !== "all" || Boolean(pathProduct);
+
+  // The store's top products (Redis cache) for the Funnel Exploration product filter.
+  useEffect(() => {
+    setPathProduct("");
+  }, [brandKey]);
+  useEffect(() => {
+    if (!brandKey || !startKey || !endKey) return undefined;
+    const controller = new AbortController();
+    getIntentFunnelPathProducts(
+      { brand_key: brandKey, start: startKey, end: endKey },
+      { signal: controller.signal },
+    ).then((res) => {
+      if (res.aborted) return;
+      setPathProducts(res.error ? [] : res.data?.products || []);
+    });
+    return () => controller.abort();
+  }, [brandKey, startKey, endKey]);
+
+  // Paths for a chosen product and/or intent level. The previous paths stay on screen (dimmed) while the
+  // next ones load, so changing a filter does not blank the card.
+  useEffect(() => {
+    if (!liveActive) {
+      setLivePaths({ status: "idle", paths: null });
+      return undefined;
+    }
+    if (!brandKey || !startKey || !endKey) return undefined;
+    const controller = new AbortController();
+    setLivePaths((previous) => ({ ...previous, status: "loading" }));
+    getIntentFunnelPaths(
+      {
+        brand_key: brandKey,
+        start: startKey,
+        end: endKey,
+        intent: pathIntent,
+        basis: pathBasis,
+        pathStart,
+        steps: pathSteps,
+        productId: pathProduct,
+      },
+      { signal: controller.signal },
+    ).then((res) => {
+      if (res.aborted) return;
+      if (res.error) {
+        setLivePaths({ status: "error", paths: null });
+      } else if (res.data?.meta?.available === false) {
+        setLivePaths({ status: "unavailable", paths: null });
+      } else {
+        setLivePaths({ status: "ready", paths: res.data?.paths || null });
+      }
+    });
+    return () => controller.abort();
+  }, [liveActive, brandKey, startKey, endKey, pathIntent, pathBasis, pathStart, pathSteps, pathProduct]);
 
   const unavailable = data?.meta?.available === false;
   const hasSessions = (data?.kpis || []).some((kpi) => kpi.id === "visitors" && kpi.sessions > 0);
@@ -183,11 +244,17 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
 
         {/* 3. Funnel Exploration, full width */}
         <PathExplorationSankey
-          paths={data.paths}
+          paths={liveActive ? livePaths.paths : data.paths}
+          status={liveActive ? (livePaths.status === "idle" ? "loading" : livePaths.status) : "ready"}
           pathStart={pathStart}
           onPathStartChange={setPathStart}
-          topN={topN}
-          onTopNChange={setTopN}
+          steps={pathSteps}
+          onStepsChange={setPathSteps}
+          intent={pathIntent}
+          onIntentChange={setPathIntent}
+          productId={pathProduct}
+          onProductChange={setPathProduct}
+          products={pathProducts}
         />
 
         {/* 4. Intent Report, full width, last */}

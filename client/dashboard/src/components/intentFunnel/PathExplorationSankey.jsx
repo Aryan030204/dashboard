@@ -13,8 +13,9 @@ import { ResponsiveContainer, Sankey, Tooltip as ChartTooltip } from "recharts";
 import { SectionCard } from "./shared.jsx";
 import {
   INTENT_COLORS,
+  PATH_INTENT_OPTIONS,
   PATH_START_OPTIONS,
-  PATH_TOP_OPTIONS,
+  PATH_STEP_OPTIONS,
   formatCount,
   formatPct,
 } from "./intentFunnelUtils.js";
@@ -33,15 +34,11 @@ const STATE_COLORS = {
 };
 
 // How many of the most common paths the chart shows per step.
-const PATH_COUNT_OPTIONS = PATH_TOP_OPTIONS.filter((n) => n >= 3 && n <= 5);
-
-// Single-select, one level at a time (no "all").
-const INTENT_LEVEL_OPTIONS = [
-  { value: "high", label: "High Intent" },
-  { value: "medium", label: "Medium Intent" },
-  { value: "low", label: "Low Intent" },
-];
-const PRODUCT_OPTIONS = [{ value: "top10", label: "Top 10 Products" }];
+const PATH_STEP_SELECT_OPTIONS = PATH_STEP_OPTIONS.map((n) => ({ value: n, label: `${n} steps` }));
+// With a product chosen every journey starts at that product's PDP view.
+const PDP_START_OPTIONS = [{ value: "product_viewed", label: "Product View (PDP)" }];
+const MIN_SANKEY_WIDTH = 980;
+const STEP_WIDTH = 196;
 
 const DIMMED_OPACITY = 0.18;
 
@@ -64,7 +61,7 @@ function ControlSelect({ label, value, onChange, options, hint, disabled = false
             : undefined
         }
         inputProps={{ "aria-label": label }}
-        sx={{ fontSize: 13, minWidth: { xs: 0, sm: 130 } }}
+        sx={{ fontSize: 13, minWidth: { xs: 0, sm: 130 }, maxWidth: { sm: 240 } }}
       >
         {options.map((option) => (
           <MenuItem key={option.value} value={option.value} disabled={option.disabled}>
@@ -215,8 +212,15 @@ export default function PathExplorationSankey({
   paths,
   pathStart,
   onPathStartChange,
-  topN,
-  onTopNChange,
+  steps,
+  onStepsChange,
+  intent = "all",
+  onIntentChange,
+  productId = "",
+  onProductChange,
+  products = [],
+  // "ready" | "loading" | "error" | "unavailable": the live (product / intent) view loads on its own
+  status = "ready",
 }) {
   const theme = useTheme();
   const phone = useMediaQuery(theme.breakpoints.down("md"));
@@ -332,7 +336,7 @@ export default function PathExplorationSankey({
   return (
     <SectionCard
       title="Funnel Exploration"
-      info="Where sessions go next after each step, from recorded event sequences. Choose the starting event and how many of the most common paths to show per step. Hover a step or a flow to follow its whole journey. Percentages are the share of the sessions at that step. Splitting journeys by intent or product is not available yet."
+      info="Where sessions go next after each step, from recorded event sequences. Choose the starting event and how many steps to follow. Pick a product to start every journey at that product's page, or an intent level to look at only those sessions. Hover a step or a flow to follow its whole journey. Percentages are the share of the sessions at that step."
       action={
         <Box
           sx={{
@@ -346,35 +350,43 @@ export default function PathExplorationSankey({
         >
           <ControlSelect
             label="Start with"
-            value={pathStart}
+            value={productId ? "product_viewed" : pathStart}
             onChange={onPathStartChange}
-            options={PATH_START_OPTIONS}
+            options={productId ? PDP_START_OPTIONS : PATH_START_OPTIONS}
+            disabled={Boolean(productId)}
+            hint={productId ? "Journeys start at the chosen product's page" : undefined}
           />
           <ControlSelect
             label="Paths"
-            value={topN}
-            onChange={onTopNChange}
-            options={PATH_COUNT_OPTIONS.map((n) => ({ value: n, label: `${n} paths` }))}
+            value={steps}
+            onChange={onStepsChange}
+            options={PATH_STEP_SELECT_OPTIONS}
           />
           <ControlSelect
             label="Intent"
-            value=""
-            placeholder="Select intent"
-            disabled
-            options={INTENT_LEVEL_OPTIONS}
-            hint="Splitting journeys by intent is not available yet"
+            value={intent}
+            onChange={onIntentChange}
+            options={PATH_INTENT_OPTIONS}
+            disabled={!onIntentChange}
           />
           <ControlSelect
             label="Products"
-            value="top10"
-            disabled
-            options={PRODUCT_OPTIONS}
-            hint="Splitting journeys by product is not available yet"
+            value={productId}
+            onChange={onProductChange}
+            placeholder="All products"
+            options={[{ value: "", label: "All products" }, ...products.map((p) => ({ value: p.id, label: p.name }))]}
+            disabled={!onProductChange}
+            hint={products.length === 0 ? "No top products found for this store yet" : undefined}
           />
         </Box>
       }
     >
-      {data && paths?.coverage && paths.coverage.pct < 99.5 ? (
+      {data && paths?.capped ? (
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+          Based on the first {formatCount(paths.coverage?.sessions)} matching sessions of the range; pick a
+          shorter date range to cover them all. Percentages are the share of the sessions at each step.
+        </Typography>
+      ) : data && paths?.coverage && paths.coverage.pct != null && paths.coverage.pct < 99.5 ? (
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
           Showing the most common paths, covering {formatPct(paths.coverage.pct, 0)} of{" "}
           {formatCount(paths.coverage.totalSessions)} sessions that started here. Percentages are the share
@@ -389,7 +401,14 @@ export default function PathExplorationSankey({
         <PathStepList paths={paths} textColor={textColor} />
       ) : data ? (
         <Box sx={{ overflowX: "auto" }}>
-          <Box sx={{ minWidth: 980, height: 460 }}>
+          <Box
+            sx={{
+              minWidth: Math.max(MIN_SANKEY_WIDTH, (paths?.steps?.length || steps || 5) * STEP_WIDTH),
+              height: 460,
+              opacity: status === "loading" ? 0.5 : 1,
+              transition: "opacity 0.2s ease",
+            }}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <Sankey
                 data={data}
@@ -407,7 +426,15 @@ export default function PathExplorationSankey({
         </Box>
       ) : (
         <Typography variant="body2" color="text.secondary">
-          No path data for this selection.
+          {status === "loading"
+            ? "Loading paths..."
+            : status === "error"
+              ? "Couldn't load paths for this selection. Please try again."
+              : status === "unavailable"
+                ? "Path exploration for this selection isn't available for this brand yet."
+                : productId
+                  ? "No sessions viewed this product in the selected date range."
+                  : "No path data for this selection."}
         </Typography>
       )}
     </SectionCard>

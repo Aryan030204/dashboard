@@ -8,15 +8,54 @@ const {
   PATH_STARTS,
   PATH_TOP_MIN,
   PATH_TOP_MAX,
+  PATH_STEPS_MIN,
+  PATH_STEPS_MAX,
+  PATH_STEPS_DEFAULT,
   MAX_RANGE_DAYS,
   isQueryTimeout,
+  normalizePathProductId,
 } = require('../../services/intentFunnelService');
 
 function badRequest(res, error) {
   return res.status(400).json({ error });
 }
 
-function buildIntentFunnelController({ intentFunnelService }) {
+// Reads the path length query value; undefined means "use the default".
+function readPathSteps(raw) {
+  if (raw === undefined || raw === '') return { ok: true, value: PATH_STEPS_DEFAULT };
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < PATH_STEPS_MIN || value > PATH_STEPS_MAX) {
+    return { ok: false };
+  }
+  return { ok: true, value };
+}
+
+// The checks every intent-funnel request shares: both dates, a brand connection and the range cap.
+// Sends the error response itself and returns null when the request is not valid.
+function resolveSpec(req, res) {
+  if (!req.query.start || !req.query.end) {
+    badRequest(res, 'Both start and end dates are required');
+    return null;
+  }
+  const normalized = normalizeMetricRequest(req, { requireBoth: true });
+  if (!normalized.ok) {
+    res.status(normalized.status).json(normalized.body);
+    return null;
+  }
+  const { spec } = normalized;
+  if (!spec.conn) {
+    res.status(500).json({ error: 'Brand DB connection unavailable' });
+    return null;
+  }
+  if (daysInclusive(spec.start, spec.end) > MAX_RANGE_DAYS) {
+    badRequest(res, `Date range cannot exceed ${MAX_RANGE_DAYS} days`);
+    return null;
+  }
+  return spec;
+}
+
+// `readTopProductsCache(brandKey)` returns the cached top-products JSON of the brand's store (or null).
+function buildIntentFunnelController({ intentFunnelService, readTopProductsCache }) {
   return {
     getIntentFunnel: async (req, res) => {
       try {
@@ -59,6 +98,14 @@ function buildIntentFunnelController({ intentFunnelService }) {
           );
         }
 
+        const pathSteps = readPathSteps(req.query.path_steps);
+        if (!pathSteps.ok) {
+          return badRequest(
+            res,
+            `path_steps must be an integer between ${PATH_STEPS_MIN} and ${PATH_STEPS_MAX}`,
+          );
+        }
+
         return res.json(
           await intentFunnelService.getIntentFunnel({
             conn: spec.conn,
@@ -70,6 +117,7 @@ function buildIntentFunnelController({ intentFunnelService }) {
             sort,
             pathStart,
             pathTop: rawTop,
+            pathSteps: pathSteps.value,
           }),
         );
       } catch (e) {
@@ -123,6 +171,75 @@ function buildIntentFunnelController({ intentFunnelService }) {
           return res.status(504).json({ error: 'Source overlap took too long. Try a shorter date range.' });
         }
         return handleControllerError(res, e, 'intent-funnel source-overlap failed');
+      }
+    },
+
+    // Funnel Exploration for a product and/or an intent level (live, bounded). `product_id` is a numeric Shopify
+    // product id; `intent` is all / high / medium / low on the `basis` the page is showing.
+    getPaths: async (req, res) => {
+      try {
+        const spec = resolveSpec(req, res);
+        if (!spec) return undefined;
+
+        const intent = String(req.query.intent || 'all').toLowerCase();
+        if (!INTENT_FILTERS.includes(intent)) {
+          return badRequest(res, 'Invalid intent');
+        }
+        const basis = String(req.query.basis || 'behavior').toLowerCase();
+        if (!OVERLAP_BASES.includes(basis)) {
+          return badRequest(res, 'Invalid basis');
+        }
+        const pathStart = String(req.query.path_start || PATH_STARTS[0]).toLowerCase();
+        if (!PATH_STARTS.includes(pathStart)) {
+          return badRequest(res, 'Invalid path_start');
+        }
+        const steps = readPathSteps(req.query.steps);
+        if (!steps.ok) {
+          return badRequest(res, `steps must be an integer between ${PATH_STEPS_MIN} and ${PATH_STEPS_MAX}`);
+        }
+        let productId = null;
+        if (req.query.product_id !== undefined && req.query.product_id !== '') {
+          productId = normalizePathProductId(req.query.product_id);
+          if (!productId) return badRequest(res, 'Invalid product_id');
+        }
+
+        return res.json(
+          await intentFunnelService.getPaths({
+            conn: spec.conn,
+            brandKey: spec.brandKey,
+            start: spec.start,
+            end: spec.end,
+            intent,
+            basis,
+            pathStart,
+            steps: steps.value,
+            productId,
+          }),
+        );
+      } catch (e) {
+        if (isQueryTimeout(e)) {
+          return res.status(504).json({ error: 'Path exploration took too long. Try a shorter date range.' });
+        }
+        return handleControllerError(res, e, 'intent-funnel paths failed');
+      }
+    },
+
+    // The product dropdown of the Funnel Exploration: the store's top products from the Redis cache.
+    getPathProducts: async (req, res) => {
+      try {
+        const spec = resolveSpec(req, res);
+        if (!spec) return undefined;
+        return res.json(
+          await intentFunnelService.getPathProducts(
+            { conn: spec.conn, brandKey: spec.brandKey, start: spec.start, end: spec.end },
+            { readTopProductsCache },
+          ),
+        );
+      } catch (e) {
+        if (isQueryTimeout(e)) {
+          return res.status(504).json({ error: 'Products took too long to load.' });
+        }
+        return handleControllerError(res, e, 'intent-funnel path-products failed');
       }
     },
 
