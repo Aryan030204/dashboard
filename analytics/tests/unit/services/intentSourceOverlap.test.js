@@ -105,7 +105,7 @@ describe("intentFunnelService.getSourceOverlap", () => {
       const topCall = conn.query.mock.calls.find(([sql]) => sql.includes("GROUP BY src"));
       expect(topCall[0]).not.toContain("session_time_spent_ms");
       expect(topCall[0]).not.toContain("intent_status");
-      expect(topCall[1].replacements).toEqual(["2026-10-10", "2026-10-13"]);
+      expect(topCall[1].replacements).toEqual(["2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13"]);
     });
 
     test("one level on the behaviour basis uses the behaviour rules, the level bound as a parameter", async () => {
@@ -114,7 +114,7 @@ describe("intentFunnelService.getSourceOverlap", () => {
       const topCall = conn.query.mock.calls.find(([sql]) => sql.includes("GROUP BY src"));
       expect(topCall[0]).toContain("session_time_spent_ms IS NOT NULL");
       expect(topCall[0]).toContain("click_count");
-      expect(topCall[1].replacements).toEqual(["2026-10-10", "2026-10-13", "high"]);
+      expect(topCall[1].replacements).toEqual(["2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13", "high"]);
     });
 
     test("one level on the score basis filters on the percentile bucket of scored sessions", async () => {
@@ -124,7 +124,7 @@ describe("intentFunnelService.getSourceOverlap", () => {
       const topCall = conn.query.mock.calls.find(([sql]) => sql.includes("GROUP BY src"));
       expect(topCall[0]).toContain("intent_status = 'scored'");
       expect(topCall[0]).toContain("intent_bucket = ?");
-      expect(topCall[1].replacements).toEqual(["2026-10-10", "2026-10-13", "low"]);
+      expect(topCall[1].replacements).toEqual(["2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13", "low"]);
     });
 
     test("unknown intent and unknown basis fall back to safe defaults", async () => {
@@ -153,6 +153,40 @@ describe("intentFunnelService.getSourceOverlap", () => {
     });
   });
 
+  describe("where the source comes from", () => {
+    // intent_sessions has no utm_source column; it lives on behavioral_events (migration 003).
+    test("the UTM source is joined from behavioral_events by session_id, not read from intent_sessions", async () => {
+      const conn = makeConn();
+      await newService().getSourceOverlap({ ...SPEC, conn });
+      const [sql] = conn.query.mock.calls[0];
+
+      expect(sql).toContain("FROM behavioral_events");
+      expect(sql).toContain("first_touch.utm_session_id = intent_sessions.session_id");
+      expect(sql).toContain("utm_source IS NOT NULL AND utm_source <> ''");
+      expect(sql).toContain("ORDER BY occurred_at");
+      // sessions without any UTM keep their row (LEFT JOIN) and fall into 'others'
+      expect(sql).toContain("LEFT JOIN");
+    });
+
+    test("events are read for the range plus one day, then the sessions of the range, in placeholder order", async () => {
+      const conn = makeConn();
+      await newService().getSourceOverlap({ ...SPEC, intent: "high", conn });
+      const [sql, options] = conn.query.mock.calls[0];
+
+      // 2026-10-10 .. 2026-10-12 inclusive -> sessions < 10-13; events < 10-14
+      expect(options.replacements).toEqual(["2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13", "high"]);
+      expect(sql.indexOf("FROM behavioral_events")).toBeLessThan(sql.indexOf("session_start >= ?"));
+    });
+
+    test("a database whose behavioral_events has no utm_source answers available:false instead of failing", async () => {
+      const err = Object.assign(new Error("Unknown column 'utm_source'"), { code: "ER_BAD_FIELD_ERROR", errno: 1054 });
+      const conn = { query: jest.fn(async () => { throw err; }) };
+      const out = await newService().getSourceOverlap({ ...SPEC, conn });
+
+      expect(out.meta).toMatchObject({ available: false, reason: "schema_unsupported" });
+    });
+  });
+
   describe("query safety", () => {
     test("no request value or brand reaches the SQL text; the source groups are bound parameters", async () => {
       const conn = makeConn();
@@ -170,7 +204,7 @@ describe("intentFunnelService.getSourceOverlap", () => {
       // three flag slots + two IN lists, each with the three groups, then the base parameters
       expect(regionsCall[1].replacements).toEqual([
         "google", "meta", "others", "google", "meta", "others", "google", "meta", "others",
-        "2026-10-10", "2026-10-13", "medium",
+        "2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13", "medium",
       ]);
     });
 

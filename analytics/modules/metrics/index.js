@@ -31,6 +31,19 @@ const { buildIntentFunnelController } = require('./intentFunnelController');
 const { buildIntentFunnelService } = require('../../services/intentFunnelService');
 const { buildHeatmapController } = require('./heatmapController');
 const { buildHeatmapService } = require('../../services/heatmapService');
+const {
+  getDefaultRedisClient,
+  getInventoryTopProductSalesCache,
+} = require('../../services/productConversionService');
+const { resolveShopSubdomain: resolveBrandShop } = require('../../shared/utils/shop');
+
+// The inventory pipeline caches each store's top products in Redis (inventory_top_product_sales:<shop>).
+async function readTopProductsCache(brandKey) {
+  const shop = resolveBrandShop(brandKey);
+  const redisClient = getDefaultRedisClient();
+  if (!shop || !redisClient) return null;
+  return getInventoryTopProductSalesCache(redisClient, shop);
+}
 
 function buildMetricsRouter(sequelize) {
   const router = express.Router();
@@ -61,6 +74,7 @@ function buildMetricsRouter(sequelize) {
   const product = buildProductController({ pageService });
   const intentFunnel = buildIntentFunnelController({
     intentFunnelService: buildIntentFunnelService(),
+    readTopProductsCache,
   });
   const heatmap = buildHeatmapController({ heatmapService: buildHeatmapService() });
 
@@ -113,6 +127,18 @@ function buildMetricsRouter(sequelize) {
     requirePermission('intent_funnel_panel'),
     brandContext,
     intentFunnel.getSourceOverlap,
+  );
+  router.get(
+    '/intent-funnel/paths',
+    requirePermission('intent_funnel_panel'),
+    brandContext,
+    intentFunnel.getPaths,
+  );
+  router.get(
+    '/intent-funnel/path-products',
+    requirePermission('intent_funnel_panel'),
+    brandContext,
+    intentFunnel.getPathProducts,
   );
   router.get(
     '/intent-funnel/report',
