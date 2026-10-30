@@ -1236,6 +1236,8 @@ module.exports = {
   PATH_TOP_MAX,
   MAX_RANGE_DAYS,
   isQueryTimeout,
+  isMissingTable,
+  isSchemaMismatch,
   // exported for unit tests
   _internal: {
     buildTotalsQuery,
