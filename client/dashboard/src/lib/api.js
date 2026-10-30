@@ -1381,6 +1381,7 @@ export async function getIntentFunnel(args = {}, options = {}) {
       path_start: args.pathStart,
       path_top: args.pathTop,
       path_steps: args.pathSteps,
+      skip_paths: args.skipPaths ? "1" : undefined,
     },
     args,
   );

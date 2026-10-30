@@ -61,7 +61,14 @@ describe("intentFunnelController", () => {
       pathStart: "product_viewed",
       pathTop: 4,
       pathSteps: 5,
+      skipPaths: false,
     });
+  });
+
+  test("skip_paths leaves the path data out of the page payload", async () => {
+    const res = createRes();
+    await controller.getIntentFunnel(createReq({ skip_paths: "1" }), res);
+    expect(service.getIntentFunnel).toHaveBeenCalledWith(expect.objectContaining({ skipPaths: true }));
   });
 
   test("defaults are applied when optional params are absent", async () => {
