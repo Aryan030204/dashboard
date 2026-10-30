@@ -1441,6 +1441,36 @@ export async function getIntentReport(args = {}, options = {}) {
   return doGet("/metrics/intent-funnel/report", params, options);
 }
 
+// Heatmaps section of the Intent page. Popular pages: page views per page path for the range
+// (`device` is all / desktop / mobile / tablet).
+export async function getHeatmapPages(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      device: args.device && args.device !== "all" ? args.device : undefined,
+      search: args.search,
+      limit: args.limit,
+    },
+    args,
+  );
+  return doGet("/metrics/heatmap/pages", params, options);
+}
+
+// Ranked clicked elements of one page (`path` is the page path, e.g. "/collections/all").
+export async function getHeatmapElements(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      path: args.path,
+      limit: args.limit,
+    },
+    args,
+  );
+  return doGet("/metrics/heatmap/elements", params, options);
+}
+
 export async function getWebVitalsSnapshot(args = {}) {
   const params = appendBrandKey({ date: args.date }, args);
   const json = await getJSON("/web-vitals/snapshot", params);

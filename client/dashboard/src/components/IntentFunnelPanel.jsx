@@ -10,6 +10,7 @@ import IntentSourceOverlap from "./intentFunnel/IntentSourceOverlap.jsx";
 import TopProductsByIntent from "./intentFunnel/TopProductsByIntent.jsx";
 import PathExplorationSankey from "./intentFunnel/PathExplorationSankey.jsx";
 import IntentReport from "./intentFunnel/IntentReport.jsx";
+import HeatmapSection from "./intentFunnel/heatmap/HeatmapSection.jsx";
 
 // The UI tab value -> the sort value the API whitelists.
 const API_SORT = { views: "views", addToCart: "add_to_cart", checkouts: "checkouts" };
@@ -257,13 +258,16 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
           products={pathProducts}
         />
 
-        {/* 4. Intent Report, full width, last */}
+        {/* 4. Intent Report, full width */}
         <IntentReport
           brandKey={brandKey}
           pageStart={startKey}
           pageEnd={endKey}
           basis={useBehavior ? "behavior" : "score"}
         />
+
+        {/* 5. Heatmaps: popular pages, then the clicks on one page. Full width, last. */}
+        <HeatmapSection brandKey={brandKey} pageStart={startKey} pageEnd={endKey} />
       </Box>
     );
   }

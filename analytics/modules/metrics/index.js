@@ -29,6 +29,8 @@ const { buildSummaryController } = require('./summaryController');
 const { buildProductController } = require('./productController');
 const { buildIntentFunnelController } = require('./intentFunnelController');
 const { buildIntentFunnelService } = require('../../services/intentFunnelService');
+const { buildHeatmapController } = require('./heatmapController');
+const { buildHeatmapService } = require('../../services/heatmapService');
 const {
   getDefaultRedisClient,
   getInventoryTopProductSalesCache,
@@ -74,6 +76,7 @@ function buildMetricsRouter(sequelize) {
     intentFunnelService: buildIntentFunnelService(),
     readTopProductsCache,
   });
+  const heatmap = buildHeatmapController({ heatmapService: buildHeatmapService() });
 
   const apiKeyAuth = createApiKeyAuthMiddleware(sequelize, ['metrics:read']);
   const protectedBrand = [requireTrustedPrincipal, brandContext];
@@ -142,6 +145,19 @@ function buildMetricsRouter(sequelize) {
     requirePermission('intent_funnel_panel'),
     brandContext,
     intentFunnel.getIntentReport,
+  );
+  // Heatmaps section of the Intent page: popular pages, and ranked clicked elements of one page.
+  router.get(
+    '/heatmap/pages',
+    requirePermission('intent_funnel_panel'),
+    brandContext,
+    heatmap.getHeatmapPages,
+  );
+  router.get(
+    '/heatmap/elements',
+    requirePermission('intent_funnel_panel'),
+    brandContext,
+    heatmap.getHeatmapElements,
   );
   router.get('/monthly-trend', ...protectedBrand, trend.monthlyTrend);
   router.get('/hourly-product-sessions/export', requireTrustedAuthor, brandContext, product.hourlyProductSessionsExport);

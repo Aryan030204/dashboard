@@ -1806,6 +1806,8 @@ module.exports = {
   PATH_STEPS_DEFAULT,
   MAX_RANGE_DAYS,
   isQueryTimeout,
+  isMissingTable,
+  isSchemaMismatch,
   normalizePathProductId,
   // exported for unit tests
   _internal: {
