@@ -765,7 +765,22 @@ function buildProductCheckoutsQuery({ start, endExclusive }) {
   };
 }
 
-function buildPathsQuery({ start, end, pathStart }) {
+// "Paths that start with X". The pipeline stores each path's first event in an indexed column (first_event,
+// idx_first_event_date), so the filter can use an index instead of cutting every stored sequence apart. Rows written
+// before that column was filled have first_event NULL and are matched by their sequence text, so the answer is the
+// same while the column is still being filled. `useFirstEvent: false` is the original text-only filter (databases
+// without the column).
+function firstEventFilter(useFirstEvent, pathStart) {
+  return useFirstEvent
+    ? {
+        sql: "AND (first_event = ? OR (first_event IS NULL AND SUBSTRING_INDEX(sequence, '>', 1) = ?))",
+        params: [pathStart, pathStart],
+      }
+    : { sql: "AND SUBSTRING_INDEX(sequence, '>', 1) = ?", params: [pathStart] };
+}
+
+function buildPathsQuery({ start, end, pathStart, useFirstEvent = false }) {
+  const filter = firstEventFilter(useFirstEvent, pathStart);
   return {
     sql: `
       SELECT
@@ -774,28 +789,36 @@ function buildPathsQuery({ start, end, pathStart }) {
         SUM(unique_actor_count) AS users
       FROM behavioral_path_daily
       WHERE summary_date >= ? AND summary_date <= ?
-        AND SUBSTRING_INDEX(sequence, '>', 1) = ?
+        ${filter.sql}
       GROUP BY sequence_hash, sequence
       ORDER BY sessions DESC
       LIMIT ${PATH_ROW_LIMIT}
     `,
-    params: [start, end, pathStart],
+    params: [start, end, ...filter.params],
   };
 }
 
 // All sessions that start with the chosen event, used to report how much of
 // them the (bounded) path query covers.
-function buildPathsTotalQuery({ start, end, pathStart }) {
+function buildPathsTotalQuery({ start, end, pathStart, useFirstEvent = false }) {
+  const filter = firstEventFilter(useFirstEvent, pathStart);
   return {
     sql: `
       SELECT SUM(session_count) AS sessions
       FROM behavioral_path_daily
       WHERE summary_date >= ? AND summary_date <= ?
-        AND SUBSTRING_INDEX(sequence, '>', 1) = ?
+        ${filter.sql}
     `,
-    params: [start, end, pathStart],
+    params: [start, end, ...filter.params],
   };
 }
+
+function pathFirstEventEnabled(env = process.env) {
+  return String(env.INTENT_PATH_FIRST_EVENT || "on").trim().toLowerCase() !== "off";
+}
+
+// A brand database without behavioral_path_daily.first_event is not asked for it again for this long.
+const FIRST_EVENT_RECHECK_MS = 10 * 60 * 1000;
 
 // Product ids inside checkout rows: "[123]", "[123, 456]" or "123".
 function extractProductIds(raw) {
@@ -1198,11 +1221,23 @@ const OVERLAP_TOP_SOURCES = OVERLAP_SOURCES.length;
 
 // Constant SQL, never request input. The same Meta / Google alias sets as adsPerformance.service.js;
 // anything else (and no UTM source at all) is 'others'.
-const SOURCE_NORMALIZE_SQL = `CASE
-        WHEN LOWER(TRIM(utm_source)) IN ('facebook', 'fb', 'instagram', 'ig', 'meta', 'an', 'messenger') THEN 'meta'
-        WHEN LOWER(TRIM(utm_source)) IN ('google', 'youtube', 'gdn', 'adwords') THEN 'google'
+function sourceNormalizeSql(column) {
+  return `CASE
+        WHEN LOWER(TRIM(${column})) IN ('facebook', 'fb', 'instagram', 'ig', 'meta', 'an', 'messenger') THEN 'meta'
+        WHEN LOWER(TRIM(${column})) IN ('google', 'youtube', 'gdn', 'adwords') THEN 'google'
         ELSE 'others'
       END`;
+}
+const SOURCE_NORMALIZE_SQL = sourceNormalizeSql("utm_source");
+
+// INTENT_OVERLAP_SESSION_UTM=on reads each session's own first_utm_source (intent_sessions, written by the pipeline when
+// the session closes, migrations/004_session_first_utm.sql) instead of joining behavioral_events. It is OFF until the
+// column has been filled for the period being looked at (scripts/backfill_first_utm.py in intent-pipeline): a session
+// the pipeline closed before the column existed has no value there and would count as "Others". Check with
+// scripts/intent-queries-parity.cjs, then switch it on. A database without the column falls back to the join.
+function overlapSessionUtmEnabled(env = process.env) {
+  return String(env.INTENT_OVERLAP_SESSION_UTM || "off").trim().toLowerCase() === "on";
+}
 
 // One row per session of the range with its source group. `intent` is "all" (every session, like the KPI
 // cards) or one level from the INTENT_LEVELS whitelist, applied on the chosen basis and bound as a parameter.
@@ -1211,7 +1246,7 @@ const SOURCE_NORMALIZE_SQL = `CASE
 // pipeline/utm.py), whose session_id is the session's id. A session's source is the utm_source of its first
 // event that has one (its landing source); a session whose events carry none is 'others'. Events are read
 // for the range plus one day, because a session that starts near the end of the range keeps producing events.
-function buildOverlapBase({ basis, intent, curStart, endExclusive }) {
+function buildOverlapBase({ basis, intent, curStart, endExclusive, sessionUtm = false }) {
   const filtered = INTENT_LEVELS.includes(intent);
   let levelFilter = "";
   if (filtered) {
@@ -1219,6 +1254,21 @@ function buildOverlapBase({ basis, intent, curStart, endExclusive }) {
       basis === "score"
         ? "AND intent_status = 'scored' AND intent_bucket = ?"
         : `AND session_time_spent_ms IS NOT NULL AND ${BEHAVIOR_LEVEL_SQL} = ?`;
+  }
+  if (sessionUtm) {
+    // the session's own first source: one table, no events join
+    return {
+      sql: `
+      SELECT
+        actor_id,
+        ${sourceNormalizeSql("first_utm_source")} AS src,
+        (checkout_started_count > 0) AS checked_out
+      FROM intent_sessions
+      WHERE session_start >= ? AND session_start < ?
+        AND actor_id IS NOT NULL
+        ${levelFilter}`,
+      params: [curStart, endExclusive, ...(filtered ? [intent] : [])],
+    };
   }
   const sql = `
       SELECT
@@ -1549,6 +1599,30 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
     return cache(`${brandKey}|${sql}|${JSON.stringify(params)}`, run, { ttlMs: options.ttlMs });
   }
 
+  // The path list and its total for one start event. Uses the indexed first_event column when the brand database has it
+  // and falls back to the sequence text when it has not (the unknown-column error is the signal; the brand is then
+  // not asked again for FIRST_EVENT_RECHECK_MS). Timeouts and missing tables are handled like any optional section.
+  const firstEventMissingUntil = new Map();
+  const sessionUtmMissingUntil = new Map(); // brand -> until when intent_sessions.first_utm_source is not asked for
+  async function selectPaths(conn, { start, end, pathStart }, meta, brandKey, cacheOptions) {
+    const skipNew = !pathFirstEventEnabled() || (brandKey && (firstEventMissingUntil.get(brandKey) || 0) > Date.now());
+    if (!skipNew) {
+      const [pathsRes, totalRes] = await Promise.all([
+        selectOptional(conn, buildPathsQuery({ start, end, pathStart, useFirstEvent: true }), "paths", meta, brandKey, cacheOptions),
+        selectOptional(conn, buildPathsTotalQuery({ start, end, pathStart, useFirstEvent: true }), "paths", meta, brandKey, cacheOptions),
+      ]);
+      const missing = meta.sections.paths?.reason === "schema_unsupported";
+      if (!missing) return { pathsRes, totalRes };
+      delete meta.sections.paths;
+      if (brandKey) firstEventMissingUntil.set(brandKey, Date.now() + FIRST_EVENT_RECHECK_MS);
+    }
+    const [pathsRes, totalRes] = await Promise.all([
+      selectOptional(conn, buildPathsQuery({ start, end, pathStart }), "paths", meta, brandKey, cacheOptions),
+      selectOptional(conn, buildPathsTotalQuery({ start, end, pathStart }), "paths", meta, brandKey, cacheOptions),
+    ]);
+    return { pathsRes, totalRes };
+  }
+
   // Optional sections degrade instead of failing the whole page.
   async function selectOptional(conn, query, label, meta, brandKey, options) {
     try {
@@ -1635,11 +1709,8 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       selectOptional(conn, buildProductRollupQuery({ start, end, sortKey }), "topProducts", meta, brandKey, cacheOptions),
       // the path controls load their own data (getPaths); this keeps the page payload independent of them
       spec.skipPaths
-        ? Promise.resolve({ ok: true, rows: [] })
-        : selectOptional(conn, buildPathsQuery({ start, end, pathStart }), "paths", meta, brandKey, cacheOptions),
-      spec.skipPaths
-        ? Promise.resolve({ ok: true, rows: [] })
-        : selectOptional(conn, buildPathsTotalQuery({ start, end, pathStart }), "paths", meta, brandKey, cacheOptions),
+        ? Promise.resolve({ pathsRes: { ok: true, rows: [] }, totalRes: { ok: true, rows: [] } })
+        : selectPaths(conn, { start, end, pathStart }, meta, brandKey, cacheOptions),
       // optional: needs intent_daily_summary.sessions_started, added by the pipeline's rollup
       selectOptional(
         conn,
@@ -1727,7 +1798,9 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
       ]);
     }
 
-    const [trendRes, rollupRes, pathsRes, pathsTotalRes, startedRes, liveRes, openRes] = await optionalPromise;
+    const [trendRes, rollupRes, pathPair, startedRes, liveRes, openRes] = await optionalPromise;
+    const pathsRes = pathPair.pathsRes;
+    const pathsTotalRes = pathPair.totalRes;
     const scoreVisitors = visitorsRes.ok ? buildScoreVisitors(visitorsRes.rows) : null;
 
     // Live (not yet closed) sessions, at their current level. Their visitors' best closed level comes from a
@@ -1826,15 +1899,49 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
     const filters = { start, end, intent, basis };
     const empty = { sources: [], regions: [] };
 
-    const base = buildOverlapBase({
-      basis,
-      intent,
-      curStart: start,
-      endExclusive: shiftDays(end, 1),
-    });
-
+    const baseArgs = { basis, intent, curStart: start, endExclusive: shiftDays(end, 1) };
     const cacheOptions = { ttlMs: rangeCacheTtl(end) };
-    try {
+
+    // the session column first (when switched on and the brand has it); the events join otherwise
+    if (overlapSessionUtmEnabled() && !(brandKey && (sessionUtmMissingUntil.get(brandKey) || 0) > Date.now())) {
+      try {
+        return await computeOverlap(buildOverlapBase({ ...baseArgs, sessionUtm: true }));
+      } catch (err) {
+        if (!isSchemaMismatch(err)) {
+          if (isMissingTable(err)) return unavailableOverlap(err);
+          throw err;
+        }
+        if (brandKey) sessionUtmMissingUntil.set(brandKey, Date.now() + FIRST_EVENT_RECHECK_MS);
+      }
+    }
+    return computeOverlap(buildOverlapBase(baseArgs));
+
+    async function computeOverlap(base) {
+      try {
+        return await overlapFromBase(base);
+      } catch (err) {
+        if (isMissingTable(err) || isSchemaMismatch(err)) {
+          // the caller may still have the events join to fall back to
+          if (base.sql.includes("first_utm_source")) throw err;
+          return unavailableOverlap(err);
+        }
+        throw err;
+      }
+    }
+
+    function unavailableOverlap(err) {
+      return {
+        filters,
+        meta: {
+          available: false,
+          // an older brand database layout: no intent table, or no utm_source / intent column yet
+          reason: isMissingTable(err) ? "intent_tables_missing" : "schema_unsupported",
+        },
+        ...empty,
+      };
+    }
+
+    async function overlapFromBase(base) {
       if (overlapSingleQueryEnabled()) {
         const regionRows = await select(conn, buildOverlapSingleQuery(base), brandKey, cacheOptions);
         // no visitors at all in the range (the old top-sources query returned no rows)
@@ -1876,19 +1983,6 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
         sources,
         regions: buildOverlapRegions(sources, regionRows),
       };
-    } catch (err) {
-      if (isMissingTable(err) || isSchemaMismatch(err)) {
-        return {
-          filters,
-          meta: {
-            available: false,
-            // an older brand database layout: no intent table, or no utm_source / intent column yet
-            reason: isMissingTable(err) ? "intent_tables_missing" : "schema_unsupported",
-          },
-          ...empty,
-        };
-      }
-      throw err;
     }
   }
 
@@ -1961,10 +2055,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
     if (!productId && intent === "all") {
       const cacheOptions = { ttlMs: rangeCacheTtl(end) };
       const meta = { available: true, live: false, sections: {} };
-      const [pathsRes, totalRes] = await Promise.all([
-        selectOptional(conn, buildPathsQuery({ start, end, pathStart }), "paths", meta, brandKey, cacheOptions),
-        selectOptional(conn, buildPathsTotalQuery({ start, end, pathStart }), "paths", meta, brandKey, cacheOptions),
-      ]);
+      const { pathsRes, totalRes } = await selectPaths(conn, { start, end, pathStart }, meta, brandKey, cacheOptions);
       if (!pathsRes.ok) {
         return { filters, meta: { ...meta, available: false, reason: meta.sections.paths?.reason || "unavailable" }, paths: emptyPaths() };
       }
@@ -2170,6 +2261,9 @@ module.exports = {
     buildOverlapBase,
     buildOverlapTopSourcesQuery,
     buildOverlapSingleQuery,
+    overlapSessionUtmEnabled,
+    pathFirstEventEnabled,
+    sourceNormalizeSql,
     mapOverlapSources,
     overlapSingleQueryEnabled,
     buildOverlapRegionsQuery,

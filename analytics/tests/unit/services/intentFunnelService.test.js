@@ -10,6 +10,7 @@ jest.mock("../../../shared/utils/logger", () => ({
 // These tests pin the separate-query path (its results are the reference); the combined scan that normally
 // replaces it is tested against this one in intentCombinedScan.test.js.
 process.env.INTENT_COMBINED_SCAN = "off";
+process.env.INTENT_PATH_FIRST_EVENT = "off";
 
 const {
   buildIntentFunnelService,

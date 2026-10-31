@@ -10,6 +10,13 @@
  *   user overlap         INTENT_OVERLAP_SINGLE_QUERY  (one query instead of two)
  *   heatmap pages        INTENT_HEATMAP_SINGLE_QUERY  (list and totals in one)
  *   heatmap elements     INTENT_HEATMAP_SINGLE_QUERY  (list and totals in one)
+ *   funnel paths         INTENT_PATH_FIRST_EVENT      (indexed first_event instead of cutting the sequence text)
+ *   overlap, session UTM INTENT_OVERLAP_SESSION_UTM   (the session's first_utm_source instead of the events join;
+ *                                                      OFF by default, so this one compares off against on)
+ *
+ * The last one only matches once intent_sessions.first_utm_source is filled for the range (intent-pipeline
+ * scripts/backfill_first_utm.py). Sessions without a value count as "Others" there, so a difference means the range
+ * is not backfilled yet, not that the query is wrong: backfill, run it again, and switch the flag on when it is SAME.
  *
  * Usage:
  *   node scripts/intent-queries-parity.cjs --brand BBB --from 2026-10-01 --to 2026-10-20
@@ -125,6 +132,23 @@ async function main() {
     { name: "user overlap (behaviour)", flag: "INTENT_OVERLAP_SINGLE_QUERY", run: () => funnel().getSourceOverlap({ ...spec, basis: "behavior", intent: "all" }) },
     { name: "user overlap (score, high)", flag: "INTENT_OVERLAP_SINGLE_QUERY", run: () => funnel().getSourceOverlap({ ...spec, basis: "score", intent: "high" }) },
     { name: "heatmap pages", flag: "INTENT_HEATMAP_SINGLE_QUERY", run: () => heatmap().getHeatmapPages({ ...spec, device: "all", search: "", limit: 50 }) },
+    {
+      name: "funnel paths (page_viewed)",
+      flag: "INTENT_PATH_FIRST_EVENT",
+      run: () => funnel().getPaths({ ...spec, intent: "all", basis: "behavior", pathStart: "page_viewed", steps: 5 }),
+    },
+    {
+      name: "funnel paths (product_viewed)",
+      flag: "INTENT_PATH_FIRST_EVENT",
+      run: () => funnel().getPaths({ ...spec, intent: "all", basis: "behavior", pathStart: "product_viewed", steps: 5 }),
+    },
+    {
+      name: "overlap from session UTM",
+      flag: "INTENT_OVERLAP_SESSION_UTM",
+      before: "off",
+      after: "on",
+      run: () => funnel().getSourceOverlap({ ...spec, basis: "behavior", intent: "all" }),
+    },
   ];
   if (options.path) {
     checks.push({
@@ -137,10 +161,13 @@ async function main() {
   let failed = 0;
   console.log(`Brand ${options.brand}, ${options.from}..${options.to} (read-only)\n`);
   for (const check of checks) {
-    process.env[check.flag] = "off";
+    // most switches are on by default (compare off with the default); a switch that is off by default sets "on" explicitly
+    process.env[check.flag] = check.before || "off";
     const before = await timed(check.run);
-    delete process.env[check.flag];
+    if (check.after) process.env[check.flag] = check.after;
+    else delete process.env[check.flag];
     const after = await timed(check.run);
+    delete process.env[check.flag];
 
     const differences = diff(JSON.parse(JSON.stringify(before.result)), JSON.parse(JSON.stringify(after.result)));
     const verdict = differences.length === 0 ? "SAME" : `DIFFERENT (${differences.length})`;
