@@ -1,6 +1,7 @@
 const { QueryTypes } = require("sequelize");
 const logger = require("../shared/utils/logger");
 const { runLimited } = require("../shared/utils/brandLimiter");
+const { defaultSharedStore } = require("../shared/utils/sharedQueryCache");
 const {
   DEFAULT_TIMEZONE,
   daysInclusive,
@@ -1568,14 +1569,30 @@ function rangeCacheTtl(end, timezone = DEFAULT_TIMEZONE, now = new Date()) {
   return undefined;
 }
 
-function createQueryCache({ ttlMs = QUERY_CACHE_TTL_MS, max = QUERY_CACHE_MAX, now = Date.now } = {}) {
+function createQueryCache({
+  ttlMs = QUERY_CACHE_TTL_MS,
+  max = QUERY_CACHE_MAX,
+  now = Date.now,
+  // A shared (Redis) second level, so a result one server computed is found by the others. null = in-process only.
+  // By default it is on only when INTENT_REDIS_CACHE=on (see shared/utils/sharedQueryCache.js).
+  shared = defaultSharedStore(),
+} = {}) {
   const entries = new Map();
   // `options.ttlMs` lets one call keep its result longer than the default (a range that has ended and
   // will not change); the check is made by the caller asking, so a short-lived request never sees a stale one.
   return async function cached(key, loader, options = {}) {
     const hit = entries.get(key);
     if (hit && now() - hit.at < (options.ttlMs ?? ttlMs)) return hit.promise;
-    const promise = loader();
+    const lifetime = options.ttlMs ?? ttlMs;
+    const promise = shared
+      ? (async () => {
+          const found = await shared.get(key);
+          if (found) return found.value;
+          const value = await loader();
+          shared.set(key, value, lifetime);
+          return value;
+        })()
+      : loader();
     entries.set(key, { at: now(), promise });
     if (entries.size > max) entries.delete(entries.keys().next().value);
     try {
