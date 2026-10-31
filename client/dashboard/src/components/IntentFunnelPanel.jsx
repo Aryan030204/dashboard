@@ -63,8 +63,8 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
         start: startKey,
         end: endKey,
         sort: API_SORT[topProductsSort],
-        pathStart,
-        pathSteps,
+        // the Funnel Exploration loads its own data, so changing its controls does not re-run this request
+        skipPaths: true,
       },
       { signal: controller.signal },
     ).then((res) => {
@@ -77,7 +77,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
       setLoading(false);
     });
     return () => controller.abort();
-  }, [brandKey, startKey, endKey, topProductsSort, pathStart, pathSteps, reloadKey]);
+  }, [brandKey, startKey, endKey, topProductsSort, reloadKey]);
 
   const behavior = data?.behavior || null;
   const basis = intentBasis || (behavior ? "behavior" : "score");
@@ -91,7 +91,9 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
   }, [data?.kpis, behavior, useBehavior]);
 
   const pathBasis = useBehavior ? "behavior" : "score";
-  const liveActive = pathIntent !== "all" || Boolean(pathProduct);
+  // the intent basis only matters when an intent level is chosen, so it must not re-trigger the plain view
+  const pathBasisKey = pathIntent === "all" ? "" : pathBasis;
+  const hasData = data != null;
 
   // The store's top products (Redis cache) for the Funnel Exploration product filter.
   useEffect(() => {
@@ -110,14 +112,11 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
     return () => controller.abort();
   }, [brandKey, startKey, endKey]);
 
-  // Paths for a chosen product and/or intent level. The previous paths stay on screen (dimmed) while the
-  // next ones load, so changing a filter does not blank the card.
+  // The Funnel Exploration's own data (the daily rollup, or a live read for a product / intent level). The
+  // previous paths stay on screen (dimmed) while the next ones load, so changing a control does not blank the card.
   useEffect(() => {
-    if (!liveActive) {
-      setLivePaths({ status: "idle", paths: null });
-      return undefined;
-    }
     if (!brandKey || !startKey || !endKey) return undefined;
+    if (pathIntent !== "all" && !hasData) return undefined; // the intent basis is known once the page has loaded
     const controller = new AbortController();
     setLivePaths((previous) => ({ ...previous, status: "loading" }));
     getIntentFunnelPaths(
@@ -126,7 +125,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
         start: startKey,
         end: endKey,
         intent: pathIntent,
-        basis: pathBasis,
+        basis: pathBasisKey || "behavior",
         pathStart,
         steps: pathSteps,
         productId: pathProduct,
@@ -143,7 +142,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
       }
     });
     return () => controller.abort();
-  }, [liveActive, brandKey, startKey, endKey, pathIntent, pathBasis, pathStart, pathSteps, pathProduct]);
+  }, [brandKey, startKey, endKey, pathIntent, pathBasisKey, pathStart, pathSteps, pathProduct, hasData]);
 
   const unavailable = data?.meta?.available === false;
   const hasSessions = (data?.kpis || []).some((kpi) => kpi.id === "visitors" && kpi.sessions > 0);
@@ -245,8 +244,8 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
 
         {/* 3. Funnel Exploration, full width */}
         <PathExplorationSankey
-          paths={liveActive ? livePaths.paths : data.paths}
-          status={liveActive ? (livePaths.status === "idle" ? "loading" : livePaths.status) : "ready"}
+          paths={livePaths.paths}
+          status={livePaths.status === "idle" ? "loading" : livePaths.status}
           pathStart={pathStart}
           onPathStartChange={setPathStart}
           steps={pathSteps}

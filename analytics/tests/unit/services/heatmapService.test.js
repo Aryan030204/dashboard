@@ -7,6 +7,10 @@ jest.mock("../../../shared/utils/logger", () => ({
   debug: jest.fn(),
 }));
 
+// These tests pin the separate-query path (its results are the reference); the single queries that normally
+// replace it are tested against this one in heatmapSingleQuery.test.js.
+process.env.INTENT_HEATMAP_SINGLE_QUERY = "off";
+
 const { buildHeatmapService, _internal } = require("../../../services/heatmapService");
 const { createQueryCache } = require("../../../services/intentFunnelService");
 
