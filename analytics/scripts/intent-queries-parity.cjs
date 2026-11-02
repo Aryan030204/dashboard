@@ -178,6 +178,23 @@ async function main() {
     }
   }
 
+  // The overlap card's levels must add up to All Intents (every region's sessions and the centre's checkouts). The only
+  // sessions that belong to no level are bots and sessions without a measured duration, so a small remainder is
+  // normal there; anything else is a bug.
+  {
+    const [all, high, medium, low] = await Promise.all(
+      ["all", "high", "medium", "low"].map((intent) => funnel().getSourceOverlap({ ...spec, basis: "behavior", intent })),
+    );
+    console.log("");
+    console.log("overlap: High + Medium + Low against All Intents (sessions per region; the centre counts checkouts)");
+    (all.regions || []).forEach((region) => {
+      const parts = [high, medium, low].map((r) => (r.regions || []).find((x) => x.id === region.id)?.value || 0);
+      const sum = parts.reduce((a, b) => a + b, 0);
+      const gap = region.value - sum;
+      console.log(`  ${region.id.padEnd(22)} all ${String(region.value).padStart(8)}   levels ${String(sum).padStart(8)}   ${gap === 0 ? "ADDS UP" : `remainder ${gap} (bots / no duration)`}`);
+    });
+  }
+
   await raw.end();
   console.log(failed === 0 ? "\nAll answers are identical." : `\n${failed} check(s) differ. Do not switch the optimisations on for this brand.`);
   process.exit(failed === 0 ? 0 : 1);

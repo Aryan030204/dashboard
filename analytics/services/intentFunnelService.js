@@ -1247,15 +1247,23 @@ function overlapSessionUtmEnabled(env = process.env) {
 // pipeline/utm.py), whose session_id is the session's id. A session's source is the utm_source of its first
 // event that has one (its landing source); a session whose events carry none is 'others'. Events are read
 // for the range plus one day, because a session that starts near the end of the range keeps producing events.
+// The intent level chooses WHICH SESSIONS are counted, not which visitors exist. Every session of the range is a row
+// here, carrying `in_level` (1 when it belongs to the chosen level, always 1 for "all"). A visitor's circles (which of
+// the three source groups they appear in) come from all their sessions, and the counts (sessions, checkouts) only from
+// the in-level ones. So the numbers of High, Medium and Low add up to those of All Intents (up to the sessions that
+// have no level: bots, and sessions without a measured duration). Filtering the sessions out first, as this used to
+// do, changed which region a visitor fell in for every level, and the regions could not add up.
 function buildOverlapBase({ basis, intent, curStart, endExclusive, sessionUtm = false }) {
   const filtered = INTENT_LEVELS.includes(intent);
-  let levelFilter = "";
+  let inLevel = "1";
   if (filtered) {
-    levelFilter =
+    inLevel =
       basis === "score"
-        ? "AND intent_status = 'scored' AND intent_bucket = ?"
-        : `AND session_time_spent_ms IS NOT NULL AND ${BEHAVIOR_LEVEL_SQL} = ?`;
+        ? "intent_status = 'scored' AND intent_bucket = ?"
+        : `session_time_spent_ms IS NOT NULL AND ${BEHAVIOR_LEVEL_SQL} = ?`;
   }
+  // the `?` of the level sits in the SELECT list, so it is the FIRST parameter
+  const levelParams = filtered ? [intent] : [];
   if (sessionUtm) {
     // the session's own first source: one table, no events join
     return {
@@ -1263,19 +1271,20 @@ function buildOverlapBase({ basis, intent, curStart, endExclusive, sessionUtm = 
       SELECT
         actor_id,
         ${sourceNormalizeSql("first_utm_source")} AS src,
-        (checkout_started_count > 0) AS checked_out
+        (checkout_started_count > 0) AS checked_out,
+        (${inLevel}) AS in_level
       FROM intent_sessions
       WHERE session_start >= ? AND session_start < ?
-        AND actor_id IS NOT NULL
-        ${levelFilter}`,
-      params: [curStart, endExclusive, ...(filtered ? [intent] : [])],
+        AND actor_id IS NOT NULL`,
+      params: [...levelParams, curStart, endExclusive],
     };
   }
   const sql = `
       SELECT
         actor_id,
         ${SOURCE_NORMALIZE_SQL} AS src,
-        (checkout_started_count > 0) AS checked_out
+        (checkout_started_count > 0) AS checked_out,
+        (${inLevel}) AS in_level
       FROM intent_sessions
       LEFT JOIN (
         SELECT
@@ -1288,11 +1297,10 @@ function buildOverlapBase({ basis, intent, curStart, endExclusive, sessionUtm = 
         GROUP BY session_id
       ) first_touch ON first_touch.utm_session_id = intent_sessions.session_id
       WHERE session_start >= ? AND session_start < ?
-        AND actor_id IS NOT NULL
-        ${levelFilter}`;
+        AND actor_id IS NOT NULL`;
   return {
     sql,
-    params: [curStart, shiftDays(endExclusive, 1), curStart, endExclusive, ...(filtered ? [intent] : [])],
+    params: [...levelParams, curStart, shiftDays(endExclusive, 1), curStart, endExclusive],
   };
 }
 
@@ -1301,10 +1309,11 @@ function buildOverlapTopSourcesQuery(base) {
     sql: `
     SELECT /*+ MAX_EXECUTION_TIME(${CORE_QUERY_TIMEOUT_MS}) */
       src,
-      COUNT(*) AS sessions,
-      COUNT(DISTINCT actor_id) AS users
+      SUM(in_level) AS sessions,
+      COUNT(DISTINCT CASE WHEN in_level = 1 THEN actor_id END) AS users
     FROM (${base.sql}) base
     GROUP BY src
+    HAVING SUM(in_level) > 0
     ORDER BY sessions DESC, src ASC
     LIMIT ${OVERLAP_TOP_SOURCES}
   `,
@@ -1330,8 +1339,8 @@ function buildOverlapRegionsQuery(base, sources) {
         MAX(src = ?) AS g1,
         MAX(src = ?) AS g2,
         MAX(src = ?) AS g3,
-        SUM(src IN (?, ?, ?)) AS sessions,
-        SUM(src IN (?, ?, ?) AND checked_out) AS checkout_sessions
+        SUM(in_level AND src IN (?, ?, ?)) AS sessions,
+        SUM(in_level AND src IN (?, ?, ?) AND checked_out) AS checkout_sessions
       FROM (${base.sql}) base
       GROUP BY actor_id
     ) per_actor
@@ -1354,7 +1363,7 @@ function overlapSingleQueryEnabled(env = process.env) {
 
 function buildOverlapSingleQuery(base) {
   const flags = OVERLAP_SOURCES.map(({ key }, i) => `MAX(src = '${key}') AS g${i + 1}`);
-  const counts = OVERLAP_SOURCES.map(({ key }, i) => `SUM(src = '${key}') AS c${i + 1}`);
+  const counts = OVERLAP_SOURCES.map(({ key }, i) => `SUM(in_level AND src = '${key}') AS c${i + 1}`);
   const sums = OVERLAP_SOURCES.map((_, i) => `SUM(c${i + 1}) AS c${i + 1}`);
   return {
     sql: `
@@ -1369,11 +1378,12 @@ function buildOverlapSingleQuery(base) {
         actor_id,
         ${flags.join(",\n        ")},
         ${counts.join(",\n        ")},
-        COUNT(*) AS sessions,
-        SUM(checked_out) AS checkout_sessions
+        SUM(in_level) AS sessions,
+        SUM(in_level AND checked_out) AS checkout_sessions
       FROM (${base.sql}) base
       GROUP BY actor_id
     ) per_actor
+    WHERE sessions > 0
     GROUP BY g1, g2, g3
   `,
     params: base.params,

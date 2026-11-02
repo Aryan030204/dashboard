@@ -110,7 +110,7 @@ describe("overlap from the session's first utm source", () => {
 
   test("the intent level is still only a bound parameter", () => {
     const base = buildOverlapBase({ ...args, intent: "high", sessionUtm: true });
-    expect(base.params).toEqual(["2026-10-10", "2026-10-13", "high"]);
+    expect(base.params).toEqual(["high", "2026-10-10", "2026-10-13"]);
     expect(base.sql).not.toMatch(/=\s*'high'/);
   });
 
