@@ -13,9 +13,6 @@ import PathExplorationSankey from "./intentFunnel/PathExplorationSankey.jsx";
 import IntentReport from "./intentFunnel/IntentReport.jsx";
 import HeatmapSection from "./intentFunnel/heatmap/HeatmapSection.jsx";
 
-// The UI tab value -> the sort value the API whitelists.
-const API_SORT = { views: "views", addToCart: "add_to_cart", checkouts: "checkouts" };
-
 // Two-column row on desktop, stacked below the lg breakpoint.
 const rowSx = (columns) => ({
   display: "grid",
@@ -24,7 +21,6 @@ const rowSx = (columns) => ({
 });
 
 export default function IntentFunnelPanel({ brandKey, start, end }) {
-  const [topProductsSort, setTopProductsSort] = useState("views");
   // Funnel Exploration: the starting event, the path length (steps), an intent level and a product. With a
   // product or an intent level chosen the paths are read live (own request); otherwise they come with the page.
   const [pathStart, setPathStart] = useState("page_viewed");
@@ -63,7 +59,6 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
         brand_key: brandKey,
         start: startKey,
         end: endKey,
-        sort: API_SORT[topProductsSort],
         // the Funnel Exploration loads its own data, so changing its controls does not re-run this request
         skipPaths: true,
       },
@@ -78,7 +73,7 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
       setLoading(false);
     });
     return () => controller.abort();
-  }, [brandKey, startKey, endKey, topProductsSort, reloadKey]);
+  }, [brandKey, startKey, endKey, reloadKey]);
 
   const behavior = data?.behavior || null;
   const basis = intentBasis || (behavior ? "behavior" : "score");
@@ -240,9 +235,11 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
         <Box sx={rowSx("minmax(0, 1fr) minmax(0, 2fr)")}>
           <IntentConversionRates conversionRates={data.conversionRates} />
           <TopProductsByIntent
-            products={data.topProducts}
-            sortBy={topProductsSort}
-            onSortByChange={setTopProductsSort}
+            brandKey={brandKey}
+            start={startKey}
+            end={endKey}
+            basis={useBehavior ? "behavior" : "score"}
+            allProducts={data.topProducts}
           />
         </Box>
 

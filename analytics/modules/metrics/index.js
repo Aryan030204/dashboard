@@ -129,6 +129,12 @@ function buildMetricsRouter(sequelize) {
     intentFunnel.getSourceOverlap,
   );
   router.get(
+    '/intent-funnel/top-products',
+    requirePermission('intent_funnel_panel'),
+    brandContext,
+    intentFunnel.getTopProducts,
+  );
+  router.get(
     '/intent-funnel/paths',
     requirePermission('intent_funnel_panel'),
     brandContext,

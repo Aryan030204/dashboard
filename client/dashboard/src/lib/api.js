@@ -1415,6 +1415,20 @@ export async function getIntentFunnelPathProducts(args = {}, options = {}) {
 
 // Intent Funnel "User Overlap by UTM Source" card. Its own request so the card can refetch alone.
 // `intent` is "all" or one level (high / medium / low); `basis` is "behavior" or "score".
+// Top products of one intent level (all / high / medium / low) on a basis (behavior / score).
+export async function getIntentTopProducts(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      intent: args.intent,
+      basis: args.basis,
+    },
+    args,
+  );
+  return doGet("/metrics/intent-funnel/top-products", params, options);
+}
+
 export async function getIntentSourceOverlap(args = {}, options = {}) {
   const params = appendBrandKey(
     {

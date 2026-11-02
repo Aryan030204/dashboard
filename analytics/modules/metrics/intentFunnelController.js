@@ -176,6 +176,40 @@ function buildIntentFunnelController({ intentFunnelService, readTopProductsCache
       }
     },
 
+    // Top products of one intent level (all / high / medium / low) on the page's basis, from product_intent_daily.
+    getTopProducts: async (req, res) => {
+      try {
+        const spec = resolveSpec(req, res);
+        if (!spec) return undefined;
+
+        const intent = String(req.query.intent || 'all').toLowerCase();
+        if (!INTENT_FILTERS.includes(intent)) {
+          return badRequest(res, 'Invalid intent');
+        }
+
+        const basis = String(req.query.basis || 'behavior').toLowerCase();
+        if (!OVERLAP_BASES.includes(basis)) {
+          return badRequest(res, 'Invalid basis');
+        }
+
+        return res.json(
+          await intentFunnelService.getTopProducts({
+            conn: spec.conn,
+            brandKey: spec.brandKey,
+            start: spec.start,
+            end: spec.end,
+            intent,
+            basis,
+          }),
+        );
+      } catch (e) {
+        if (isQueryTimeout(e)) {
+          return res.status(504).json({ error: 'Top products took too long. Try a shorter date range.' });
+        }
+        return handleControllerError(res, e, 'intent-funnel top-products failed');
+      }
+    },
+
     // Funnel Exploration for a product and/or an intent level (live, bounded). `product_id` is a numeric Shopify
     // product id; `intent` is all / high / medium / low on the `basis` the page is showing.
     getPaths: async (req, res) => {

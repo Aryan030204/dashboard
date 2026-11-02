@@ -20,10 +20,12 @@ export const INTENT_LABELS = {
   low: "Low Intent",
 };
 
-export const TOP_PRODUCT_TABS = [
-  { value: "views", label: "By Views" },
-  { value: "addToCart", label: "By Add to Cart" },
-  { value: "checkouts", label: "By Checkouts" },
+// The intent filter of Top Products by Intent. "all" is the page's own list; the levels are fetched.
+export const TOP_PRODUCT_INTENTS = [
+  { value: "all", label: "All" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
 ];
 
 // Start events that exist in the recorded path sequences (behavioral_path_daily).

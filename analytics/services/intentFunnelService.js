@@ -727,6 +727,44 @@ function rollupProducts(rows) {
   });
 }
 
+// Top products for one intent level, from the pipeline's product_intent_daily rollup (one row per day, basis,
+// intent level and product). "all" adds every level, including the pipeline's "unclassified" rows. The basis and
+// level are only ever bound as parameters.
+function buildProductIntentQuery({ start, end, basis, intent }) {
+  const levelFilter = INTENT_LEVELS.includes(intent) ? "AND intent_level = ?" : "";
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${PRODUCT_QUERY_TIMEOUT_MS}) */
+        product_id,
+        MAX(product_title) AS title,
+        SUM(product_views) AS views,
+        SUM(add_to_cart_count) AS add_to_cart,
+        SUM(checkout_started_count) AS checkouts
+      FROM product_intent_daily
+      WHERE summary_date >= ? AND summary_date <= ? AND basis = ?
+        ${levelFilter}
+      GROUP BY product_id
+      ORDER BY views DESC, checkouts DESC
+      LIMIT ${PRODUCT_RESULT_LIMIT}
+    `,
+    params: [start, end, basis, ...(levelFilter ? [intent] : [])],
+  };
+}
+
+// The days the rollup covers, so the card can say when its data starts.
+function buildProductIntentCoverageQuery({ basis }) {
+  return {
+    sql: `
+      SELECT
+        DATE_FORMAT(MIN(summary_date), '%Y-%m-%d') AS first_date,
+        DATE_FORMAT(MAX(summary_date), '%Y-%m-%d') AS last_date
+      FROM product_intent_daily
+      WHERE basis = ?
+    `,
+    params: [basis],
+  };
+}
+
 // Fallback for brand databases without the rollup table: the raw-event scans.
 function buildProductViewsQuery({ start, endExclusive }) {
   return {
@@ -2013,6 +2051,46 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
     }
   }
 
+  // Top Products for one intent level: a separate request from the page payload (which carries the all-intents
+  // list), so the card refetches on its own. The rollup is new, so it may cover only the latest days:
+  // `meta.firstDate` tells the card where its data starts. Databases without the table answer `available: false`.
+  async function getTopProducts(spec) {
+    const { conn, start, end, brandKey } = spec;
+    const basis = OVERLAP_BASES.includes(spec.basis) ? spec.basis : "behavior";
+    const intent = INTENT_FILTERS.includes(spec.intent) ? spec.intent : "all";
+    const filters = { start, end, intent, basis };
+    const cacheOptions = { ttlMs: rangeCacheTtl(end) };
+
+    try {
+      const [rows, coverageRows] = await Promise.all([
+        select(conn, buildProductIntentQuery({ start, end, basis, intent }), brandKey, cacheOptions),
+        select(conn, buildProductIntentCoverageQuery({ basis }), brandKey, cacheOptions),
+      ]);
+      const coverage = coverageRows?.[0] || {};
+      const firstDate = coverage.first_date || null;
+      return {
+        filters,
+        meta: {
+          available: true,
+          firstDate,
+          lastDate: coverage.last_date || null,
+          // the range starts before the rollup does, so the list covers only part of it
+          partial: Boolean(firstDate) && firstDate > start,
+        },
+        topProducts: rollupProducts(rows),
+      };
+    } catch (err) {
+      if (isMissingTable(err) || isSchemaMismatch(err)) {
+        return {
+          filters,
+          meta: { available: false, reason: isMissingTable(err) ? "table_missing" : "schema_unsupported" },
+          topProducts: [],
+        };
+      }
+      throw err;
+    }
+  }
+
   // Intent report table: the KPI figures per day. Separate request from the page payload, so the card has
   // its own date range. Older brand databases answer `available: false`.
   async function getIntentReport(spec) {
@@ -2220,7 +2298,7 @@ function buildIntentFunnelService({ cache = createQueryCache() } = {}) {
     return { source: "rollup", products: fallback.map(({ id, name }) => ({ id, name })) };
   }
 
-  return { getIntentFunnel, getSourceOverlap, getIntentReport, getPaths, getPathProducts };
+  return { getIntentFunnel, getSourceOverlap, getTopProducts, getIntentReport, getPaths, getPathProducts };
 }
 
 module.exports = {
@@ -2260,6 +2338,8 @@ module.exports = {
     BEHAVIOR_LEVEL_SQL,
     buildTrendQuery,
     buildProductRollupQuery,
+    buildProductIntentQuery,
+    buildProductIntentCoverageQuery,
     rollupProducts,
     buildProductViewsQuery,
     buildProductCheckoutsQuery,
