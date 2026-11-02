@@ -123,6 +123,28 @@ describe("getHeatmapElements", () => {
     expect(heatmapService.getHeatmapElements).toHaveBeenCalledWith(expect.objectContaining({ path: "/" }));
   });
 
+  test("page_path is the parameter the browser sends, because the Vercel proxy keeps `path` for the API route", async () => {
+    const { controller, heatmapService } = setup();
+    const res = makeRes();
+    await controller.getHeatmapElements(query({ page_path: "/" }), res);
+    expect(res.statusCode).toBe(200);
+    expect(heatmapService.getHeatmapElements).toHaveBeenCalledWith(expect.objectContaining({ path: "/" }));
+
+    heatmapService.getHeatmapElements.mockClear();
+    await controller.getHeatmapElements(query({ page_path: "https://shop.example/Collections/All/?utm_source=x" }), makeRes());
+    expect(heatmapService.getHeatmapElements).toHaveBeenCalledWith(expect.objectContaining({ path: "/collections/all" }));
+  });
+
+  test("page_path wins over a plain path; and a path merged into a list by a proxy uses the last value", async () => {
+    const { controller, heatmapService } = setup();
+    await controller.getHeatmapElements(query({ page_path: "/a", path: "/b" }), makeRes());
+    expect(heatmapService.getHeatmapElements).toHaveBeenCalledWith(expect.objectContaining({ path: "/a" }));
+
+    heatmapService.getHeatmapElements.mockClear();
+    await controller.getHeatmapElements(query({ path: ["metrics/heatmap/elements", "/"] }), makeRes());
+    expect(heatmapService.getHeatmapElements).toHaveBeenCalledWith(expect.objectContaining({ path: "/" }));
+  });
+
   test.each([
     [{ path: undefined }, "A valid page path is required"],
     [{ path: "   " }, "A valid page path is required"],

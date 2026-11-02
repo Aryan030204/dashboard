@@ -118,7 +118,8 @@ describe("intentFunnelService.getSourceOverlap", () => {
       const topCall = conn.query.mock.calls.find(([sql]) => sql.includes("GROUP BY src"));
       expect(topCall[0]).toContain("session_time_spent_ms IS NOT NULL");
       expect(topCall[0]).toContain("click_count");
-      expect(topCall[1].replacements).toEqual(["2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13", "high"]);
+      // the level is in the SELECT list (it picks the counted sessions), so it is the first parameter
+      expect(topCall[1].replacements).toEqual(["high", "2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13"]);
     });
 
     test("one level on the score basis filters on the percentile bucket of scored sessions", async () => {
@@ -128,7 +129,7 @@ describe("intentFunnelService.getSourceOverlap", () => {
       const topCall = conn.query.mock.calls.find(([sql]) => sql.includes("GROUP BY src"));
       expect(topCall[0]).toContain("intent_status = 'scored'");
       expect(topCall[0]).toContain("intent_bucket = ?");
-      expect(topCall[1].replacements).toEqual(["2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13", "low"]);
+      expect(topCall[1].replacements).toEqual(["low", "2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13"]);
     });
 
     test("unknown intent and unknown basis fall back to safe defaults", async () => {
@@ -178,8 +179,9 @@ describe("intentFunnelService.getSourceOverlap", () => {
       const [sql, options] = conn.query.mock.calls[0];
 
       // 2026-10-10 .. 2026-10-12 inclusive -> sessions < 10-13; events < 10-14
-      expect(options.replacements).toEqual(["2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13", "high"]);
+      expect(options.replacements).toEqual(["high", "2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13"]);
       expect(sql.indexOf("FROM behavioral_events")).toBeLessThan(sql.indexOf("session_start >= ?"));
+      expect(sql.indexOf("AS in_level")).toBeLessThan(sql.indexOf("FROM behavioral_events"));
     });
 
     test("a database whose behavioral_events has no utm_source answers available:false instead of failing", async () => {
@@ -208,7 +210,7 @@ describe("intentFunnelService.getSourceOverlap", () => {
       // three flag slots + two IN lists, each with the three groups, then the base parameters
       expect(regionsCall[1].replacements).toEqual([
         "google", "meta", "others", "google", "meta", "others", "google", "meta", "others",
-        "2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13", "medium",
+        "medium", "2026-10-10", "2026-10-14", "2026-10-10", "2026-10-13",
       ]);
     });
 
