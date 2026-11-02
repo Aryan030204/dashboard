@@ -2,6 +2,9 @@
 /**
  * Rolls page views up into heatmap_page_daily, the table behind the Heatmaps pages list.
  *
+ * Each row also holds the sessions that viewed the page at each Behaviour intent level (high / medium / low), taken
+ * from the closed sessions in intent_sessions; a page's sessions still open, or bots, are left out of those counts.
+ *
  * One row per day, page path and device (desktop / mobile / tablet) with page views and sessions, counted
  * from behavioral_events (event_name = 'page_viewed'). A live count over a week of raw events takes
  * longer than a minute; one day takes about ten seconds, so the dashboard reads this table instead.
@@ -39,6 +42,9 @@ const CREATE_TABLE_SQL = `
     device_type VARCHAR(10) NOT NULL,
     page_views INT UNSIGNED NOT NULL DEFAULT 0,
     sessions INT UNSIGNED NOT NULL DEFAULT 0,
+    high_sessions INT UNSIGNED NOT NULL DEFAULT 0,
+    medium_sessions INT UNSIGNED NOT NULL DEFAULT 0,
+    low_sessions INT UNSIGNED NOT NULL DEFAULT 0,
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (summary_date, page_path, device_type),
     KEY idx_page_date (page_path, summary_date)
@@ -59,6 +65,21 @@ const PAGE_PATH_SQL = `LOWER(CASE
         WHEN TRIM(TRAILING '/' FROM ${URL_PATH_SQL}) = '' THEN '/'
         ELSE TRIM(TRAILING '/' FROM ${URL_PATH_SQL})
       END)`;
+
+// Tables made before the intent columns existed get them added (the rollup is re-run to fill them).
+const INTENT_COLUMNS = Object.freeze(["high_sessions", "medium_sessions", "low_sessions"]);
+const ADD_INTENT_COLUMNS_SQL = `ALTER TABLE heatmap_page_daily
+  ${INTENT_COLUMNS.map((name) => `ADD COLUMN ${name} INT UNSIGNED NOT NULL DEFAULT 0`).join(",\n  ")}`;
+
+// The Behaviour intent level of a closed session: the same rule as BEHAVIOR_LEVEL_SQL in intentFunnelService
+// (a parity test keeps them equal). Constant SQL, never request input.
+const BEHAVIOR_MIN_DURATION_MS = 5000;
+const BEHAVIOR_LEVEL_SQL = `CASE
+        WHEN intent_exclusion_reason = 'bot' THEN 'bot'
+        WHEN session_time_spent_ms < ${BEHAVIOR_MIN_DURATION_MS} OR (click_count = 0 AND scroll_count = 0) THEN 'low'
+        WHEN click_count > 0 AND (add_to_cart_count > 0 OR checkout_started_count > 0) THEN 'high'
+        ELSE 'medium'
+      END`;
 
 function isValidDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
@@ -146,6 +167,80 @@ function buildDayQuery(day) {
   };
 }
 
+// The sessions that viewed each page on the day, one row per page, device and session. Joined to the intent
+// levels in Node (below) rather than in the database: the join over raw events is far too slow.
+function buildSessionPagesQuery(day) {
+  const next = addDays(day, 1);
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${READ_TIMEOUT_MS}) */
+        page_path,
+        device_type,
+        session_id
+      FROM (
+        SELECT
+          ${PAGE_PATH_SQL} AS page_path,
+          ${DEVICE_CASE_SQL} AS device_type,
+          session_id
+        FROM behavioral_events
+        WHERE event_name = 'page_viewed'
+          AND occurred_at >= ? AND occurred_at < ?
+          AND session_id IS NOT NULL
+      ) views
+      WHERE page_path <> '' AND CHAR_LENGTH(page_path) <= ${MAX_PATH_LENGTH}
+      GROUP BY page_path, device_type, session_id
+    `,
+    params: [`${day} 00:00:00`, `${next} 00:00:00`],
+  };
+}
+
+// The Behaviour level of every closed session that started around the day (a session can start the evening
+// before). Sessions still open, without a time spent, are not in the answer and stay unclassified.
+function buildSessionLevelsQuery(day) {
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${READ_TIMEOUT_MS}) */
+        session_id,
+        ${BEHAVIOR_LEVEL_SQL} AS level
+      FROM intent_sessions
+      WHERE session_start >= ? AND session_start < ?
+        AND session_time_spent_ms IS NOT NULL
+    `,
+    params: [`${addDays(day, -1)} 00:00:00`, `${addDays(day, 1)} 00:00:00`],
+  };
+}
+
+// Sessions per page and device at each level: the key is "device|path", the value the counts. A session
+// counts once per page whatever spelling of the path it used. Bots and sessions without a level are left out.
+function mergeIntent(pageSessionRows, levelRows) {
+  const levels = new Map();
+  (levelRows || []).forEach((row) => levels.set(String(row.session_id), String(row.level)));
+  const seen = new Map();
+  (pageSessionRows || []).forEach((row) => {
+    const level = levels.get(String(row.session_id));
+    if (level !== "high" && level !== "medium" && level !== "low") return;
+    const pagePath = normalizePagePath(row.page_path);
+    if (!pagePath) return;
+    const key = `${String(row.device_type)}|${pagePath}`;
+    const entry = seen.get(key) || { high: new Set(), medium: new Set(), low: new Set() };
+    entry[level].add(String(row.session_id));
+    seen.set(key, entry);
+  });
+  const counts = new Map();
+  seen.forEach((entry, key) => {
+    counts.set(key, { high: entry.high.size, medium: entry.medium.size, low: entry.low.size });
+  });
+  return counts;
+}
+
+// Adds high / medium / low session counts to the merged page rows (zero when a page has none).
+function attachIntent(merged, intentCounts) {
+  return merged.map((row) => {
+    const counts = intentCounts.get(`${row.device}|${row.pagePath}`) || {};
+    return { ...row, high: counts.high || 0, medium: counts.medium || 0, low: counts.low || 0 };
+  });
+}
+
 // Re-normalises the paths in Node (collapses duplicate slashes the SQL leaves alone) and merges rows that
 // end up on the same page and device. Sessions of merged rows are summed, which is exact unless one session
 // viewed two spellings of the same page.
@@ -167,7 +262,16 @@ function mergeRows(rows) {
 }
 
 function toInsertValues(day, merged) {
-  return merged.map((row) => [day, row.pagePath, row.device, row.views, row.sessions]);
+  return merged.map((row) => [
+    day,
+    row.pagePath,
+    row.device,
+    row.views,
+    row.sessions,
+    row.high || 0,
+    row.medium || 0,
+    row.low || 0,
+  ]);
 }
 
 function chunk(items, size) {
@@ -203,13 +307,22 @@ async function connect(brand, hostOverride) {
   });
 }
 
+async function ensureIntentColumns(writeConn) {
+  const [rows] = await writeConn.query("SHOW COLUMNS FROM heatmap_page_daily LIKE 'high_sessions'");
+  if (rows.length === 0) {
+    console.log("[heatmap-rollup] adding the intent columns to heatmap_page_daily");
+    await writeConn.query(ADD_INTENT_COLUMNS_SQL);
+  }
+}
+
 async function writeDay(writeConn, day, merged) {
   await writeConn.beginTransaction();
   try {
     await writeConn.query("DELETE FROM heatmap_page_daily WHERE summary_date = ?", [day]);
     for (const part of chunk(toInsertValues(day, merged), INSERT_CHUNK)) {
       await writeConn.query(
-        "INSERT INTO heatmap_page_daily (summary_date, page_path, device_type, page_views, sessions) VALUES ?",
+        "INSERT INTO heatmap_page_daily (summary_date, page_path, device_type, page_views, sessions, " +
+          "high_sessions, medium_sessions, low_sessions) VALUES ?",
         [part],
       );
     }
@@ -230,16 +343,25 @@ async function main(argv) {
   const readConn = await connect(brand, options.readHost);
   const writeConn = options.write ? await connect(brand) : null;
   try {
-    if (writeConn) await writeConn.query(CREATE_TABLE_SQL);
+    if (writeConn) {
+      await writeConn.query(CREATE_TABLE_SQL);
+      await ensureIntentColumns(writeConn);
+    }
     for (const day of days) {
       const query = buildDayQuery(day);
       const [rows] = await readConn.query(query.sql, query.params);
-      const merged = mergeRows(rows);
+      const pageSessions = buildSessionPagesQuery(day);
+      const [pageSessionRows] = await readConn.query(pageSessions.sql, pageSessions.params);
+      const sessionLevels = buildSessionLevelsQuery(day);
+      const [levelRows] = await readConn.query(sessionLevels.sql, sessionLevels.params);
+      const merged = attachIntent(mergeRows(rows), mergeIntent(pageSessionRows, levelRows));
       const views = merged.reduce((sum, row) => sum + row.views, 0);
       console.log(`[heatmap-rollup] ${day}: ${merged.length} page/device rows, ${views} page views`);
       if (!options.write) {
         merged.slice(0, 5).forEach((row) => {
-          console.log(`    ${String(row.views).padStart(7)}  ${row.device.padEnd(7)} ${row.pagePath}`);
+          console.log(
+            `    ${String(row.views).padStart(7)}  ${row.device.padEnd(7)} H${row.high} M${row.medium} L${row.low}  ${row.pagePath}`,
+          );
         });
       } else {
         await writeDay(writeConn, day, merged);
@@ -260,10 +382,16 @@ if (require.main === module) {
 }
 
 module.exports = {
+  ADD_INTENT_COLUMNS_SQL,
+  BEHAVIOR_LEVEL_SQL,
   CREATE_TABLE_SQL,
   PAGE_PATH_SQL,
   addDays,
+  attachIntent,
   buildDayQuery,
+  buildSessionLevelsQuery,
+  buildSessionPagesQuery,
+  mergeIntent,
   chunk,
   datesBetween,
   isValidDate,

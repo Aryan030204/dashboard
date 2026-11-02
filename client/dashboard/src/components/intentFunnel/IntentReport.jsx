@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import dayjs from "dayjs";
 import {
   Alert,
   Box,
@@ -31,6 +32,8 @@ const INFO =
 
 const ROWS_PER_PAGE_OPTIONS = [5, 10, 25, 50];
 
+const DEFAULT_DAYS = 7;
+
 // A leading byte-order mark makes Excel read the file as UTF-8.
 const CSV_BOM = String.fromCharCode(0xfeff);
 
@@ -45,11 +48,18 @@ function downloadCsv(filename, text) {
   URL.revokeObjectURL(url);
 }
 
-// Has its own date range (it starts at the page's range) and fetches on its own, so changing the dates
+// Has its own date range (it starts at the last 7 days) and fetches on its own, so changing the dates
 // refetches only this table. `pageStart` / `pageEnd` are YYYY-MM-DD strings; `basis` follows the page's
 // Behaviour / Score switch.
 export default function IntentReport({ brandKey, pageStart, pageEnd, basis = "behavior" }) {
-  const pageRange = useMemo(() => ({ start: pageStart, end: pageEnd }), [pageStart, pageEnd]);
+  // Starts as the last 7 days up to the page's end date, whatever range the page itself shows.
+  const pageRange = useMemo(
+    () => ({
+      start: pageEnd ? dayjs(pageEnd).subtract(DEFAULT_DAYS - 1, "day").format("YYYY-MM-DD") : pageStart,
+      end: pageEnd,
+    }),
+    [pageStart, pageEnd],
+  );
   const [range, setRange] = useState(pageRange);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);

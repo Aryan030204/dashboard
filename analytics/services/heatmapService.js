@@ -29,7 +29,22 @@ function clampLimit(value, fallback, max) {
   return Math.min(max, n);
 }
 
-function buildPagesQuery({ start, end, device, search, limit }) {
+// Sessions of the page at each Behaviour intent level, from the rollup's intent columns. Left out for databases
+// whose rollup has not been refilled with them yet (see getHeatmapPages).
+const INTENT_PAGE_SQL = `,
+        SUM(high_sessions) AS high_sessions,
+        SUM(medium_sessions) AS medium_sessions,
+        SUM(low_sessions) AS low_sessions`;
+const INTENT_TOTALS_WINDOW_SQL = `,
+        SUM(SUM(high_sessions)) OVER () AS total_high,
+        SUM(SUM(medium_sessions)) OVER () AS total_medium,
+        SUM(SUM(low_sessions)) OVER () AS total_low`;
+const INTENT_TOTALS_SQL = `,
+        COALESCE(SUM(high_sessions), 0) AS total_high,
+        COALESCE(SUM(medium_sessions), 0) AS total_medium,
+        COALESCE(SUM(low_sessions), 0) AS total_low`;
+
+function buildPagesQuery({ start, end, device, search, limit, intent = false }) {
   const where = ["summary_date >= ?", "summary_date <= ?"];
   const params = [start, end];
   if (DEVICES.includes(device)) {
@@ -46,7 +61,7 @@ function buildPagesQuery({ start, end, device, search, limit }) {
       SELECT /*+ MAX_EXECUTION_TIME(${QUERY_TIMEOUT_MS}) */
         page_path,
         SUM(page_views) AS page_views,
-        SUM(sessions) AS sessions
+        SUM(sessions) AS sessions${intent ? INTENT_PAGE_SQL : ""}
       FROM heatmap_page_daily
       WHERE ${where.join(" AND ")}
       GROUP BY page_path
@@ -58,7 +73,7 @@ function buildPagesQuery({ start, end, device, search, limit }) {
 }
 
 // Page views of the whole range (not only the listed pages) and how fresh the rollup is.
-function buildPagesSummaryQuery({ start, end, device }) {
+function buildPagesSummaryQuery({ start, end, device, intent = false }) {
   const params = [start, end];
   let deviceClause = "";
   if (DEVICES.includes(device)) {
@@ -70,7 +85,7 @@ function buildPagesSummaryQuery({ start, end, device }) {
       SELECT /*+ MAX_EXECUTION_TIME(${QUERY_TIMEOUT_MS}) */
         COALESCE(SUM(page_views), 0) AS total_views,
         COUNT(DISTINCT page_path) AS pages,
-        DATE_FORMAT(MAX(summary_date), '%Y-%m-%d') AS latest_date
+        DATE_FORMAT(MAX(summary_date), '%Y-%m-%d') AS latest_date${intent ? INTENT_TOTALS_SQL : ""}
       FROM heatmap_page_daily
       WHERE summary_date >= ? AND summary_date <= ? ${deviceClause}
     `,
@@ -106,7 +121,7 @@ function buildElementsQuery({ start, end, path, limit }) {
 // range (the summary ignores the search, so this is only used when there is none). The window functions are
 // evaluated over the grouped rows before LIMIT, so the totals cover every page, not only the listed ones.
 // Needs MySQL 8 window functions; on a server without them the two-query path above is used (isWindowParseError).
-function buildPagesWithTotalsQuery({ start, end, device, limit }) {
+function buildPagesWithTotalsQuery({ start, end, device, limit, intent = false }) {
   const where = ["summary_date >= ?", "summary_date <= ?"];
   const params = [start, end];
   if (DEVICES.includes(device)) {
@@ -118,10 +133,10 @@ function buildPagesWithTotalsQuery({ start, end, device, limit }) {
       SELECT /*+ MAX_EXECUTION_TIME(${QUERY_TIMEOUT_MS}) */
         page_path,
         SUM(page_views) AS page_views,
-        SUM(sessions) AS sessions,
+        SUM(sessions) AS sessions${intent ? INTENT_PAGE_SQL : ""},
         SUM(SUM(page_views)) OVER () AS total_views,
         COUNT(*) OVER () AS pages,
-        DATE_FORMAT(MAX(MAX(summary_date)) OVER (), '%Y-%m-%d') AS latest_date
+        DATE_FORMAT(MAX(MAX(summary_date)) OVER (), '%Y-%m-%d') AS latest_date${intent ? INTENT_TOTALS_WINDOW_SQL : ""}
       FROM heatmap_page_daily
       WHERE ${where.join(" AND ")}
       GROUP BY page_path
@@ -229,17 +244,21 @@ function buildHeatmapService({ cache = createQueryCache() } = {}) {
     const filters = { start, end, device, search, limit };
 
     const cacheOptions = { ttlMs: rangeCacheTtl(end) };
-    try {
+
+    async function load(intent) {
       let rows;
       let summary;
       if (!search && singleQueryEnabled()) {
         try {
-          rows = await select(conn, buildPagesWithTotalsQuery({ start, end, device, limit }), brandKey, cacheOptions);
+          rows = await select(conn, buildPagesWithTotalsQuery({ start, end, device, limit, intent }), brandKey, cacheOptions);
           const first = rows?.[0] || {};
           summary = {
             total_views: first.total_views ?? 0,
             pages: first.pages ?? 0,
             latest_date: first.latest_date ?? null,
+            total_high: first.total_high,
+            total_medium: first.total_medium,
+            total_low: first.total_low,
           };
         } catch (err) {
           if (!isWindowParseError(err)) throw err;
@@ -249,21 +268,55 @@ function buildHeatmapService({ cache = createQueryCache() } = {}) {
       }
       if (rows === undefined) {
         const [pageRows, summaryRows] = await Promise.all([
-          select(conn, buildPagesQuery({ start, end, device, search, limit }), brandKey, cacheOptions),
-          select(conn, buildPagesSummaryQuery({ start, end, device }), brandKey, cacheOptions),
+          select(conn, buildPagesQuery({ start, end, device, search, limit, intent }), brandKey, cacheOptions),
+          select(conn, buildPagesSummaryQuery({ start, end, device, intent }), brandKey, cacheOptions),
         ]);
         rows = pageRows;
         summary = summaryRows?.[0] || {};
       }
+      return { rows, summary };
+    }
+
+    try {
+      let loaded;
+      let intentAvailable = true;
+      try {
+        loaded = await load(true);
+      } catch (err) {
+        // a rollup built before the intent columns existed: the list still works, without intent
+        if (!isSchemaMismatch(err)) throw err;
+        intentAvailable = false;
+        loaded = await load(false);
+      }
+      const { rows, summary } = loaded;
       return {
         filters,
-        meta: { available: true, latestDate: summary.latest_date || null },
+        meta: { available: true, latestDate: summary.latest_date || null, ...(intentAvailable ? {} : { intentAvailable: false }) },
         totalViews: num(summary.total_views),
         totalPages: num(summary.pages),
+        // Behaviour-level sessions across every page of the range (the site baseline for the page chips)
+        ...(intentAvailable && summary.total_high !== undefined
+          ? {
+              intentTotals: {
+                high: num(summary.total_high),
+                medium: num(summary.total_medium),
+                low: num(summary.total_low),
+              },
+            }
+          : {}),
         pages: (rows || []).map((row) => ({
           path: String(row.page_path),
           views: num(row.page_views),
           sessions: num(row.sessions),
+          ...(intentAvailable && row.high_sessions !== undefined
+            ? {
+                intent: {
+                  high: num(row.high_sessions),
+                  medium: num(row.medium_sessions),
+                  low: num(row.low_sessions),
+                },
+              }
+            : {}),
         })),
       };
     } catch (err) {

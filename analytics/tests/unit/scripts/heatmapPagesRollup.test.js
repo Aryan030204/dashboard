@@ -1,13 +1,19 @@
 /* eslint-env jest */
 
 const {
+  ADD_INTENT_COLUMNS_SQL,
+  BEHAVIOR_LEVEL_SQL,
   CREATE_TABLE_SQL,
   PAGE_PATH_SQL,
   addDays,
+  attachIntent,
   buildDayQuery,
+  buildSessionLevelsQuery,
+  buildSessionPagesQuery,
   chunk,
   datesBetween,
   isValidDate,
+  mergeIntent,
   mergeRows,
   parseArgs,
   todayInIndia,
@@ -131,14 +137,14 @@ describe("mergeRows", () => {
 });
 
 describe("writing", () => {
-  test("rows become [date, path, device, views, sessions] tuples, in chunks", () => {
+  test("rows become [date, path, device, views, sessions, high, medium, low] tuples, in chunks", () => {
     const merged = [
-      { pagePath: "/", device: "mobile", views: 3, sessions: 2 },
+      { pagePath: "/", device: "mobile", views: 3, sessions: 2, high: 1, medium: 1, low: 0 },
       { pagePath: "/a", device: "desktop", views: 1, sessions: 1 },
     ];
     expect(toInsertValues("2026-10-29", merged)).toEqual([
-      ["2026-10-29", "/", "mobile", 3, 2],
-      ["2026-10-29", "/a", "desktop", 1, 1],
+      ["2026-10-29", "/", "mobile", 3, 2, 1, 1, 0],
+      ["2026-10-29", "/a", "desktop", 1, 1, 0, 0, 0],
     ]);
     expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(chunk([], 2)).toEqual([]);
@@ -148,5 +154,66 @@ describe("writing", () => {
     expect(CREATE_TABLE_SQL).toContain("CREATE TABLE IF NOT EXISTS heatmap_page_daily");
     expect(CREATE_TABLE_SQL).toContain("PRIMARY KEY (summary_date, page_path, device_type)");
     expect(CREATE_TABLE_SQL).toContain("VARCHAR(255)");
+  });
+});
+
+describe("intent per page", () => {
+  test("the session queries bind their dates; the level query reaches back a day for sessions that started the evening before", () => {
+    const pages = buildSessionPagesQuery("2026-10-29");
+    expect(pages.params).toEqual(["2026-10-29 00:00:00", "2026-10-30 00:00:00"]);
+    expect(pages.sql).toContain("GROUP BY page_path, device_type, session_id");
+    expect((pages.sql.match(/\?/g) || []).length).toBe(pages.params.length);
+
+    const levels = buildSessionLevelsQuery("2026-10-29");
+    expect(levels.params).toEqual(["2026-10-28 00:00:00", "2026-10-30 00:00:00"]);
+    expect(levels.sql).toContain("FROM intent_sessions");
+    expect(levels.sql).toContain("session_time_spent_ms IS NOT NULL");
+    expect((levels.sql.match(/\?/g) || []).length).toBe(levels.params.length);
+  });
+
+  test("the level rule is the same as the one the Intent page uses", () => {
+    const { _internal } = require("../../../services/intentFunnelService");
+    const squash = (text) => text.replace(/\s+/g, " ").trim();
+    expect(squash(BEHAVIOR_LEVEL_SQL)).toBe(squash(_internal.BEHAVIOR_LEVEL_SQL));
+  });
+
+  test("sessions are counted once per page and level; bots and unclassified sessions are left out", () => {
+    const counts = mergeIntent(
+      [
+        { page_path: "/a", device_type: "mobile", session_id: "s1" },
+        { page_path: "//a", device_type: "mobile", session_id: "s1" }, // the same page, spelled differently
+        { page_path: "/a", device_type: "mobile", session_id: "s2" },
+        { page_path: "/a", device_type: "mobile", session_id: "s3" },
+        { page_path: "/a", device_type: "mobile", session_id: "bot1" },
+        { page_path: "/a", device_type: "mobile", session_id: "open1" }, // no intent_sessions row yet
+        { page_path: "/b", device_type: "desktop", session_id: "s1" },
+      ],
+      [
+        { session_id: "s1", level: "high" },
+        { session_id: "s2", level: "low" },
+        { session_id: "s3", level: "low" },
+        { session_id: "bot1", level: "bot" },
+      ],
+    );
+    expect(counts.get("mobile|/a")).toEqual({ high: 1, medium: 0, low: 2 });
+    expect(counts.get("desktop|/b")).toEqual({ high: 1, medium: 0, low: 0 });
+    expect(mergeIntent(null, null).size).toBe(0);
+  });
+
+  test("attachIntent adds the counts to the page rows, zero when a page has none", () => {
+    const merged = [
+      { pagePath: "/a", device: "mobile", views: 5, sessions: 3 },
+      { pagePath: "/b", device: "mobile", views: 2, sessions: 1 },
+    ];
+    const withIntent = attachIntent(merged, new Map([["mobile|/a", { high: 1, medium: 0, low: 2 }]]));
+    expect(withIntent[0]).toMatchObject({ high: 1, medium: 0, low: 2 });
+    expect(withIntent[1]).toMatchObject({ high: 0, medium: 0, low: 0 });
+  });
+
+  test("the table has the intent columns, and older tables are altered to get them", () => {
+    ["high_sessions", "medium_sessions", "low_sessions"].forEach((name) => {
+      expect(CREATE_TABLE_SQL).toContain(name);
+      expect(ADD_INTENT_COLUMNS_SQL).toContain(`ADD COLUMN ${name} INT UNSIGNED NOT NULL DEFAULT 0`);
+    });
   });
 });

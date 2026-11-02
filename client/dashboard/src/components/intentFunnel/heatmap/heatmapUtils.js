@@ -86,3 +86,29 @@ export function pageShare(views, totalViews) {
   if (total <= 0) return 0;
   return ((Number(views) || 0) / total) * 100;
 }
+
+// A page's intent compared with the whole site, from the sessions that viewed it at each Behaviour level.
+// Each side is reduced to one number, the average level of its sessions (low 0, medium 1, high 2). A page
+// is High when that average is clearly above the site's, Low when clearly below, Medium otherwise. Pages
+// with too few classified sessions get no level, because a handful of sessions says nothing.
+export const PAGE_INTENT_MIN_SESSIONS = 20;
+export const PAGE_INTENT_MARGIN = 0.15;
+
+function averageLevel(counts) {
+  const high = Number(counts?.high) || 0;
+  const medium = Number(counts?.medium) || 0;
+  const low = Number(counts?.low) || 0;
+  const total = high + medium + low;
+  return { total, average: total > 0 ? (2 * high + medium) / total : 0 };
+}
+
+export function pageIntentLevel(pageIntent, siteIntent) {
+  if (!pageIntent || !siteIntent) return null;
+  const page = averageLevel(pageIntent);
+  const site = averageLevel(siteIntent);
+  if (page.total < PAGE_INTENT_MIN_SESSIONS || site.average <= 0) return null;
+  const ratio = page.average / site.average;
+  if (ratio >= 1 + PAGE_INTENT_MARGIN) return "high";
+  if (ratio <= 1 - PAGE_INTENT_MARGIN) return "low";
+  return "medium";
+}

@@ -8,6 +8,7 @@ import {
   formatCount,
   formatShare,
   humanizeSlug,
+  pageIntentLevel,
   pageShare,
 } from "./heatmapUtils.js";
 
@@ -86,4 +87,19 @@ test("a page's share of all page views", () => {
   assert.equal(pageShare(250, 1000), 25);
   assert.equal(pageShare(5, 0), 0);
   assert.equal(pageShare(undefined, 100), 0);
+});
+
+test("a page's intent is compared with the site's average level", () => {
+  const site = { high: 100, medium: 250, low: 650 }; // average level 0.45
+  assert.equal(pageIntentLevel({ high: 40, medium: 40, low: 20 }, site), "high");
+  assert.equal(pageIntentLevel({ high: 10, medium: 25, low: 65 }, site), "medium");
+  assert.equal(pageIntentLevel({ high: 2, medium: 10, low: 88 }, site), "low");
+});
+
+test("a page with few classified sessions, or no site baseline, gets no level", () => {
+  const site = { high: 100, medium: 250, low: 650 };
+  assert.equal(pageIntentLevel({ high: 5, medium: 5, low: 5 }, site), null);
+  assert.equal(pageIntentLevel({ high: 50, medium: 50, low: 50 }, { high: 0, medium: 0, low: 0 }), null);
+  assert.equal(pageIntentLevel(undefined, site), null);
+  assert.equal(pageIntentLevel({ high: 50, medium: 50, low: 50 }, undefined), null);
 });

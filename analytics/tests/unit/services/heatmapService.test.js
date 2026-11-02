@@ -64,6 +64,44 @@ function newService() {
   return buildHeatmapService({ cache: createQueryCache() });
 }
 
+describe("heatmapService.getHeatmapPages intent", () => {
+  const INTENT_PAGE_ROWS = [
+    { page_path: "/", page_views: "100", sessions: "80", high_sessions: "10", medium_sessions: "20", low_sessions: "50" },
+  ];
+  const INTENT_SUMMARY = [
+    { total_views: "100", pages: "1", latest_date: "2026-10-28", total_high: "10", total_medium: "20", total_low: "50" },
+  ];
+
+  test("returns each page's sessions per intent level and the site totals", async () => {
+    const conn = makeConn({ pages: () => INTENT_PAGE_ROWS, summary: () => INTENT_SUMMARY });
+    const out = await newService().getHeatmapPages({ ...SPEC, conn });
+    expect(out.pages[0]).toEqual({ path: "/", views: 100, sessions: 80, intent: { high: 10, medium: 20, low: 50 } });
+    expect(out.intentTotals).toEqual({ high: 10, medium: 20, low: 50 });
+    expect(out.meta).toEqual({ available: true, latestDate: "2026-10-28" });
+    const pagesCall = conn.query.mock.calls.find(([sql]) => sql.includes("GROUP BY page_path"));
+    expect(pagesCall[0]).toContain("SUM(high_sessions)");
+  });
+
+  test("a rollup without the intent columns still lists the pages, and says intent is unavailable", async () => {
+    const unknownColumn = () => Object.assign(new Error("Unknown column"), { code: "ER_BAD_FIELD_ERROR", errno: 1054 });
+    const conn = makeConn({
+      pages: (sql) => {
+        if (sql.includes("high_sessions")) throw unknownColumn();
+        return PAGE_ROWS;
+      },
+      summary: (sql) => {
+        if (sql.includes("total_high")) throw unknownColumn();
+        return [{ total_views: "20406", pages: "3", latest_date: "2026-10-28" }];
+      },
+    });
+    const out = await newService().getHeatmapPages({ ...SPEC, conn });
+    expect(out.meta).toEqual({ available: true, latestDate: "2026-10-28", intentAvailable: false });
+    expect(out.pages).toHaveLength(3);
+    expect(out.pages[0]).toEqual({ path: "/", views: 9622, sessions: 7000 });
+    expect(out.intentTotals).toBeUndefined();
+  });
+});
+
 describe("heatmapService.getHeatmapPages", () => {
   test("returns the popular pages, most viewed first, with the range totals and rollup freshness", async () => {
     const out = await newService().getHeatmapPages({ ...SPEC, conn: makeConn() });
