@@ -3,11 +3,12 @@ import { Alert, Stack, Typography } from "@mui/material";
 import dayjs from "dayjs";
 import {
   getWebVitalsAllBrandsSnapshot,
-  getWebVitalsPages,
   getWebVitalsSnapshot,
   getWebVitalsTrend,
 } from "../../lib/api.js";
+import { fetchPagespeedResults, pagespeedBrandName } from "../../lib/pagespeed.js";
 import { FunnelSingleDatePicker } from "../../components/DailyFunnelPanel.jsx";
+import { buildPageRowsFromPagespeed } from "./webVitalsFormat.js";
 import WebVitalsKpiRow from "./components/WebVitalsKpiRow.jsx";
 import WebVitalsAllBrandsSnapshot from "./components/WebVitalsAllBrandsSnapshot.jsx";
 import WebVitalsTrendChart from "./components/WebVitalsTrendChart.jsx";
@@ -127,10 +128,12 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
     if (!selectedBrandKey) return;
     let cancelled = false;
     setPagesLoading(true);
-    getWebVitalsPages({ brand_key: selectedBrandKey, date: snapshotDate })
-      .then((result) => {
+    // The same PageSpeed results, brand name and date the dashboard's Top 5 Pages card uses, so the table
+    // lists the same pages with the same numbers.
+    fetchPagespeedResults(pagespeedBrandName(selectedBrandKey), snapshotDate, snapshotDate)
+      .then((results) => {
         if (cancelled) return;
-        setPageRows(result?.error ? [] : result.rows);
+        setPageRows(buildPageRowsFromPagespeed(results));
       })
       .catch(() => {
         if (cancelled) return;

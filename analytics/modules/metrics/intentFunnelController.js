@@ -118,6 +118,8 @@ function buildIntentFunnelController({ intentFunnelService, readTopProductsCache
             pathStart,
             pathTop: rawTop,
             pathSteps: pathSteps.value,
+            // the Funnel Exploration loads its own data (/intent-funnel/paths) and asks the page to leave it out
+            skipPaths: ['1', 'true'].includes(String(req.query.skip_paths || '').toLowerCase()),
           }),
         );
       } catch (e) {

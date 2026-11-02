@@ -1,5 +1,6 @@
 const { QueryTypes } = require("sequelize");
-const { createQueryCache, isMissingTable, isSchemaMismatch } = require("./intentFunnelService");
+const { createQueryCache, isMissingTable, isSchemaMismatch, rangeCacheTtl } = require("./intentFunnelService");
+const { runLimited } = require("../shared/utils/brandLimiter");
 const { DEVICES, escapeLike } = require("../shared/utils/heatmap");
 
 // Read-only access to the heatmap data of one brand database. The brand connection comes from brandContext
@@ -101,6 +102,76 @@ function buildElementsQuery({ start, end, path, limit }) {
   };
 }
 
+// The list and its totals in one read. The pages query and the summary query above scan the same rows of the same
+// range (the summary ignores the search, so this is only used when there is none). The window functions are
+// evaluated over the grouped rows before LIMIT, so the totals cover every page, not only the listed ones.
+// Needs MySQL 8 window functions; on a server without them the two-query path above is used (isWindowParseError).
+function buildPagesWithTotalsQuery({ start, end, device, limit }) {
+  const where = ["summary_date >= ?", "summary_date <= ?"];
+  const params = [start, end];
+  if (DEVICES.includes(device)) {
+    where.push("device_type = ?");
+    params.push(device);
+  }
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${QUERY_TIMEOUT_MS}) */
+        page_path,
+        SUM(page_views) AS page_views,
+        SUM(sessions) AS sessions,
+        SUM(SUM(page_views)) OVER () AS total_views,
+        COUNT(*) OVER () AS pages,
+        DATE_FORMAT(MAX(MAX(summary_date)) OVER (), '%Y-%m-%d') AS latest_date
+      FROM heatmap_page_daily
+      WHERE ${where.join(" AND ")}
+      GROUP BY page_path
+      ORDER BY page_views DESC, page_path ASC
+      LIMIT ${limit}
+    `,
+    params,
+  };
+}
+
+// The ranked elements of a page and the page's totals in one read (same idea as buildPagesWithTotalsQuery).
+function buildElementsWithTotalsQuery({ start, end, path, limit }) {
+  return {
+    sql: `
+      SELECT /*+ MAX_EXECUTION_TIME(${QUERY_TIMEOUT_MS}) */
+        click_target_hash,
+        MAX(tag_name) AS tag_name,
+        MAX(element_id) AS element_id,
+        MAX(element_name) AS element_name,
+        MAX(element_type) AS element_type,
+        MAX(element_value) AS element_value,
+        MAX(href) AS href,
+        SUM(total_clicks) AS clicks,
+        SUM(useful_clicks) AS useful_clicks,
+        SUM(dead_clicks) AS dead_clicks,
+        SUM(SUM(total_clicks)) OVER () AS total_clicks,
+        SUM(SUM(useful_clicks)) OVER () AS total_useful_clicks,
+        SUM(SUM(dead_clicks)) OVER () AS total_dead_clicks,
+        COUNT(*) OVER () AS elements
+      FROM click_behavior_daily
+      WHERE summary_date >= ? AND summary_date <= ? AND page_path = ?
+      GROUP BY click_target_hash
+      ORDER BY clicks DESC, click_target_hash ASC
+      LIMIT ${limit}
+    `,
+    params: [start, end, path],
+  };
+}
+
+// A server that cannot parse window functions (MySQL before 8.0) answers a syntax error: fall back to the
+// separate queries, and do not try the single query again in this process.
+let windowQueriesBroken = false;
+// INTENT_HEATMAP_SINGLE_QUERY=off keeps the separate queries.
+function singleQueryEnabled(env = process.env) {
+  return !windowQueriesBroken && String(env.INTENT_HEATMAP_SINGLE_QUERY || "on").trim().toLowerCase() !== "off";
+}
+function isWindowParseError(err) {
+  return err?.code === "ER_PARSE_ERROR" || err?.errno === 1064;
+}
+
 function buildElementTotalsQuery({ start, end, path }) {
   return {
     sql: `
@@ -134,10 +205,12 @@ function emptyToNull(value) {
 
 function buildHeatmapService({ cache = createQueryCache() } = {}) {
   // The cache key includes the brand so results can never cross tenants.
-  async function select(conn, { sql, params }, brandKey) {
-    const run = () => conn.query(sql, { type: QueryTypes.SELECT, replacements: params });
+  async function select(conn, { sql, params }, brandKey, options = {}) {
+    // the query runs through the per-brand limit (shared with the Intent page); a cached answer never waits for it
+    const run = () =>
+      runLimited(brandKey, () => conn.query(sql, { type: QueryTypes.SELECT, replacements: params }));
     if (!brandKey) return run();
-    return cache(`heatmap|${brandKey}|${sql}|${JSON.stringify(params)}`, run);
+    return cache(`heatmap|${brandKey}|${sql}|${JSON.stringify(params)}`, run, { ttlMs: options.ttlMs });
   }
 
   function unavailable(err) {
@@ -155,12 +228,33 @@ function buildHeatmapService({ cache = createQueryCache() } = {}) {
     const limit = clampLimit(spec.limit, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT);
     const filters = { start, end, device, search, limit };
 
+    const cacheOptions = { ttlMs: rangeCacheTtl(end) };
     try {
-      const [rows, summaryRows] = await Promise.all([
-        select(conn, buildPagesQuery({ start, end, device, search, limit }), brandKey),
-        select(conn, buildPagesSummaryQuery({ start, end, device }), brandKey),
-      ]);
-      const summary = summaryRows?.[0] || {};
+      let rows;
+      let summary;
+      if (!search && singleQueryEnabled()) {
+        try {
+          rows = await select(conn, buildPagesWithTotalsQuery({ start, end, device, limit }), brandKey, cacheOptions);
+          const first = rows?.[0] || {};
+          summary = {
+            total_views: first.total_views ?? 0,
+            pages: first.pages ?? 0,
+            latest_date: first.latest_date ?? null,
+          };
+        } catch (err) {
+          if (!isWindowParseError(err)) throw err;
+          windowQueriesBroken = true;
+          rows = undefined;
+        }
+      }
+      if (rows === undefined) {
+        const [pageRows, summaryRows] = await Promise.all([
+          select(conn, buildPagesQuery({ start, end, device, search, limit }), brandKey, cacheOptions),
+          select(conn, buildPagesSummaryQuery({ start, end, device }), brandKey, cacheOptions),
+        ]);
+        rows = pageRows;
+        summary = summaryRows?.[0] || {};
+      }
       return {
         filters,
         meta: { available: true, latestDate: summary.latest_date || null },
@@ -191,13 +285,34 @@ function buildHeatmapService({ cache = createQueryCache() } = {}) {
       elements: [],
     };
 
+    const cacheOptions = { ttlMs: rangeCacheTtl(end) };
     let rows;
     let totalsRows;
     try {
-      [rows, totalsRows] = await Promise.all([
-        select(conn, buildElementsQuery({ start, end, path, limit }), brandKey),
-        select(conn, buildElementTotalsQuery({ start, end, path }), brandKey),
-      ]);
+      if (singleQueryEnabled()) {
+        try {
+          rows = await select(conn, buildElementsWithTotalsQuery({ start, end, path, limit }), brandKey, cacheOptions);
+          const first = rows?.[0];
+          totalsRows = [
+            {
+              clicks: first?.total_clicks ?? 0,
+              useful_clicks: first?.total_useful_clicks ?? 0,
+              dead_clicks: first?.total_dead_clicks ?? 0,
+              elements: first?.elements ?? 0,
+            },
+          ];
+        } catch (err) {
+          if (!isWindowParseError(err)) throw err;
+          windowQueriesBroken = true;
+          rows = undefined;
+        }
+      }
+      if (rows === undefined) {
+        [rows, totalsRows] = await Promise.all([
+          select(conn, buildElementsQuery({ start, end, path, limit }), brandKey, cacheOptions),
+          select(conn, buildElementTotalsQuery({ start, end, path }), brandKey, cacheOptions),
+        ]);
+      }
     } catch (err) {
       if (isMissingTable(err) || isSchemaMismatch(err)) {
         return { filters, meta: unavailable(err), ...empty };
@@ -209,7 +324,7 @@ function buildHeatmapService({ cache = createQueryCache() } = {}) {
     let pageViews = null;
     let pageViewsAvailable = true;
     try {
-      const viewRows = await select(conn, buildPageViewsQuery({ start, end, path }), brandKey);
+      const viewRows = await select(conn, buildPageViewsQuery({ start, end, path }), brandKey, cacheOptions);
       pageViews = num(viewRows?.[0]?.page_views);
     } catch (err) {
       if (!(isMissingTable(err) || isSchemaMismatch(err))) throw err;
@@ -261,6 +376,12 @@ module.exports = {
   _internal: {
     buildPagesQuery,
     buildPagesSummaryQuery,
+    buildPagesWithTotalsQuery,
+    buildElementsWithTotalsQuery,
+    isWindowParseError,
+    resetWindowFallback: () => {
+      windowQueriesBroken = false;
+    },
     buildElementsQuery,
     buildElementTotalsQuery,
     buildPageViewsQuery,

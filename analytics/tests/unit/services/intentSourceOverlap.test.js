@@ -7,6 +7,10 @@ jest.mock("../../../shared/utils/logger", () => ({
   debug: jest.fn(),
 }));
 
+// These tests pin the two-query path (its results are the reference); the single query that normally replaces
+// it is tested against this one in intentOverlapSingleQuery.test.js.
+process.env.INTENT_OVERLAP_SINGLE_QUERY = "off";
+
 const {
   buildIntentFunnelService,
   createQueryCache,

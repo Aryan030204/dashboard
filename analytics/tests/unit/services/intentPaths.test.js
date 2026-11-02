@@ -160,7 +160,7 @@ describe("getPaths with a product", () => {
 
   test("an invalid product id is ignored instead of reaching the SQL", async () => {
     const conn = makeConn({ events, sessions });
-    const out = await newService().getPaths({ ...SPEC, productId: "5; DROP TABLE x", conn });
+    const out = await newService().getPaths({ ...SPEC, intent: "high", productId: "5; DROP TABLE x", conn });
 
     expect(out.filters.productId).toBeNull();
     conn.query.mock.calls.forEach(([sql]) => expect(sql).not.toContain("DROP"));
@@ -173,6 +173,41 @@ describe("getPaths with a product", () => {
 
     const sessionCalls = conn.query.mock.calls.filter(([sql]) => sql.includes("FROM intent_sessions"));
     expect(sessionCalls.map(([, o]) => o.replacements.length)).toEqual([1000, 1000, 500]);
+  });
+});
+
+describe("getPaths with no product and no intent level (the daily rollup)", () => {
+  const rollupRows = [
+    { sequence: "page_viewed>product_viewed>click", sessions: "60", users: "50" },
+    { sequence: "page_viewed>click", sessions: "40", users: "35" },
+  ];
+  const makeRollupConn = () => ({
+    query: jest.fn(async (sql) => {
+      if (sql.includes("FROM behavioral_path_daily")) {
+        return sql.includes("GROUP BY sequence_hash") ? rollupRows : [{ sessions: "100" }];
+      }
+      throw new Error(`unexpected sql: ${sql}`);
+    }),
+  });
+
+  test("answers from behavioral_path_daily only, never from the session tables", async () => {
+    const conn = makeRollupConn();
+    const out = await newService().getPaths({ ...SPEC, steps: 4, conn });
+
+    expect(out.meta).toMatchObject({ available: true, live: false });
+    expect(conn.query).toHaveBeenCalledTimes(2);
+    conn.query.mock.calls.forEach(([sql]) => expect(sql).toContain("behavioral_path_daily"));
+    expect(out.paths.steps).toHaveLength(4);
+    expect(stepNodes(out.paths, 0)).toEqual([expect.objectContaining({ state: "page_viewed", value: 100 })]);
+    expect(out.paths.coverage).toMatchObject({ sessions: 100, totalSessions: 100 });
+  });
+
+  test("a brand without the rollup table answers available:false", async () => {
+    const err = Object.assign(new Error("no table"), { code: "ER_NO_SUCH_TABLE", errno: 1146 });
+    const conn = { query: jest.fn(async () => { throw err; }) };
+    const out = await newService().getPaths({ ...SPEC, conn });
+    expect(out.meta.available).toBe(false);
+    expect(out.paths.nodes).toEqual([]);
   });
 });
 
