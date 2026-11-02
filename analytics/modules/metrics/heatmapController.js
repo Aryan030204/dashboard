@@ -90,7 +90,10 @@ function buildHeatmapController({ heatmapService }) {
         const spec = readRange(req, res);
         if (!spec) return undefined;
 
-        const path = normalizePagePath(req.query.path);
+        // `page_path` is the parameter name; plain `path` is still read for direct callers. The Vercel proxy
+        // (client/dashboard/api/proxy.js) uses `path` itself for the route, so a browser request must not send it.
+        const rawPath = req.query.page_path !== undefined ? req.query.page_path : req.query.path;
+        const path = normalizePagePath(Array.isArray(rawPath) ? rawPath[rawPath.length - 1] : rawPath);
         if (!path) {
           return badRequest(res, 'A valid page path is required');
         }

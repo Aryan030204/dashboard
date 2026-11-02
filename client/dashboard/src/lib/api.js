@@ -1464,7 +1464,8 @@ export async function getHeatmapElements(args = {}, options = {}) {
     {
       start: args.start,
       end: args.end || args.start,
-      path: args.path,
+      // not `path`: the Vercel proxy uses the query parameter `path` for the API route and would lose this one
+      page_path: args.path,
       limit: args.limit,
     },
     args,
