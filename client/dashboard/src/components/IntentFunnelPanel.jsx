@@ -7,6 +7,7 @@ import { PATH_STEPS_DEFAULT } from "./intentFunnel/intentFunnelUtils.js";
 import IntentKpiGrid from "./intentFunnel/IntentKpiGrid.jsx";
 import IntentDistributionDonut from "./intentFunnel/IntentDistributionDonut.jsx";
 import IntentSourceOverlap from "./intentFunnel/IntentSourceOverlap.jsx";
+import IntentConversionRates from "./intentFunnel/IntentConversionRates.jsx";
 import TopProductsByIntent from "./intentFunnel/TopProductsByIntent.jsx";
 import PathExplorationSankey from "./intentFunnel/PathExplorationSankey.jsx";
 import IntentReport from "./intentFunnel/IntentReport.jsx";
@@ -236,12 +237,15 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
           />
         </Box>
 
-        {/* 2. Top Products by Intent, full width */}
-        <TopProductsByIntent
-          products={data.topProducts}
-          sortBy={topProductsSort}
-          onSortByChange={setTopProductsSort}
-        />
+        {/* 2. Intent Conversion Rates on the left, Top Products by Intent beside it */}
+        <Box sx={rowSx("minmax(0, 1fr) minmax(0, 2fr)")}>
+          <IntentConversionRates conversionRates={data.conversionRates} />
+          <TopProductsByIntent
+            products={data.topProducts}
+            sortBy={topProductsSort}
+            onSortByChange={setTopProductsSort}
+          />
+        </Box>
 
         {/* 3. Funnel Exploration, full width */}
         <PathExplorationSankey
