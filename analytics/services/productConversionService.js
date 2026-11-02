@@ -73,6 +73,22 @@ const PREVIOUS_HEADER_MAP = {
   cvr: "prev_cvr",
 };
 
+// Collection/PLP CVR (V1) lives in its own daily aggregate, built by
+// products-pipeline-ec2 (mv_collection_sessions_by_path_daily). Collection
+// rows have no product_id, so they never use the product-based orders join.
+const COLLECTION_MV_TABLE = "mv_collection_sessions_by_path_daily";
+// Same key the MV stores: lowercase, no trailing slash.
+const COLLECTION_PATH_KEY = "LOWER(TRIM(TRAILING '/' FROM s.landing_page_path))";
+
+function isMissingCollectionMvError(err) {
+  const e = (err && (err.original || err.parent)) || err || {};
+  const message = String(e.message || (err && err.message) || "");
+  return (
+    (e.code === "ER_NO_SUCH_TABLE" || e.errno === 1146) &&
+    message.includes(COLLECTION_MV_TABLE)
+  );
+}
+
 let defaultRedisClient;
 
 function getDefaultRedisClient() {
@@ -112,7 +128,7 @@ function normalizeRequestFilters(query) {
   return filters;
 }
 
-function buildMetricFilterExpression(field) {
+function buildMetricFilterExpression(field, withCollection = false) {
   switch (field) {
     case "sessions":
       return "s.sessions";
@@ -125,11 +141,13 @@ function buildMetricFilterExpression(field) {
     case "checkout_rate":
       return "(CASE WHEN s.sessions > 0 THEN COALESCE(c.ci_events, 0) / s.sessions * 100 ELSE 0 END)";
     case "orders":
-      return "COALESCE(o.orders, 0)";
+      return withCollection ? "COALESCE(o.orders, cc.orders, 0)" : "COALESCE(o.orders, 0)";
     case "sales":
       return "COALESCE(o.sales, 0)";
     case "cvr":
-      return "(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)";
+      return withCollection
+        ? "(CASE WHEN cc.collection_path IS NOT NULL THEN (CASE WHEN cc.sessions > 0 THEN cc.orders / cc.sessions * 100 ELSE 0 END) WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)"
+        : "(CASE WHEN s.sessions > 0 THEN COALESCE(o.orders, 0) / s.sessions * 100 ELSE 0 END)";
     default:
       return "";
   }
@@ -191,7 +209,7 @@ function normalizeProductConversionRequest(query, options = {}) {
   };
 }
 
-function buildProductConditions(spec, baseAlias) {
+function buildProductConditions(spec, baseAlias, withCollection = false) {
   const conditions = [];
   const replacements = [];
 
@@ -226,7 +244,7 @@ function buildProductConditions(spec, baseAlias) {
       ) {
         continue;
       }
-      const expression = buildMetricFilterExpression(field);
+      const expression = buildMetricFilterExpression(field, withCollection);
       if (!expression) continue;
       conditions.push(`${expression} ${operator === "gt" ? ">" : "<"} ?`);
       replacements.push(value);
@@ -244,7 +262,7 @@ function buildProductConditions(spec, baseAlias) {
   };
 }
 
-function buildBaseCte(spec, includeCompare = false) {
+function buildBaseCte(spec, includeCompare = false, withCollection = false) {
   const cutoffCtx =
     includeCompare && hasCompareRange(spec)
       ? buildCompletedHourCutoffContext(spec.start, spec.end, new Date(), spec.timezone)
@@ -298,6 +316,20 @@ function buildBaseCte(spec, includeCompare = false) {
         ${currentRangeIncludesToday ? "AND (date < ? OR hour <= ?)" : ""}
       GROUP BY product_id, landing_page_path
     )
+    ${
+      withCollection
+        ? `,
+    collection_cvr_60d AS (
+      SELECT
+        collection_path,
+        SUM(sessions) AS sessions,
+        SUM(orders) AS orders
+      FROM ${COLLECTION_MV_TABLE}
+      WHERE date >= ? AND date <= ?
+      GROUP BY collection_path
+    )`
+        : ""
+    }
   `;
 
   if (!includeCompare || !hasCompareRange(spec)) {
@@ -315,6 +347,7 @@ function buildBaseCte(spec, includeCompare = false) {
             spec.end,
             spec.end,
             cutoffCtx.cutoffHour,
+            ...(withCollection ? [spec.start, spec.end] : []),
           ]
         : [
             spec.start,
@@ -323,6 +356,7 @@ function buildBaseCte(spec, includeCompare = false) {
             spec.end,
             spec.start,
             spec.end,
+            ...(withCollection ? [spec.start, spec.end] : []),
           ],
     };
   }
@@ -356,6 +390,10 @@ function buildBaseCte(spec, includeCompare = false) {
   const previousSessionsReplacements = previousWithinHourlyRetention
     ? [spec.compareStart, spec.compareEnd, spec.compareEnd, cutoffCtx.cutoffHour]
     : [spec.compareStart, spec.compareEnd];
+  const collectionReplacements = withCollection ? [spec.start, spec.end] : [];
+  const previousCollectionReplacements = withCollection
+    ? [spec.compareStart, spec.compareEnd]
+    : [];
 
   return {
     sql: `
@@ -394,15 +432,30 @@ function buildBaseCte(spec, includeCompare = false) {
         WHERE date >= ? AND date <= ?
           ${previousWithinHourlyRetention ? "AND (date < ? OR hour <= ?)" : ""}
         GROUP BY product_id, landing_page_path
-      )
+      )${
+        withCollection
+          ? `,
+      previous_collection_cvr AS (
+        SELECT
+          collection_path,
+          SUM(sessions) AS sessions,
+          SUM(orders) AS orders
+        FROM ${COLLECTION_MV_TABLE}
+        WHERE date >= ? AND date <= ?
+        GROUP BY collection_path
+      )`
+          : ""
+      }
     `,
     replacements: [
       ...ordersReplacements,
       ...ciReplacements,
       ...sessionsReplacements,
+      ...collectionReplacements,
       ...previousOrdersReplacements,
       ...previousCiReplacements,
       ...previousSessionsReplacements,
+      ...previousCollectionReplacements,
     ],
   };
 }
@@ -415,9 +468,13 @@ function buildSelectSql(
   sortDir,
   pagination,
   includeTotalCount = false,
+  withCollection = false,
 ) {
   const includeCompare = hasCompareRange(spec);
-  const base = buildBaseCte(spec, includeCompare);
+  // Collection rows have no product_id, so the collection aggregate is only
+  // joined on the sessions-based listing (never the product-mapping base).
+  const collectionOn = withCollection && !useMappingBase;
+  const base = buildBaseCte(spec, includeCompare, collectionOn);
   const previousSelect = includeCompare
     ? `,
         COALESCE(ps.sessions, 0) AS prev_sessions,
@@ -425,16 +482,40 @@ function buildSelectSql(
         CASE WHEN ps.sessions > 0 THEN ROUND(ps.atc / ps.sessions * 100, 4) ELSE 0 END AS prev_atc_rate,
         COALESCE(pc.ci_events, 0) AS prev_ci_events,
         CASE WHEN ps.sessions > 0 THEN ROUND(COALESCE(pc.ci_events, 0) / ps.sessions * 100, 4) ELSE 0 END AS prev_checkout_rate,
-        COALESCE(po.orders, 0) AS prev_orders,
+        ${collectionOn ? "COALESCE(po.orders, pcc.orders, 0)" : "COALESCE(po.orders, 0)"} AS prev_orders,
         COALESCE(po.sales, 0) AS prev_sales,
-        CASE WHEN ps.sessions > 0 THEN ROUND(COALESCE(po.orders, 0) / ps.sessions * 100, 4) ELSE 0 END AS prev_cvr`
+        ${
+          collectionOn
+            ? "CASE WHEN pcc.collection_path IS NOT NULL THEN (CASE WHEN pcc.sessions > 0 THEN ROUND(pcc.orders / pcc.sessions * 100, 4) ELSE 0 END) WHEN ps.sessions > 0 THEN ROUND(COALESCE(po.orders, 0) / ps.sessions * 100, 4) ELSE 0 END"
+            : "CASE WHEN ps.sessions > 0 THEN ROUND(COALESCE(po.orders, 0) / ps.sessions * 100, 4) ELSE 0 END"
+        } AS prev_cvr`
     : "";
   const previousJoins = includeCompare
     ? `
       LEFT JOIN previous_sessions ps ON ${useMappingBase ? "m.landing_page_path" : "s.landing_page_path"} = ps.landing_page_path
       LEFT JOIN previous_ci pc ON ${useMappingBase ? "m.product_id" : "s.product_id"} = pc.product_id
       LEFT JOIN previous_orders po ON ${useMappingBase ? "m.product_id" : "s.product_id"} = po.product_id
+      ${
+        collectionOn
+          ? `LEFT JOIN previous_collection_cvr pcc ON s.product_id IS NULL AND pcc.collection_path = ${COLLECTION_PATH_KEY}`
+          : ""
+      }
     `
+    : "";
+  const ordersExpr = collectionOn
+    ? "COALESCE(o.orders, cc.orders, 0)"
+    : "COALESCE(o.orders, 0)";
+  // PDP rows (cc.collection_path IS NULL) take the untouched branch.
+  const cvrExpr = collectionOn
+    ? `CASE
+          WHEN cc.collection_path IS NOT NULL
+            THEN (CASE WHEN cc.sessions > 0 THEN ROUND(cc.orders / cc.sessions * 100, 4) ELSE 0 END)
+          WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4)
+          ELSE 0
+        END`
+    : "CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END";
+  const collectionJoin = collectionOn
+    ? `LEFT JOIN collection_cvr_60d cc ON s.product_id IS NULL AND cc.collection_path = ${COLLECTION_PATH_KEY}`
     : "";
   const inventoryCol = `
     NULL AS drr,
@@ -478,15 +559,16 @@ function buildSelectSql(
         CASE WHEN s.sessions > 0 THEN ROUND(s.atc / s.sessions * 100, 4) ELSE 0 END AS atc_rate,
         COALESCE(c.ci_events, 0) AS ci_events,
         CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(c.ci_events, 0) / s.sessions * 100, 4) ELSE 0 END AS checkout_rate,
-        COALESCE(o.orders, 0) AS orders,
+        ${ordersExpr} AS orders,
         COALESCE(o.sales, 0) AS sales,
-        CASE WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4) ELSE 0 END AS cvr,
+        ${cvrExpr} AS cvr,
         ${inventoryCol}
         ${previousSelect}
         ${totalCountCol}
       FROM sessions_60d s
       LEFT JOIN ci_60d c ON s.product_id = c.product_id
       LEFT JOIN orders_60d o ON s.product_id = o.product_id
+      ${collectionJoin}
       ${previousJoins}
     `;
   const limitClause = pagination
@@ -942,6 +1024,45 @@ function buildProductConversionService() {
     }
   }
 
+  // Runs the product-conversion SELECT. The collection aggregate is optional
+  // at rollout time: if its table does not exist yet (dashboard deployed
+  // before products-pipeline created it), re-run the unchanged legacy SQL.
+  async function runSelectWithCollectionFallback(
+    spec,
+    useMappingBase,
+    baseAlias,
+    pagination,
+    includeTotalCount,
+  ) {
+    const attempt = async (withCollection) => {
+      const built = buildProductConditions(
+        spec,
+        baseAlias,
+        withCollection && !useMappingBase,
+      );
+      const selectBuilt = buildSelectSql(
+        spec,
+        useMappingBase,
+        built.whereClause,
+        spec.sortCol,
+        spec.sortDir,
+        pagination,
+        includeTotalCount,
+        withCollection,
+      );
+      return spec.conn.query(selectBuilt.sql, {
+        type: QueryTypes.SELECT,
+        replacements: [...selectBuilt.replacements, ...built.replacements],
+      });
+    };
+    try {
+      return await attempt(true);
+    } catch (err) {
+      if (!isMissingCollectionMvError(err)) throw err;
+      return attempt(false);
+    }
+  }
+
   async function getProductConversion(spec) {
     if (spec.inventoryOnly) {
       const redisRows = await getInventoryOnlyRowsFromRedis(spec, spec.resolveShopSubdomain);
@@ -967,23 +1088,16 @@ function buildProductConversionService() {
     const useMappingBase =
       Array.isArray(spec.productTypes) && spec.productTypes.length > 0;
     const baseAlias = useMappingBase ? "m" : "s";
-    const built = buildProductConditions(spec, baseAlias);
     const needsInventoryPostProcessing = hasInventoryDerivedFilter(spec.filters);
 
     if (!needsInventoryPostProcessing) {
-      const selectBuilt = buildSelectSql(
+      const rowsRaw = await runSelectWithCollectionFallback(
         spec,
         useMappingBase,
-        built.whereClause,
-        spec.sortCol,
-        spec.sortDir,
+        baseAlias,
         { page: spec.page, pageSize: spec.pageSize },
         true,
       );
-      const rowsRaw = await spec.conn.query(selectBuilt.sql, {
-        type: QueryTypes.SELECT,
-        replacements: [...selectBuilt.replacements, ...built.replacements],
-      });
       const totalCount = rowsRaw.length > 0 ? Number(rowsRaw[0].total_count || 0) : 0;
 
       const rows = normalizeRows(rowsRaw, hasCompareRange(spec));
@@ -1000,18 +1114,13 @@ function buildProductConversionService() {
       };
     }
 
-    const selectBuilt = buildSelectSql(
+    const rowsRaw = await runSelectWithCollectionFallback(
       spec,
       useMappingBase,
-      built.whereClause,
-      spec.sortCol,
-      spec.sortDir,
+      baseAlias,
       { page: 1, pageSize: UNBOUNDED_ROW_SAFETY_CAP },
+      false,
     );
-    const rowsRaw = await spec.conn.query(selectBuilt.sql, {
-      type: QueryTypes.SELECT,
-      replacements: [...selectBuilt.replacements, ...built.replacements],
-    });
 
     const rows = normalizeRows(rowsRaw, hasCompareRange(spec));
     const enriched = await enrichWithRedis(rows, spec, spec.resolveShopSubdomain);
@@ -1053,19 +1162,13 @@ function buildProductConversionService() {
     const useMappingBase =
       Array.isArray(spec.productTypes) && spec.productTypes.length > 0;
     const baseAlias = useMappingBase ? "m" : "s";
-    const built = buildProductConditions(spec, baseAlias);
-    const selectBuilt = buildSelectSql(
+    const rowsRaw = await runSelectWithCollectionFallback(
       spec,
       useMappingBase,
-      built.whereClause,
-      spec.sortCol,
-      spec.sortDir,
+      baseAlias,
       { page: 1, pageSize: UNBOUNDED_ROW_SAFETY_CAP },
+      false,
     );
-    const rowsRaw = await spec.conn.query(selectBuilt.sql, {
-      type: QueryTypes.SELECT,
-      replacements: [...selectBuilt.replacements, ...built.replacements],
-    });
     const rows = normalizeRows(rowsRaw, hasCompareRange(spec));
     const enriched = await enrichWithRedis(rows, spec, spec.resolveShopSubdomain);
     const filtered = applyInventoryFilters(enriched, spec.filters);
