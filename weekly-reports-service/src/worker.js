@@ -88,6 +88,7 @@ async function main() {
     process.exit(1);
   });
 
+  await repo.checkSchema();
   await logToolchain(config);
   log.info(`started as ${workerId}`, { workerId });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

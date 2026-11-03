@@ -252,6 +252,24 @@ function buildReportsRepo(pool, { logger } = {}) {
       await pool.query("UPDATE weekly_reports SET locked_at = NULL, locked_by = NULL WHERE id = ?", [id]);
     },
 
+    // Run at start-up by the API and the worker. Logs an ERROR when a migration is missing, because the symptoms
+    // (a PDF stored with an empty type, then converted by LibreOffice instead of read directly) are easy to miss.
+    async checkSchema() {
+      try {
+        const [rows] = await pool.query("SHOW COLUMNS FROM weekly_reports LIKE 'source_type'");
+        const type = rows[0] && rows[0].Type ? String(rows[0].Type) : "";
+        const pdfAllowed = /'pdf'/i.test(type);
+        if (pdfAllowed) log.info("schema check ok: weekly_reports.source_type accepts pdf", { type });
+        else {
+          log.error("schema check FAILED: weekly_reports.source_type does not accept 'pdf'. Apply migrations/004-allow-pdf-source.sql, otherwise PDF uploads are stored with an empty type", { type });
+        }
+        return { ok: pdfAllowed, type };
+      } catch (err) {
+        log.error("schema check could not run", { error: err });
+        return { ok: false, type: null };
+      }
+    },
+
     // ---- worker side -------------------------------------------------------------------------
 
     async claimNext(workerId) {
@@ -267,8 +285,17 @@ function buildReportsRepo(pool, { logger } = {}) {
           "UPDATE weekly_reports SET locked_at = UTC_TIMESTAMP(), locked_by = ?, attempts = attempts + 1, stage = 'CONVERTING' WHERE id = ?",
           [workerId, row.id],
         );
-        log.info("worker claimed the report", { report: Number(row.id), brand: row.brand_key, worker: workerId });
-        return { id: Number(row.id), brandKey: row.brand_key, sourceKey: row.source_storage_key, sourceType: row.source_type };
+        // A database that has not had migration 004 stores 'pdf' as '' (the column only knows pptx/ppt). The file
+        // name written by the upload always ends in the real type, so use that instead of treating a PDF as a deck.
+        const keyExt = String(row.source_storage_key || "").split(".").pop().toLowerCase();
+        const sourceType = row.source_type || (["pptx", "ppt", "pdf"].includes(keyExt) ? keyExt : "");
+        if (!row.source_type) {
+          log.warn("source_type is empty in the database, using the file extension instead: apply migration 004-allow-pdf-source.sql", {
+            report: Number(row.id), sourceKey: row.source_storage_key, usedType: sourceType,
+          });
+        }
+        log.info("worker claimed the report", { report: Number(row.id), brand: row.brand_key, worker: workerId, sourceType });
+        return { id: Number(row.id), brandKey: row.brand_key, sourceKey: row.source_storage_key, sourceType };
       });
     },
 
