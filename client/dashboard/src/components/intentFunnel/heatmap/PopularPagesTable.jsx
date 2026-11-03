@@ -22,12 +22,10 @@ import { describePage, formatCount, formatShare, intentSplit, pageShare } from "
 
 const INTENT_LEVELS = ["high", "medium", "low"];
 const INTENT_NAMES = { high: "High", medium: "Medium", low: "Low" };
-// a part narrower than this share of the bar is too small to hold its percentage; the tooltip still has it
-const MIN_LABEL_PCT = 14;
 
-// One pill split into High | Medium | Low parts. Each part is drawn like the circles of the User Overlap diagram:
-// a see-through fill with a border in the level's colour (the intent card colours). Each part is as wide as that
-// level's share of the page's sessions and shows its percentage.
+// One pill split into three equal parts, High | Medium | Low, each showing that level's percentage of the page's
+// sessions (the three always add up to 100). Drawn like the circles of the User Overlap diagram: a see-through
+// fill with a border in the level's colour (the intent card colours), with white text so it reads on any of them.
 function IntentBar({ split }) {
   if (!split) {
     return (
@@ -39,7 +37,6 @@ function IntentBar({ split }) {
   const summary = INTENT_LEVELS.map(
     (level) => `${INTENT_NAMES[level]}: ${formatShare(split[level].pct)} (${formatCount(split[level].sessions)} sessions)`,
   ).join("\n");
-  const levels = INTENT_LEVELS.filter((level) => split[level].pct > 0);
   const radius = 11;
   return (
     <Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{summary}</span>} arrow placement="top">
@@ -48,15 +45,15 @@ function IntentBar({ split }) {
         aria-label={summary.replace(/\n/g, ", ")}
         sx={{ display: "flex", width: 150, height: 22, ml: "auto" }}
       >
-        {levels.map((level, index) => {
+        {INTENT_LEVELS.map((level, index) => {
           const color = INTENT_COLORS[level];
           const first = index === 0;
-          const last = index === levels.length - 1;
+          const last = index === INTENT_LEVELS.length - 1;
           return (
             <Box
               key={level}
               sx={{
-                flex: `${split[level].pct} 1 0`,
+                flex: "1 1 0",
                 minWidth: 0,
                 boxSizing: "border-box",
                 display: "flex",
@@ -67,13 +64,13 @@ function IntentBar({ split }) {
                 // neighbouring parts share one border line instead of doubling it
                 ml: first ? 0 : "-1.5px",
                 borderRadius: `${first ? radius : 0}px ${last ? radius : 0}px ${last ? radius : 0}px ${first ? radius : 0}px`,
-                color,
+                color: "#fff",
                 fontSize: "0.68rem",
                 fontWeight: 700,
                 lineHeight: 1,
               }}
             >
-              {split[level].pct >= MIN_LABEL_PCT ? `${Math.round(split[level].pct)}%` : ""}
+              {split[level].shown}%
             </Box>
           );
         })}
