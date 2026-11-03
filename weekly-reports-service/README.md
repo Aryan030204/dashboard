@@ -97,6 +97,28 @@ Both are warnings, never errors. The upload form asks `GET /weekly-reports/check
 The worker image installs LibreOffice, so the first build is large. The worker is capped at 2 GB
 (`WEEKLY_REPORTS_WORKER_MEM_LIMIT`) because the EC2 host also runs Kafka.
 
+## Logs (following one upload)
+
+Both processes (`weekly-reports-service` = the API, `weekly-reports-worker` = conversion) write one line per step:
+
+```
+2026-11-03T13:46:08.123Z INFO  [worker.process.convert] soffice finished {"report":26,"cmd":"soffice","exit":0,"ms":41230}
+```
+
+- **Where**: `docker logs weekly-reports-service-main` for the upload itself (request, chunks, validation, storing the source),
+  `docker logs weekly-reports-worker-main` for everything after it (download, picture fix, LibreOffice, per-slide encoding, READY / FAILED).
+- **Follow one upload**: grep the report id, e.g. `docker logs weekly-reports-worker-main 2>&1 | grep '"report":26'`. The API also
+  returns an `X-Request-Id` header and writes it as `"req"` on every line of that request.
+- **Steps, in order**: API `chunked upload requested` -> `upload session created` -> `chunk n/N received` -> `upload complete requested` ->
+  `ingest step 1/5 ... 5/5` -> `report queued for the worker`; worker `claimed a report` -> `job started` -> `step 1/4 ... 4/4` (download,
+  convert, store slides, mark READY) -> `job finished`. A failure ends in an `ERROR job failed` line with the step (`atStep`), the code, and
+  the full error (name, code, message, stack, cause, AWS request id); LibreOffice / poppler failures include the exit code and the tail of their output.
+- **Levels**: `WEEKLY_REPORTS_LOG_LEVEL` = `debug` | `info` (default) | `warn` | `error` | `silent`. `debug` adds every S3 object read/write,
+  progress updates and slide views. Tests run silent.
+- **At start-up** the worker logs the versions of `soffice`, `pdftoppm` and `pdfinfo` and which of the deck fonts (Bebas Neue, Poppins,
+  Alexandria, Inter) are installed; a missing tool is logged as an ERROR.
+- Never logged: the gateway secret and signature, request headers, e-mail addresses, DB credentials.
+
 ## Tests
 
 ```

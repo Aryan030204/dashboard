@@ -8,6 +8,7 @@ const { validateUpload, extensionOf, UNSUPPORTED_TYPE_MESSAGE } = require("../se
 const { buildSlideCache } = require("../services/slideCache");
 const { buildPurger } = require("../services/purger");
 const { buildUploadSessions } = require("../services/uploadSessions");
+const { ensureLogger, stopwatch } = require("../logger");
 
 // The single grantable scope. Holders (non-admins) can only preview PUBLISHED reports of their
 // brand; everything else is role-gated to elevated users.
@@ -84,10 +85,12 @@ function assertBrandInputsAgree(req) {
   }
 }
 
-function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = buildUploadSessions({ config }) }) {
+function buildWeeklyReportsRouter({ config, repo, storage, audit, logger, sessions }) {
+  const log = ensureLogger(logger, "routes");
+  sessions = sessions || buildUploadSessions({ config, logger: log.child("sessions") });
   const router = express.Router();
   const slideCache = buildSlideCache(config.slideCacheMax);
-  const purger = buildPurger({ repo, storage });
+  const purger = buildPurger({ repo, storage, logger: log.child("purger") });
   const A = audit.ACTIONS;
 
   const brandGuard = (req, _res, next) => {
@@ -107,6 +110,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
     const report = await repo.findById(id);
     if (!report) throw httpError(404, "NOT_FOUND", "Report not found.");
     if (report.brand_key !== brand) {
+      log.warn("cross-brand access refused", { req: req.reqId, report: id, requestBrand: brand, reportBrand: report.brand_key, user: userId });
       await audit.record({
         brandKey: brand, reportId: id, userId, action: A.ACCESS_DENIED,
         metadata: { reason: "cross_brand", request_brand: brand, report_brand: report.brand_key },
@@ -163,10 +167,13 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
           body = await storage.getBuffer(thumb ? slide.thumbnail_storage_key : slide.image_storage_key);
         } catch (err) {
           if (err && (err.name === "NoSuchKey" || err.Code === "NoSuchKey")) {
+            log.warn("slide file is missing in storage", { req: req.reqId, report: report.id, slide: n, thumb });
             throw httpError(404, "SLIDE_NOT_FOUND", "Slide not found.");
           }
+          log.error("could not read a slide from storage", { req: req.reqId, report: report.id, slide: n, thumb, error: err });
           throw httpError(503, "STORAGE_UNAVAILABLE", "Report is temporarily unavailable.");
         }
+        log.debug("slide served from storage", { report: report.id, slide: n, thumb, bytes: body.length });
         slideCache.set(cacheKey, body);
       }
 
@@ -226,12 +233,31 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
   // Everything that happens to a fully received file, whichever way it arrived (one multipart request
   // or assembled from chunks): check its real content, create the next version, store the source in S3
   // and hand it to the worker.
-  async function ingestUpload({ principal, filePath, originalName, sizeBytes, title, reportingWeek }) {
-    const fields = createSchema.parse({ title, reporting_week: reportingWeek });
+  async function ingestUpload({ principal, filePath, originalName, sizeBytes, title, reportingWeek, reqId }) {
+    const total = stopwatch();
     const { brand_key: brand, user_id: userId } = principal;
+    const ctx = { req: reqId, brand, user: userId };
+    log.info("ingest step 1/5: upload received, checking the form fields", { ...ctx, file: originalName, sizeBytes, title, reportingWeek });
+    let fields;
+    try {
+      fields = createSchema.parse({ title, reporting_week: reportingWeek });
+    } catch (err) {
+      log.warn("ingest stopped: the title or reporting week is not valid", { ...ctx, file: originalName, issues: err && err.issues && err.issues.map((i) => `${i.path.join(".")}: ${i.message}`) });
+      throw err;
+    }
 
-    const info = await validateUpload({ filePath, originalName, sizeBytes }, config);
+    log.info("ingest step 2/5: validating the file content", { ...ctx, file: originalName });
+    let info;
+    const validation = stopwatch();
+    try {
+      info = await validateUpload({ filePath, originalName, sizeBytes }, config);
+    } catch (err) {
+      log.warn("ingest stopped: the file was rejected", { ...ctx, file: originalName, sizeBytes, code: err && err.code, reason: err && err.message, ms: validation() });
+      throw err;
+    }
+    log.info("file accepted", { ...ctx, ext: info.ext, sizeBytes: info.sizeBytes, sha256: info.sha256.slice(0, 12), zipEntries: info.zipEntries, uncompressedBytes: info.uncompressedBytes, ms: validation() });
 
+    log.info("ingest step 3/5: creating the report row", ctx);
     const { id, version, title: savedTitle } = await repo.createReport({
       brandKey: brand,
       title: fields.title,
@@ -239,13 +265,18 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
       sourceType: info.ext,
       uploadedBy: userId,
     });
+    log.info("report row created", { ...ctx, report: id, version, title: savedTitle });
 
     try {
       const sourceKey = storage.sourceKey(brand, id, info.ext);
+      log.info("ingest step 4/5: storing the source file", { ...ctx, report: id, key: sourceKey, bytes: info.sizeBytes });
+      const storing = stopwatch();
       await storage.putFile(sourceKey, filePath, CONTENT_TYPES[info.ext]);
+      log.info("source stored", { ...ctx, report: id, key: sourceKey, ms: storing() });
+      log.info("ingest step 5/5: queueing the report for the worker", { ...ctx, report: id });
       await repo.releaseForProcessing(id, brand, { sourceKey, sizeBytes: info.sizeBytes, sha256: info.sha256 });
     } catch (err) {
-      console.error("[weekly-reports] source upload failed", id, err && err.message);
+      log.error("ingest failed while storing the source file, the report is marked FAILED", { ...ctx, report: id, error: err });
       await repo.markFailed(id, "UPLOAD_FAILED", "The source file could not be stored.");
       throw httpError(503, "STORAGE_UNAVAILABLE", "Report is temporarily unavailable. Try again.");
     }
@@ -260,6 +291,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
     }
 
     const created = await repo.findById(id);
+    log.info("ingest finished, the worker will pick the report up", { ...ctx, report: id, version, titleAdjusted, status: created && created.status, stage: created && created.stage, ms: total() });
     return { ...managerDto(created), title_adjusted: titleAdjusted };
   }
 
@@ -269,7 +301,11 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
     const file = req.file;
     try {
       assertBrandInputsAgree(req); // body fields exist only after multer parsed them
-      if (!file) throw httpError(400, "FILE_REQUIRED", "Choose a .pptx, .ppt or .pdf file to upload.");
+      if (!file) {
+        log.warn("upload without a file", { req: req.reqId, brand: req.principal.brand_key });
+        throw httpError(400, "FILE_REQUIRED", "Choose a .pptx, .ppt or .pdf file to upload.");
+      }
+      log.info("single-request upload received", { req: req.reqId, brand: req.principal.brand_key, file: file.originalname, bytes: file.size });
       const body = await ingestUpload({
         principal: req.principal,
         filePath: file.path,
@@ -277,6 +313,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
         sizeBytes: file.size,
         title: req.body.title,
         reportingWeek: req.body.reporting_week,
+        reqId: req.reqId,
       });
       res.status(202).json(body);
     } catch (err) {
@@ -306,6 +343,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
     try {
       const body = uploadStartSchema.parse(req.body || {});
       const { brand_key: brandKey, user_id: userId } = req.principal;
+      log.info("chunked upload requested", { req: req.reqId, brand: brandKey, user: userId, file: body.filename, size: body.size, title: body.title, reportingWeek: body.reporting_week });
       const { session, chunkSize, totalChunks } = await sessions.create({
         brandKey, userId, filename: body.filename, size: body.size, title: body.title, reportingWeek: body.reporting_week,
       });
@@ -324,8 +362,17 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
       const session = sessions.get(req.params.uploadId, uploadOwner(req));
       if (!/^\d{1,6}$/.test(req.params.index)) throw httpError(400, "INVALID_CHUNK", "Invalid chunk number.");
       const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-      if (!buffer.length) throw httpError(400, "BAD_CHUNK_SIZE", "The chunk is empty.");
-      res.json(await sessions.appendChunk(session, Number(req.params.index), buffer));
+      if (!buffer.length) {
+        log.warn("empty chunk", { req: req.reqId, upload: session.id, chunk: req.params.index, contentType: req.headers["content-type"], contentLength: req.headers["content-length"] });
+        throw httpError(400, "BAD_CHUNK_SIZE", "The chunk is empty.");
+      }
+      const chunkTimer = stopwatch();
+      const progress = await sessions.appendChunk(session, Number(req.params.index), buffer);
+      log.info(`chunk ${Number(req.params.index) + 1}/${progress.total_chunks} received`, {
+        req: req.reqId, upload: session.id, bytes: buffer.length, received: progress.received, of: session.size,
+        percent: Math.round((progress.received / session.size) * 100), ms: chunkTimer(),
+      });
+      res.json(progress);
     } catch (err) {
       next(err);
     }
@@ -335,6 +382,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
     let session;
     try {
       session = sessions.get(req.params.uploadId, uploadOwner(req));
+      log.info("upload complete requested, assembling and ingesting", { req: req.reqId, upload: session.id, file: session.filename, received: session.received, size: session.size });
       sessions.assertComplete(session); // missing bytes: keep the session so the client can send the rest
     } catch (err) {
       return next(err);
@@ -347,11 +395,13 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
         sizeBytes: session.size,
         title: session.title,
         reportingWeek: session.reportingWeek,
+        reqId: req.reqId,
       });
       // The temporary copy is deleted BEFORE answering, so it is already gone when the client sees 202.
       await sessions.discard(session.id);
       res.status(202).json(body);
     } catch (err) {
+      log.error("upload failed, the temporary copy is removed", { req: req.reqId, upload: session.id, file: session.filename, code: err && err.code, message: err && err.message });
       await sessions.discard(session.id); // success or failure, the temporary copy is done with
       next(err);
     }
@@ -361,6 +411,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
   router.delete("/uploads/:uploadId", requireAuthor, brandGuard, async (req, res, next) => {
     try {
       const session = sessions.get(req.params.uploadId, uploadOwner(req));
+      log.info("upload cancelled by the user", { req: req.reqId, upload: session.id, received: session.received, size: session.size });
       await sessions.discard(session.id);
       res.status(204).end();
     } catch (err) {
@@ -372,6 +423,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
     try {
       const report = await loadAuthorizedReport(req);
       const { brand_key: brand, user_id: userId } = req.principal;
+      log.info("publish requested", { req: req.reqId, report: report.id, brand, user: userId, status: report.status });
       await repo.publish(report.id, brand, userId);
       await audit.record({ brandKey: brand, reportId: report.id, userId, action: A.PUBLISHED, metadata: { version: report.version } });
       res.json(managerDto(await repo.findById(report.id)));
@@ -384,6 +436,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
     try {
       const report = await loadAuthorizedReport(req);
       const { brand_key: brand, user_id: userId } = req.principal;
+      log.info("unpublish requested", { req: req.reqId, report: report.id, brand, user: userId });
       await repo.unpublish(report.id, brand);
       await audit.record({ brandKey: brand, reportId: report.id, userId, action: A.UNPUBLISHED, metadata: { reason: "manual" } });
       res.json(managerDto(await repo.findById(report.id)));
@@ -399,6 +452,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
     try {
       const report = await loadAuthorizedReport(req);
       const { brand_key: brand, user_id: userId } = req.principal;
+      log.info("delete requested", { req: req.reqId, report: report.id, brand, user: userId, status: report.status });
       await repo.softDelete(report.id, brand);
       const filesRemoved = await purger.purge({ id: report.id, brandKey: brand });
       await audit.record({
@@ -418,6 +472,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, sessions = bui
     try {
       const report = await loadAuthorizedReport(req);
       const { brand_key: brand, user_id: userId } = req.principal;
+      log.info("cancel requested", { req: req.reqId, report: report.id, brand, user: userId, stage: report.stage });
       const { purgeNow } = await repo.cancel(report.id, brand);
       // Files can go right away unless a worker or an in-flight upload still holds the report; in
       // that case the worker releases it and the cleanup sweep removes the files moments later.

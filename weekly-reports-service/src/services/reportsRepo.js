@@ -1,5 +1,6 @@
 const { httpError } = require("../errors");
 const { uniqueTitle } = require("./uniqueTitle");
+const { ensureLogger, stopwatch } = require("../logger");
 
 // Every method that is reachable from a request takes the brand key and puts it in the WHERE
 // clause. A report id alone never grants access (PRD section 9 / SEC-3).
@@ -15,7 +16,9 @@ async function titleTaken(db, brandKey, title) {
   return rows.length > 0;
 }
 
-function buildReportsRepo(pool) {
+function buildReportsRepo(pool, { logger } = {}) {
+  const log = ensureLogger(logger, "repo");
+
   async function inTransaction(fn) {
     const conn = await pool.getConnection();
     try {
@@ -59,14 +62,17 @@ function buildReportsRepo(pool) {
     // A per-brand named lock serialises this so two uploads at once cannot take the same title or
     // version; it is released only AFTER the commit so the next upload sees this one.
     async createReport({ brandKey, title, reportingWeek, sourceType, uploadedBy }) {
+      const elapsed = stopwatch();
       const conn = await pool.getConnection();
       const lockName = `wr:create:${brandKey}`;
       let locked = false;
       try {
         const [lockRows] = await conn.query("SELECT GET_LOCK(?, 10) AS got", [lockName]);
         if (Number(lockRows[0].got) !== 1) {
+          log.warn("could not get the per-brand upload lock within 10s", { brand: brandKey, lockName, waitedMs: elapsed() });
           throw httpError(503, "BUSY", "Another upload for this brand is being saved. Try again in a moment.");
         }
+        log.debug("per-brand upload lock acquired", { brand: brandKey, waitedMs: elapsed() });
         locked = true;
         await conn.beginTransaction();
         try {
@@ -83,6 +89,10 @@ function buildReportsRepo(pool) {
             [brandKey, finalTitle, reportingWeek, version, sourceType, uploadedBy],
           );
           await conn.commit();
+          log.info("report row created", {
+            report: Number(res.insertId), brand: brandKey, version, reportingWeek, sourceType,
+            title: finalTitle, titleAdjusted: finalTitle !== title, ms: elapsed(),
+          });
           return { id: Number(res.insertId), version, title: finalTitle };
         } catch (err) {
           try {
@@ -90,6 +100,7 @@ function buildReportsRepo(pool) {
           } catch (_) {
             /* ignore */
           }
+          log.error("creating the report row failed, rolled back", { brand: brandKey, reportingWeek, ms: elapsed(), error: err });
           throw err;
         }
       } finally {
@@ -106,16 +117,22 @@ function buildReportsRepo(pool) {
 
     // Source stored: record where it is and let the worker claim it.
     async releaseForProcessing(id, brandKey, { sourceKey, sizeBytes, sha256 }) {
-      await pool.query(
+      const [res] = await pool.query(
         `UPDATE weekly_reports
             SET source_storage_key = ?, source_size_bytes = ?, source_sha256 = ?, locked_at = NULL, locked_by = NULL,
                 stage = 'QUEUED', slides_total = NULL, slides_done = 0
           WHERE id = ? AND brand_key = ? AND status = 'PROCESSING'`,
         [sourceKey, sizeBytes, sha256, id, brandKey],
       );
+      if (res && res.affectedRows === 0) {
+        log.warn("report was not queued: no PROCESSING row matched (deleted or cancelled meanwhile?)", { report: id, brand: brandKey });
+      } else {
+        log.info("report queued for the worker", { report: id, brand: brandKey, sourceKey, sizeBytes, sha256: String(sha256 || "").slice(0, 12) });
+      }
     },
 
     async markFailed(id, code, detail) {
+      log.warn("marking the report FAILED", { report: id, code, detail });
       await pool.query(
         `UPDATE weekly_reports SET status = 'FAILED', error_code = ?, error_detail = ?, locked_at = NULL, locked_by = NULL
           WHERE id = ? AND status = 'PROCESSING'`,
@@ -164,6 +181,7 @@ function buildReportsRepo(pool) {
           "UPDATE weekly_reports SET status = 'PUBLISHED', published_at = UTC_TIMESTAMP(), published_by = ? WHERE id = ?",
           [userId, id],
         );
+        log.info("report published", { report: id, brand: brandKey, user: userId, from: row.status });
       });
     },
 
@@ -172,7 +190,11 @@ function buildReportsRepo(pool) {
         "UPDATE weekly_reports SET status = 'UNPUBLISHED' WHERE id = ? AND brand_key = ? AND status = 'PUBLISHED' AND deleted_at IS NULL",
         [id, brandKey],
       );
-      if (!res.affectedRows) throw httpError(409, "INVALID_STATE", "Only a published report can be unpublished.");
+      if (!res.affectedRows) {
+        log.warn("unpublish refused: the report is not published", { report: id, brand: brandKey });
+        throw httpError(409, "INVALID_STATE", "Only a published report can be unpublished.");
+      }
+      log.info("report unpublished", { report: id, brand: brandKey });
     },
 
     async softDelete(id, brandKey) {
@@ -182,8 +204,10 @@ function buildReportsRepo(pool) {
         [id, brandKey],
       );
       if (!res.affectedRows) {
+        log.warn("delete refused: the report is published, processing or already deleted", { report: id, brand: brandKey });
         throw httpError(409, "INVALID_STATE", "Unpublish the report before deleting it. A report that is processing cannot be deleted.");
       }
+      log.info("report deleted (files are removed next)", { report: id, brand: brandKey });
     },
 
     // Cancels a report that is still processing (queued or converting): hides it at once and marks its
@@ -201,11 +225,13 @@ function buildReportsRepo(pool) {
           throw httpError(409, "INVALID_STATE", "Only a report that is still processing can be cancelled.");
         }
         await conn.query("UPDATE weekly_reports SET deleted_at = UTC_TIMESTAMP() WHERE id = ?", [id]);
+        log.info("report cancelled", { report: id, brand: brandKey, heldByWorkerOrUpload: row.locked_at !== null });
         return { purgeNow: row.locked_at === null };
       });
     },
 
     async markPurged(id) {
+      log.debug("files marked as removed", { report: id });
       await pool.query("UPDATE weekly_reports SET storage_purged_at = UTC_TIMESTAMP() WHERE id = ?", [id]);
     },
 
@@ -222,6 +248,7 @@ function buildReportsRepo(pool) {
 
     // A worker that stops because its report was cancelled lets go of it, so the files can be purged.
     async releaseLock(id) {
+      log.info("worker let go of the report", { report: id });
       await pool.query("UPDATE weekly_reports SET locked_at = NULL, locked_by = NULL WHERE id = ?", [id]);
     },
 
@@ -240,12 +267,14 @@ function buildReportsRepo(pool) {
           "UPDATE weekly_reports SET locked_at = UTC_TIMESTAMP(), locked_by = ?, attempts = attempts + 1, stage = 'CONVERTING' WHERE id = ?",
           [workerId, row.id],
         );
+        log.info("worker claimed the report", { report: Number(row.id), brand: row.brand_key, worker: workerId });
         return { id: Number(row.id), brandKey: row.brand_key, sourceKey: row.source_storage_key, sourceType: row.source_type };
       });
     },
 
     // Live progress for the UI. Only touches a report that is still processing.
     async setProgress(id, { stage, slidesTotal = null, slidesDone = null }) {
+      log.debug("progress", { report: id, stage, slidesDone, slidesTotal });
       await pool.query(
         "UPDATE weekly_reports SET stage = ?, slides_total = ?, slides_done = ? WHERE id = ? AND status = 'PROCESSING'",
         [stage, slidesTotal, slidesDone, id],
@@ -253,6 +282,7 @@ function buildReportsRepo(pool) {
     },
 
     async complete(id, slides) {
+      const elapsed = stopwatch();
       return inTransaction(async (conn) => {
         await conn.query("DELETE FROM weekly_report_slides WHERE report_id = ?", [id]);
         for (const s of slides) {
@@ -268,6 +298,7 @@ function buildReportsRepo(pool) {
             WHERE id = ? AND status = 'PROCESSING'`,
           [slides.length, slides.length, slides.length, id],
         );
+        log.info("report is READY", { report: id, slides: slides.length, ms: elapsed() });
       });
     },
 
@@ -282,6 +313,7 @@ function buildReportsRepo(pool) {
           WHERE status = 'PROCESSING' AND locked_at IS NOT NULL AND locked_at < (UTC_TIMESTAMP() - INTERVAL ? SECOND)`,
         [seconds],
       );
+      if (res.affectedRows) log.warn("failed stuck reports", { count: res.affectedRows, olderThanSeconds: seconds });
       return res.affectedRows || 0;
     },
 
