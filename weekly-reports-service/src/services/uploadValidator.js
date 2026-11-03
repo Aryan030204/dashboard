@@ -99,7 +99,7 @@ function inspectPptx(filePath, limits) {
           return fail(httpError(415, "MACRO_ENABLED_NOT_ALLOWED", "Macro-enabled presentations are not supported."));
         }
         settled = true;
-        resolve();
+        resolve({ zipEntries: entries, uncompressedBytes: total });
       });
       zip.readEntry();
     });
@@ -112,6 +112,7 @@ async function validateUpload({ filePath, originalName, sizeBytes }, limits) {
   if (!ext) throw httpError(415, "UNSUPPORTED_FILE_TYPE", UNSUPPORTED_TYPE_MESSAGE);
   if (!sizeBytes) throw httpError(422, "CORRUPT_FILE", "The file is empty.");
 
+  let zipInfo = {};
   const head = await readHead(filePath, ext === "pdf" ? PDF_HEADER_WINDOW : 8);
   if (ext === "pdf") {
     // Content is only ever rasterised by poppler (no scripts run), so the header check is the gate here;
@@ -123,7 +124,7 @@ async function validateUpload({ filePath, originalName, sizeBytes }, limits) {
     if (head.length < 4 || !head.subarray(0, 4).equals(ZIP_MAGIC)) {
       throw httpError(415, "UNSUPPORTED_FILE_TYPE", "This file is not a valid .pptx presentation.");
     }
-    await inspectPptx(filePath, limits);
+    zipInfo = await inspectPptx(filePath, limits);
   } else {
     // Legacy binary PowerPoint (OLE container). Content is not inspectable here; LibreOffice
     // never runs macros headless, and the manager previews before publishing.
@@ -131,7 +132,7 @@ async function validateUpload({ filePath, originalName, sizeBytes }, limits) {
       throw httpError(415, "UNSUPPORTED_FILE_TYPE", "This file is not a valid .ppt presentation.");
     }
   }
-  return { ext, sizeBytes, sha256: await sha256File(filePath) };
+  return { ext, sizeBytes, sha256: await sha256File(filePath), ...zipInfo };
 }
 
 module.exports = { validateUpload, extensionOf, UNSUPPORTED_TYPE_MESSAGE };
