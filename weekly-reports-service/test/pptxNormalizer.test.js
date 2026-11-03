@@ -4,81 +4,103 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const JSZip = require("jszip");
-const { normalizePptx, fillRectToSrcRect, toSrcRect } = require("../src/services/pptxNormalizer");
+const sharp = require("sharp");
+const { normalizePptx, visibleRegion } = require("../src/services/pptxNormalizer");
 const { convertToPageImages } = require("../src/services/converter");
 
-const fill = (rect) =>
-  `<a:blipFill><a:blip r:embed="rId3"/><a:stretch><a:fillRect ${rect}/></a:stretch></a:blipFill>`;
+const EXTREME = 'l="-64339" t="-339581" r="-2199969" b="-2710796"'; // the underline on slide 2 of the weekly deck
+const fill = (rect, rid = "rId2") =>
+  `<a:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect ${rect}/></a:stretch></a:blipFill>`;
 
-test("the picture crop that LibreOffice drew as a whole slide becomes an equivalent srcRect", () => {
-  // Taken from slide 2 of the weekly deck: a thin underline cut out of a full-slide picture.
-  const out = fillRectToSrcRect(fill('l="-64339" t="-339581" r="-2199969" b="-2710796"'));
-  assert.ok(out.includes('<a:srcRect l="2721" t="10779" r="93049" b="86047"/>'), out);
-  assert.ok(out.includes("<a:stretch><a:fillRect/></a:stretch>"));
-  assert.ok(out.indexOf("<a:srcRect") < out.indexOf("<a:stretch>"), "schema order: blip, srcRect, stretch");
+test("the part of the picture inside the shape is worked out from the insets", () => {
+  const region = visibleRegion({ l: -64339, t: -339581, r: -2199969, b: -2710796 });
+  assert.ok(Math.abs(region.left - 0.02721) < 1e-4);
+  assert.ok(Math.abs(region.width - 0.04230) < 1e-4);
+  assert.ok(Math.abs(region.top - 0.10779) < 1e-4);
+  assert.ok(Math.abs(region.height - 0.03174) < 1e-4);
 });
 
-test("a picture that overhangs one side is cropped on that side only", () => {
-  assert.deepEqual(toSrcRect({ l: 0, t: -20593, r: 0, b: 0 }), { l: 0, t: 17076, r: 0, b: 0 });
+test("ordinary fills are not extreme: no change for small overhangs, zero or positive insets", () => {
+  assert.equal(visibleRegion({ l: 0, t: -20593, r: 0, b: 0 }), null);
+  assert.equal(visibleRegion({ l: -83, t: 0, r: -83, b: 0 }), null);
+  assert.equal(visibleRegion({ l: 0, t: 0, r: 0, b: 0 }), null);
+  assert.equal(visibleRegion({ l: 5000, t: -300000, r: 0, b: 0 }), null);
 });
 
-test("the visible part is the same before and after (shape width x, picture width x * (1 + overhang))", () => {
-  const rect = toSrcRect({ l: -64339, t: 0, r: -2199969, b: 0 });
-  const pictureWidth = 1 + 0.64339 + 21.99969; // in shape widths
-  const visible = 1 - (rect.l + rect.r) / 100000;
-  assert.ok(Math.abs(visible - 1 / pictureWidth) < 1e-4);
-});
-
-test("nothing changes for plain fills, positive insets or fills that already have a srcRect", () => {
-  for (const xml of [
-    fill(""),
-    fill('l="0" t="0" r="0" b="0"'),
-    fill('l="5000" t="0" r="0" b="0"'),
-    fill('l="-10" t="5000" r="0" b="0"'),
-    `<a:blipFill><a:blip r:embed="rId2"/><a:srcRect l="10"/><a:stretch><a:fillRect l="-5000"/></a:stretch></a:blipFill>`,
-    `<a:blipFill><a:blip r:embed="rId2"/><a:tile tx="0" ty="0"/></a:blipFill>`,
-  ]) {
-    assert.equal(fillRectToSrcRect(xml), xml);
+// A 200x100 picture: red on the left quarter, blue on the rest.
+async function picture() {
+  const raw = Buffer.alloc(200 * 100 * 3);
+  for (let y = 0; y < 100; y += 1) {
+    for (let x = 0; x < 200; x += 1) {
+      const i = (y * 200 + x) * 3;
+      const red = x < 50;
+      raw[i] = red ? 255 : 0;
+      raw[i + 2] = red ? 0 : 255;
+    }
   }
-});
-
-test("picture fills (p:blipFill) and several fills in one slide are all handled", () => {
-  const xml = `<p:pic><p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect t="-1000" b="-1000"/></a:stretch></p:blipFill></p:pic>` +
-    fill('l="-83" t="0" r="-83" b="0"');
-  const out = fillRectToSrcRect(xml);
-  assert.equal((out.match(/<a:srcRect/g) || []).length, 2);
-  assert.equal((out.match(/<a:fillRect\/>/g) || []).length, 2);
-});
+  return sharp(raw, { raw: { width: 200, height: 100, channels: 3 } }).png().toBuffer();
+}
 
 async function buildPptx(dir, slideXml) {
   const zip = new JSZip();
-  zip.file("[Content_Types].xml", "<Types/>");
-  zip.file("ppt/slides/slide1.xml", slideXml);
-  zip.file("ppt/media/image1.png", Buffer.from([1, 2, 3, 4]));
+  zip.file("[Content_Types].xml", '<Types><Default Extension="png" ContentType="image/png"/></Types>');
+  zip.file("ppt/slides/slide1.xml", `<p:sld>${slideXml}</p:sld>`);
+  zip.file(
+    "ppt/slides/_rels/slide1.xml.rels",
+    '<Relationships><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/></Relationships>',
+  );
+  zip.file("ppt/media/image1.png", await picture());
   const file = path.join(dir, "deck.pptx");
   fs.writeFileSync(file, await zip.generateAsync({ type: "nodebuffer" }));
   return file;
 }
 
-test("normalizePptx writes a fixed copy, keeps every other file, and leaves the original alone", async () => {
+test("an extreme crop is cut out of the picture and the shape gets it as a plain fill", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pptx-"));
-  const src = await buildPptx(dir, `<p:sld>${fill('l="-64339" t="-339581" r="-2199969" b="-2710796"')}</p:sld>`);
+  // Shape shows x from 0 to 25% of the picture (the red part): picture is 4 shape-widths wide, 1 high.
+  const src = await buildPptx(dir, fill('l="0" t="0" r="-300000" b="0"'));
   const dest = path.join(dir, "fixed.pptx");
   const before = fs.readFileSync(src);
 
   assert.equal(await normalizePptx(src, dest), true);
-  assert.deepEqual(fs.readFileSync(src), before);
+  assert.deepEqual(fs.readFileSync(src), before, "the original is not modified");
+
   const zip = await JSZip.loadAsync(fs.readFileSync(dest));
-  assert.ok((await zip.file("ppt/slides/slide1.xml").async("string")).includes("<a:srcRect"));
-  assert.deepEqual([...(await zip.file("ppt/media/image1.png").async("uint8array"))], [1, 2, 3, 4]);
+  const slide = await zip.file("ppt/slides/slide1.xml").async("string");
+  assert.ok(slide.includes('r:embed="rIdCrop1"'));
+  assert.ok(slide.includes("<a:stretch><a:fillRect/></a:stretch>"));
+  assert.ok(!slide.includes("srcRect"));
+  const rels = await zip.file("ppt/slides/_rels/slide1.xml.rels").async("string");
+  assert.ok(rels.includes('Id="rIdCrop1"') && rels.includes('Target="../media/crop-1.png"'));
+  assert.ok(rels.includes('Id="rId2"'), "the original relationship stays");
+  assert.ok(zip.file("ppt/media/image1.png"), "the original picture stays");
+
+  const cropped = await zip.file("ppt/media/crop-1.png").async("nodebuffer");
+  const meta = await sharp(cropped).metadata();
+  assert.deepEqual([meta.width, meta.height], [50, 100]);
+  const { data } = await sharp(cropped).raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([data[0], data[1], data[2]], [255, 0, 0], "only the red part is left");
 });
 
-test("normalizePptx writes nothing when no fill needs fixing", async () => {
+test("the same crop used twice is cut once", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pptx-"));
-  const src = await buildPptx(dir, `<p:sld>${fill("")}</p:sld>`);
+  const src = await buildPptx(dir, fill('l="0" t="0" r="-300000" b="0"') + fill('l="0" t="0" r="-300000" b="0"'));
   const dest = path.join(dir, "fixed.pptx");
-  assert.equal(await normalizePptx(src, dest), false);
-  assert.equal(fs.existsSync(dest), false);
+  await normalizePptx(src, dest);
+  const zip = await JSZip.loadAsync(fs.readFileSync(dest));
+  assert.deepEqual(Object.keys(zip.files).filter((n) => n.includes("crop-")), ["ppt/media/crop-1.png"]);
+  const slide = await zip.file("ppt/slides/slide1.xml").async("string");
+  assert.equal((slide.match(/rIdCrop1/g) || []).length, 2);
+});
+
+test("nothing is written when no fill is extreme, or the picture cannot be found", async () => {
+  for (const xml of [fill(""), fill('l="0" t="-20593" r="0" b="0"'), fill(EXTREME, "rId9")]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pptx-"));
+    const src = await buildPptx(dir, xml);
+    const dest = path.join(dir, "fixed.pptx");
+    assert.equal(await normalizePptx(src, dest), false);
+    assert.equal(fs.existsSync(dest), false);
+  }
 });
 
 function fakeExec(workDir, seen) {
@@ -97,7 +119,7 @@ const config = { convertTimeoutMs: 60000, maxSlides: 50, slideWidth: 1600 };
 
 test("the converter hands LibreOffice the fixed copy, under the same file name", async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "conv-"));
-  const src = await buildPptx(workDir, `<p:sld>${fill('l="-64339" t="-339581" r="-2199969" b="-2710796"')}</p:sld>`);
+  const src = await buildPptx(workDir, fill('l="0" t="0" r="-300000" b="0"'));
   const seen = {};
   const images = await convertToPageImages({ sourcePath: src, workDir, config, exec: fakeExec(workDir, seen) });
   const input = seen.soffice[seen.soffice.length - 1];
@@ -108,7 +130,7 @@ test("the converter hands LibreOffice the fixed copy, under the same file name",
 
 test("a deck that needs no fix, a damaged file and a PDF are converted exactly as before", async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "conv-"));
-  const plain = await buildPptx(workDir, `<p:sld>${fill("")}</p:sld>`);
+  const plain = await buildPptx(workDir, fill(""));
   let seen = {};
   await convertToPageImages({ sourcePath: plain, workDir, config, exec: fakeExec(workDir, seen) });
   assert.equal(seen.soffice[seen.soffice.length - 1], plain);
