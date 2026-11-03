@@ -288,6 +288,9 @@ function applyNumericFilters(rows, filters) {
   );
 }
 
+// The UTM source funnel compares two periods of at most this many days (the API enforces it too).
+const UTM_FUNNEL_MAX_DAYS = 7;
+
 export function FunnelDateRangePicker({ startDate, endDate, onApply }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [month, setMonth] = useState(dayjs(endDate || dayjs()).month());
@@ -647,7 +650,7 @@ export function FunnelSingleDatePicker({ date, onApply, compact = false }) {
   );
 }
 
-export function FunnelRangeOrDatePicker({ startDate, endDate, onApply, compact = false }) {
+export function FunnelRangeOrDatePicker({ startDate, endDate, onApply, compact = false, maxDays = null }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [month, setMonth] = useState(dayjs(startDate || dayjs()).month());
   const [year, setYear] = useState(dayjs(startDate || dayjs()).year());
@@ -781,10 +784,23 @@ export function FunnelRangeOrDatePicker({ startDate, endDate, onApply, compact =
             onChange={({ start: rawStart, end: rawEnd }) => {
               if (!rawStart) return;
               const nextStart = dayjs(rawStart).startOf("day");
-              const nextEnd = dayjs(rawEnd || rawStart).startOf("day");
+              let nextEnd = dayjs(rawEnd || rawStart).startOf("day");
+              // Polaris has no maximum range: a longer pick keeps its start and stops at the cap.
+              if (maxDays && nextEnd.diff(nextStart, "day") + 1 > maxDays) {
+                nextEnd = nextStart.add(maxDays - 1, "day");
+              }
               onApply(nextStart.format("YYYY-MM-DD"), nextEnd.format("YYYY-MM-DD"));
             }}
           />
+          {maxDays ? (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mt: 1, textAlign: "center" }}
+            >
+              Pick a day or a range of up to {maxDays} days
+            </Typography>
+          ) : null}
         </Box>
       </Popover>
     </>
@@ -810,7 +826,11 @@ export default function DailyFunnelPanel({
   const [startDate, setStartDate] = useState(initialStart);
   const [endDate, setEndDate] = useState(initialEnd);
   const [utmDate, setUtmDate] = useState(initialEnd);
+  const [utmEndDate, setUtmEndDate] = useState(initialEnd);
   const [compareUtmDate, setCompareUtmDate] = useState(() =>
+    dayjs(initialEnd).subtract(1, "day").format("YYYY-MM-DD"),
+  );
+  const [compareUtmEndDate, setCompareUtmEndDate] = useState(() =>
     dayjs(initialEnd).subtract(1, "day").format("YYYY-MM-DD"),
   );
   const [displayMode, setDisplayMode] = useState("count");
@@ -854,7 +874,10 @@ export default function DailyFunnelPanel({
 
   useEffect(() => {
     setUtmDate(initialEnd);
-    setCompareUtmDate(dayjs(initialEnd).subtract(1, "day").format("YYYY-MM-DD"));
+    setUtmEndDate(initialEnd);
+    const previousDay = dayjs(initialEnd).subtract(1, "day").format("YYYY-MM-DD");
+    setCompareUtmDate(previousDay);
+    setCompareUtmEndDate(previousDay);
   }, [initialEnd]);
 
   useEffect(() => {
@@ -922,9 +945,11 @@ export default function DailyFunnelPanel({
     getDailyFunnel({
       brand_key: brandKey,
       start: utmDate,
-      end: utmDate,
+      end: utmEndDate,
       utmDate,
+      utmEndDate,
       compareUtmDate,
+      compareUtmEndDate,
       includeDaily: false,
       includeUtm: true,
     })
@@ -949,7 +974,7 @@ export default function DailyFunnelPanel({
     return () => {
       cancelled = true;
     };
-  }, [brandKey, canAccessUtmFunnelTable, utmDate, compareUtmDate]);
+  }, [brandKey, canAccessUtmFunnelTable, utmDate, utmEndDate, compareUtmDate, compareUtmEndDate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -974,9 +999,11 @@ export default function DailyFunnelPanel({
     getDailyFunnel({
       brand_key: brandKey,
       start: utmDate,
-      end: utmDate,
+      end: utmEndDate,
       utmDate,
+      utmEndDate,
       compareUtmDate,
+      compareUtmEndDate,
       utmSource: utmSourceFilter,
       includeDaily: false,
       includeUtm: true,
@@ -1007,7 +1034,9 @@ export default function DailyFunnelPanel({
     canAccessUtmFunnelTable,
     canAccessUtmCampaignGrain,
     utmDate,
+    utmEndDate,
     compareUtmDate,
+    compareUtmEndDate,
     utmSourceFilter,
   ]);
 
@@ -1200,7 +1229,7 @@ export default function DailyFunnelPanel({
 
   useEffect(() => {
     setUtmPage(0);
-  }, [utmDate, utmRowsPerPage, utmSortBy, utmSortDir, utmFilters]);
+  }, [utmDate, utmEndDate, utmRowsPerPage, utmSortBy, utmSortDir, utmFilters]);
 
   useEffect(() => {
     setDailyPage((current) =>
@@ -1441,7 +1470,9 @@ export default function DailyFunnelPanel({
     ];
 
     const formattedDate = dayjs(utmDate).isValid()
-      ? dayjs(utmDate).format("DD-MM-YYYY")
+      ? utmEndDate && utmEndDate !== utmDate
+        ? `${dayjs(utmDate).format("DD-MM-YYYY")} to ${dayjs(utmEndDate).format("DD-MM-YYYY")}`
+        : dayjs(utmDate).format("DD-MM-YYYY")
       : "";
 
     const lines = [
@@ -1472,12 +1503,12 @@ export default function DailyFunnelPanel({
       ? `-${utmSourceFilter.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`
       : "";
     link.href = url;
-    link.download = `utm-source-funnel-${(brandKey || "brand").toLowerCase()}${sourceSuffix}-${utmDate || dayjs().format("YYYY-MM-DD")}.csv`;
+    link.download = `utm-source-funnel-${(brandKey || "brand").toLowerCase()}${sourceSuffix}-${utmDate || dayjs().format("YYYY-MM-DD")}${utmEndDate && utmEndDate !== utmDate ? `_to_${utmEndDate}` : ""}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }, [brandKey, filteredUtmRows, utmDate, utmSourceFilter]);
+  }, [brandKey, filteredUtmRows, utmDate, utmEndDate, utmSourceFilter]);
 
   const hasRows = sortedDailyRows.length > 0;
   const hasUtmRows = filteredUtmRows.length > 0;
@@ -1747,7 +1778,7 @@ export default function DailyFunnelPanel({
                 UTM Source Funnel
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Single-day UTM source breakdown for the selected brand.
+                UTM source breakdown for the selected brand, for a day or up to 7 days.
               </Typography>
             </Stack>
             <Stack
@@ -1860,15 +1891,21 @@ export default function DailyFunnelPanel({
                 >
                   Date
                 </Typography>
-                <FunnelSingleDatePicker
+                <FunnelRangeOrDatePicker
                   compact
-                  date={utmDate}
-                  onApply={(nextDate) => {
-                    const formatted = nextDate.format("YYYY-MM-DD");
-                    setUtmDate(formatted);
+                  maxDays={UTM_FUNNEL_MAX_DAYS}
+                  startDate={utmDate}
+                  endDate={utmEndDate}
+                  onApply={(nextStart, nextEnd) => {
+                    setUtmDate(nextStart);
+                    setUtmEndDate(nextEnd);
+                    // compare against the period of the same length right before
+                    const length = dayjs(nextEnd).diff(dayjs(nextStart), "day") + 1;
+                    const previousEnd = dayjs(nextStart).subtract(1, "day");
                     setCompareUtmDate(
-                      nextDate.subtract(1, "day").format("YYYY-MM-DD"),
+                      previousEnd.subtract(length - 1, "day").format("YYYY-MM-DD"),
                     );
+                    setCompareUtmEndDate(previousEnd.format("YYYY-MM-DD"));
                   }}
                 />
                 <Typography
@@ -1878,12 +1915,15 @@ export default function DailyFunnelPanel({
                 >
                   vs
                 </Typography>
-                <FunnelSingleDatePicker
+                <FunnelRangeOrDatePicker
                   compact
-                  date={compareUtmDate}
-                  onApply={(nextDate) =>
-                    setCompareUtmDate(nextDate.format("YYYY-MM-DD"))
-                  }
+                  maxDays={UTM_FUNNEL_MAX_DAYS}
+                  startDate={compareUtmDate}
+                  endDate={compareUtmEndDate}
+                  onApply={(nextStart, nextEnd) => {
+                    setCompareUtmDate(nextStart);
+                    setCompareUtmEndDate(nextEnd);
+                  }}
                 />
                 <Tooltip title="Export CSV">
                   <span>
@@ -2196,7 +2236,7 @@ export default function DailyFunnelPanel({
                   </TableHead>
                   <TableBody>
                     {pagedUtmRows.map((row) => (
-                      <TableRow key={`${utmSourceFilter}-${row.utm_source}-${utmDate}`} hover>
+                      <TableRow key={`${utmSourceFilter}-${row.utm_source}-${utmDate}-${utmEndDate}`} hover>
                         <TableCell
                           sx={{
                             fontWeight: 700,

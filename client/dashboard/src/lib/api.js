@@ -580,7 +580,7 @@ export async function getDashboardSummary(args) {
 export async function getDataRestrictionConfig() {
   const res = await doGet("/metrics/data-restriction-config");
   if (res.error) {
-    return { enabled: true, periodDays: 30, __error: true };
+    return { enabled: true, periodDays: 31, __error: true };
   }
   return {
     enabled:
@@ -1345,7 +1345,9 @@ export async function getDailyFunnel(args = {}) {
       start: args.start,
       end: args.end,
       utm_date: args.utmDate,
+      utm_end_date: args.utmEndDate || undefined,
       compare_utm_date: args.compareUtmDate,
+      compare_utm_end_date: args.compareUtmEndDate || undefined,
       utm_source: args.utmSource || undefined,
       include_utm:
         typeof args.includeUtm === "boolean" ? String(args.includeUtm) : undefined,
@@ -1361,6 +1363,7 @@ export async function getDailyFunnel(args = {}) {
     rows: Array.isArray(json?.rows) ? json.rows : [],
     utmRows: Array.isArray(json?.utmRows) ? json.utmRows : [],
     utmDate: json?.utmDate || null,
+    utmEndDate: json?.utmEndDate || null,
     utmSource: json?.utmSource || null,
     utmCutoffHour: Number.isInteger(json?.utmCutoffHour) ? json.utmCutoffHour : null,
     range: json?.range || null,

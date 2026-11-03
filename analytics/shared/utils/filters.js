@@ -2,6 +2,7 @@
 // Canonical location. Extracted from utils/metricsUtils.js
 
 const { daysInclusive } = require("./date");
+const { getDataRestrictionConfig } = require("../../modules/metrics/longRangeGate");
 
 // ── Internal helpers ───────────────────────────────────────────────────────────
 
@@ -177,8 +178,8 @@ function extractFilters(req) {
     product_type,
   } = req.query;
 
-  // Suppress UTM filters for date ranges exceeding 30 days to prevent heavy queries.
-  const ignoreUtms = start && end && daysInclusive(start, end) > 30;
+  // Suppress UTM filters for date ranges exceeding the data restriction period (31 days by default) to prevent heavy queries.
+  const ignoreUtms = start && end && daysInclusive(start, end) > getDataRestrictionConfig().periodDays;
   const allowProductUtmSync = canSyncProductUtmFilters(req);
   const rawProductId = extractUtmParam(product_id);
   const rawUtmSource = ignoreUtms ? null : extractUtmParam(utm_source);

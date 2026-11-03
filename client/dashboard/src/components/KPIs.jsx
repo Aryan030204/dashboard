@@ -1491,7 +1491,7 @@ function KPIs({
   const isDark = theme.palette.mode === "dark";
   const [revenueMode, setRevenueMode] = useState("G");
   const [atcMode, setAtcMode] = useState("R");
-  const [checkoutMode, setCheckoutMode] = useState("C");
+  const [checkoutMode, setCheckoutMode] = useState("R");
   const [cancellationMode, setCancellationMode] = useState("C");
   const [rtoMode, setRtoMode] = useState("%");
   const [highIntentMode, setHighIntentMode] = useState("%");
