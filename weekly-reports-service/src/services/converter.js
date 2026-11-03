@@ -83,8 +83,13 @@ async function convertToPageImages({ sourcePath, workDir, config, signal, exec =
           const fixedDir = path.join(workDir, "normalized");
           fs.mkdirSync(fixedDir, { recursive: true });
           const fixedPath = path.join(fixedDir, path.basename(sourcePath));
-          if (await normalizePptx(sourcePath, fixedPath)) inputPath = fixedPath;
-        } catch (_) {
+          if (await normalizePptx(sourcePath, fixedPath)) {
+            inputPath = fixedPath;
+            console.info("[converter] pptx picture crops were cut out before conversion");
+          }
+        } catch (err) {
+          // not fatal: the original file is converted, but say so, otherwise a broken fix looks like no fix
+          console.warn(`[converter] pptx picture crops were not fixed: ${err && err.message}`);
           inputPath = sourcePath;
         }
       }
