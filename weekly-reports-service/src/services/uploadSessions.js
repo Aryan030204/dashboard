@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { httpError } = require("../errors");
 const { extensionOf, UNSUPPORTED_TYPE_MESSAGE } = require("./uploadValidator");
+const { ensureLogger } = require("../logger");
 
 const DIR_PREFIX = "wr-upload-";
 
@@ -13,7 +14,8 @@ const DIR_PREFIX = "wr-upload-";
 //
 // Sessions live in this process's memory: if the API restarts, an upload in flight fails and the
 // admin simply starts it again. (One API instance, as in docker-compose.)
-function buildUploadSessions({ config, now = () => Date.now(), logger = console } = {}) {
+function buildUploadSessions({ config, now = () => Date.now(), logger } = {}) {
+  const log = ensureLogger(logger, "sessions");
   const sessions = new Map();
   const chunkSize = config.uploadChunkBytes;
   const ttlMs = config.uploadSessionTtlMs;
@@ -24,7 +26,7 @@ function buildUploadSessions({ config, now = () => Date.now(), logger = console 
     try {
       await fs.promises.rm(dir, { recursive: true, force: true });
     } catch (err) {
-      logger.error("[weekly-reports] could not remove upload dir", dir, err && err.message);
+      log.error("could not remove an upload folder", { dir, error: err });
     }
   }
 
@@ -35,11 +37,13 @@ function buildUploadSessions({ config, now = () => Date.now(), logger = console 
     // Wait for any chunk still being written so its file handle is closed before removal.
     await session.queue.catch(() => {});
     await removeDir(session.dir);
+    log.info("upload session discarded, temporary file removed", { upload: id, brand: session.brandKey, received: session.received, size: session.size, open: sessions.size });
   }
 
   async function sweep() {
     const cutoff = now() - ttlMs;
     const expired = [...sessions.values()].filter((s) => s.touchedAt < cutoff).map((s) => s.id);
+    if (expired.length) log.warn("dropping idle upload sessions", { count: expired.length, ttlMs });
     for (const id of expired) await discard(id);
     return expired.length;
   }
@@ -61,6 +65,7 @@ function buildUploadSessions({ config, now = () => Date.now(), logger = console 
         const stat = await fs.promises.stat(dir);
         if (now() - stat.mtimeMs > ttlMs) {
           await removeDir(dir);
+          log.info("removed an old upload folder left by a previous run", { dir });
           removed += 1;
         }
       } catch (_) {
@@ -92,6 +97,10 @@ function buildUploadSessions({ config, now = () => Date.now(), logger = console 
       received: 0, nextIndex: 0, last: null, touchedAt: now(), queue: Promise.resolve(),
     };
     sessions.set(id, session);
+    log.info("upload session created", {
+      upload: id, brand: brandKey, user: userId, filename, size, title, reportingWeek,
+      chunkSize, totalChunks: totalChunksFor(size), open: sessions.size,
+    });
     return { session, chunkSize, totalChunks: totalChunksFor(size) };
   }
 
@@ -100,6 +109,7 @@ function buildUploadSessions({ config, now = () => Date.now(), logger = console 
   function get(id, { brandKey, userId }) {
     const session = sessions.get(String(id));
     if (!session || session.brandKey !== brandKey || session.userId !== userId) {
+      log.warn("upload session not found (expired, restarted API, or not yours)", { upload: String(id).slice(0, 12), brand: brandKey, user: userId, known: !!session });
       throw httpError(404, "UPLOAD_NOT_FOUND", "This upload was not found or has expired. Start it again.");
     }
     session.touchedAt = now();
@@ -114,20 +124,31 @@ function buildUploadSessions({ config, now = () => Date.now(), logger = console 
       const hash = crypto.createHash("sha256").update(buffer).digest("hex");
 
       if (session.last && index === session.last.index) {
-        if (session.last.hash === hash) return state(session);
+        if (session.last.hash === hash) {
+          log.info("chunk received again, acknowledged without writing it twice", { upload: session.id, chunk: index });
+          return state(session);
+        }
+        log.warn("chunk resent with different content", { upload: session.id, chunk: index });
         throw httpError(409, "CHUNK_CONFLICT", "That chunk was already received with different content.");
       }
       if (index !== session.nextIndex) {
+        log.warn("chunk out of order", { upload: session.id, got: index, expected: session.nextIndex });
         throw Object.assign(httpError(409, "CHUNK_OUT_OF_ORDER", `Expected chunk ${session.nextIndex}.`), {
           expected: session.nextIndex,
         });
       }
       const expectedLength = index < total - 1 ? chunkSize : session.size - chunkSize * (total - 1);
       if (buffer.length !== expectedLength) {
+        log.warn("chunk has the wrong size", { upload: session.id, chunk: index, got: buffer.length, expected: expectedLength });
         throw httpError(400, "BAD_CHUNK_SIZE", `Chunk ${index} must be ${expectedLength} bytes.`);
       }
 
-      await fs.promises.appendFile(session.filePath, buffer);
+      try {
+        await fs.promises.appendFile(session.filePath, buffer);
+      } catch (err) {
+        log.error("could not write the chunk to disk", { upload: session.id, chunk: index, bytes: buffer.length, file: session.filePath, error: err });
+        throw err;
+      }
       session.received += buffer.length;
       session.nextIndex += 1;
       session.last = { index, hash };
@@ -144,6 +165,7 @@ function buildUploadSessions({ config, now = () => Date.now(), logger = console 
 
   function assertComplete(session) {
     if (session.received !== session.size) {
+      log.warn("complete requested but bytes are missing", { upload: session.id, received: session.received, size: session.size, nextChunk: session.nextIndex });
       throw httpError(409, "INCOMPLETE_UPLOAD", `Only ${session.received} of ${session.size} bytes were received.`);
     }
   }

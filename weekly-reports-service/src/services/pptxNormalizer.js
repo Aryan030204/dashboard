@@ -1,6 +1,7 @@
 const fs = require("fs");
 const JSZip = require("jszip");
 const sharp = require("sharp");
+const { ensureLogger, stopwatch } = require("../logger");
 
 // Some exporters (Canva, Google Slides) draw a small piece of a big picture by giving the shape a picture fill
 // whose <a:fillRect> has huge negative insets, e.g. l="-64339" r="-2199969": "the picture is 23x as wide as this
@@ -64,17 +65,24 @@ function relsNameFor(partName) {
 
 // Writes a copy of the presentation with the extreme picture crops cut out of their pictures. Returns true when a
 // copy was written, false when the file needed no change (the caller then keeps using the original).
-async function normalizePptx(sourcePath, destPath) {
-  const zip = await JSZip.loadAsync(fs.readFileSync(sourcePath));
+async function normalizePptx(sourcePath, destPath, { logger } = {}) {
+  const log = ensureLogger(logger, "normalizer");
+  const elapsed = stopwatch();
+  const input = fs.readFileSync(sourcePath);
+  const zip = await JSZip.loadAsync(input);
+  const parts = Object.keys(zip.files).filter((n) => PART.test(n));
+  log.info("scanning presentation for extreme picture crops", { bytes: input.length, entries: Object.keys(zip.files).length, parts: parts.length });
   const made = new Map(); // "<media>|<region>" -> new media path, so repeated crops are cut once
   let changed = false;
   let counter = 0;
 
-  for (const name of Object.keys(zip.files)) {
-    if (!PART.test(name)) continue;
+  for (const name of parts) {
     const relsName = relsNameFor(name);
     const relsFile = zip.file(relsName);
-    if (!relsFile) continue;
+    if (!relsFile) {
+      log.debug("part has no relationships file, skipped", { part: name });
+      continue;
+    }
     const xml = await zip.file(name).async("string");
     if (!/<a:fillRect[^>]*-\d{6,}/.test(xml)) continue; // cheap check: nothing extreme in this part
 
@@ -94,19 +102,42 @@ async function normalizePptx(sourcePath, destPath) {
       if (!fillRect || !embed || block.includes("<a:srcRect")) continue;
       const region = visibleRegion(readInsets(fillRect[1]));
       const target = targets.get(embed[1]);
-      if (!region || !target || /^https?:/i.test(target)) continue;
+      if (!region || !target || /^https?:/i.test(target)) {
+        if (region && !target) log.warn("extreme crop found but its picture relationship is missing", { part: name, rel: embed[1] });
+        continue;
+      }
 
       const mediaPath = target.startsWith("/") ? target.slice(1) : `ppt/${target.replace(/^\.\.\//, "")}`;
       const media = zip.file(mediaPath);
-      if (!media) continue;
+      if (!media) {
+        log.warn("extreme crop found but its picture is not in the file", { part: name, media: mediaPath });
+        continue;
+      }
 
       const key = `${mediaPath}|${region.left.toFixed(6)}|${region.top.toFixed(6)}|${region.width.toFixed(6)}|${region.height.toFixed(6)}`;
       let cropped = made.get(key);
       if (!cropped) {
         counter += 1;
         cropped = { path: `ppt/media/crop-${counter}.png`, id: `rIdCrop${counter}` };
-        zip.file(cropped.path, await cropPicture(await media.async("nodebuffer"), region));
+        const sourceBuffer = await media.async("nodebuffer");
+        const output = await cropPicture(sourceBuffer, region);
+        zip.file(cropped.path, output);
         made.set(key, cropped);
+        const size = await sharp(output).metadata();
+        log.info("cut an extreme crop out of its picture", {
+          part: name,
+          media: mediaPath,
+          mediaBytes: sourceBuffer.length,
+          visible: {
+            left: Number(region.left.toFixed(4)), top: Number(region.top.toFixed(4)),
+            width: Number(region.width.toFixed(4)), height: Number(region.height.toFixed(4)),
+          },
+          output: cropped.path,
+          outputPx: `${size.width}x${size.height}`,
+          outputBytes: output.length,
+        });
+      } else {
+        log.debug("reused an earlier crop", { part: name, output: cropped.path });
       }
       replacements.push({ block, embed: embed[1], cropped });
     }
@@ -130,9 +161,14 @@ async function normalizePptx(sourcePath, destPath) {
     changed = true;
   }
 
-  if (!changed) return false;
+  if (!changed) {
+    log.info("no extreme picture crops, the original file will be converted", { ms: elapsed() });
+    return false;
+  }
   // STORE: the pictures are already compressed, and this copy only lives for the conversion.
-  fs.writeFileSync(destPath, await zip.generateAsync({ type: "nodebuffer", compression: "STORE" }));
+  const output = await zip.generateAsync({ type: "nodebuffer", compression: "STORE" });
+  fs.writeFileSync(destPath, output);
+  log.info("wrote the fixed copy of the presentation", { crops: made.size, bytes: output.length, ms: elapsed() });
   return true;
 }
 
