@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 const { httpError } = require("../errors");
+const { normalizePptx } = require("./pptxNormalizer");
 
 // A page far taller than it is wide would render as an enormous image once scaled to the slide width.
 // Refuse those instead of letting poppler allocate it.
@@ -74,12 +75,25 @@ async function convertToPageImages({ sourcePath, workDir, config, signal, exec =
 
   try {
     if (!isPdf) {
+      // Picture crops that LibreOffice cannot read are rewritten first (see pptxNormalizer). Any failure here
+      // just means the original file is converted as it always was.
+      let inputPath = sourcePath;
+      if (path.extname(sourcePath).toLowerCase() === ".pptx") {
+        try {
+          const fixedDir = path.join(workDir, "normalized");
+          fs.mkdirSync(fixedDir, { recursive: true });
+          const fixedPath = path.join(fixedDir, path.basename(sourcePath));
+          if (await normalizePptx(sourcePath, fixedPath)) inputPath = fixedPath;
+        } catch (_) {
+          inputPath = sourcePath;
+        }
+      }
       const lo = await exec(
         process.env.SOFFICE_BIN || "soffice",
         [
           "--headless", "--norestore", "--nolockcheck", "--nodefault", "--nofirststartwizard",
           `-env:UserInstallation=file://${profileDir.replace(/\\/g, "/")}`,
-          "--convert-to", "pdf", "--outdir", workDir, sourcePath,
+          "--convert-to", "pdf", "--outdir", workDir, inputPath,
         ],
         { timeoutMs: remaining(), cwd: workDir, env: { HOME: workDir }, signal },
       );
