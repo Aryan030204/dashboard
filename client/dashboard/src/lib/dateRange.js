@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 
 export const DEFAULT_DATA_RESTRICTION_CONFIG = {
   enabled: true,
-  periodDays: 30,
+  periodDays: 31,
 };
 
 export function normalizeDataRestrictionConfig(config = {}) {
