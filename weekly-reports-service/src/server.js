@@ -55,9 +55,11 @@ function start() {
   const pool = createPool(config);
   const storage = buildStorage(config, { logger: log.child("storage") });
   const sessions = buildUploadSessions({ config, logger: log.child("sessions") });
+  const repo = buildReportsRepo(pool, { logger: log.child("repo") });
+  repo.checkSchema();
   const app = buildApp({
     config,
-    repo: buildReportsRepo(pool, { logger: log.child("repo") }),
+    repo,
     storage,
     audit: buildAudit(pool, log.child("audit")),
     sessions,
