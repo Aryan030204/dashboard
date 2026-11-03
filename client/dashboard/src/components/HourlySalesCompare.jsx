@@ -589,6 +589,16 @@ function SeriesLegend({
   );
 }
 
+// Share of one payment mode in its group (prepaid / COD / partially paid) at a chart point.
+// Hidden series still count in the total, so the shares of a point add up to 100%.
+export function getPaymentShareLabel(def, metricValues = {}, selectedDefs = []) {
+  if (!def?.parentId || !String(def.parentId).startsWith("payment_")) return "";
+  const siblings = selectedDefs.filter((item) => item.parentId === def.parentId);
+  const total = siblings.reduce((sum, item) => sum + Number(metricValues[item.id] || 0), 0);
+  if (!(total > 0)) return "";
+  return nfPercent1.format(Number(metricValues[def.id] || 0) / total);
+}
+
 function CustomTooltip({
   active,
   label,
@@ -685,6 +695,11 @@ function CustomTooltip({
               </Typography>
               <Typography variant="body2" sx={{ fontWeight: 600, ml: "auto" }}>
                 {def.formatter(metricValues[def.id])}
+                {getPaymentShareLabel(def, metricValues, selectedDefs) && (
+                  <Box component="span" sx={{ ml: 0.75, fontWeight: 500, color: "text.secondary" }}>
+                    ({getPaymentShareLabel(def, metricValues, selectedDefs)})
+                  </Box>
+                )}
               </Typography>
             </Box>
           ))

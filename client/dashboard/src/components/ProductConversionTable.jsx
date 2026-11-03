@@ -1804,7 +1804,7 @@ export default function ProductConversionTable({
       "landing_page_path",
       "sessions",
       "atc_rate",
-      "ci_events",
+      permittedIds.includes("checkout_rate") ? "checkout_rate" : "ci_events",
       "orders",
       "cvr",
     ];
