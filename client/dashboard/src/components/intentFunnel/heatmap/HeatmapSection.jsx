@@ -135,7 +135,6 @@ export default function HeatmapSection({ brandKey, pageStart, pageEnd }) {
           totalViews={data.totalViews}
           totalPages={data.totalPages}
           latestDate={data.meta?.latestDate}
-          intentTotals={data.meta?.intentAvailable === false ? null : data.intentTotals}
           search={search}
           onSearchChange={setSearch}
           onSelect={setSelectedPath}

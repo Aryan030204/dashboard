@@ -3,7 +3,6 @@ import dayjs from "dayjs";
 import {
   Box,
   Button,
-  Chip,
   InputAdornment,
   Table,
   TableBody,
@@ -13,39 +12,70 @@ import {
   TablePagination,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
-import { alpha } from "@mui/material/styles";
 import SearchIcon from "@mui/icons-material/Search";
 import { INTENT_COLORS } from "../intentFunnelUtils.js";
-import { describePage, formatCount, formatShare, pageIntentLevel, pageShare } from "./heatmapUtils.js";
+import { describePage, formatCount, formatShare, intentSplit, pageShare } from "./heatmapUtils.js";
 
-const INTENT_CHIP_LABELS = { high: "High", medium: "Medium", low: "Low" };
+const INTENT_LEVELS = ["high", "medium", "low"];
+const INTENT_NAMES = { high: "High", medium: "Medium", low: "Low" };
+// a part narrower than this share of the bar is too small to hold its percentage; the tooltip still has it
+const MIN_LABEL_PCT = 14;
 
-// How the page's visitors compare with the site as a whole, in the colours of the intent cards above.
-function IntentChip({ level }) {
-  if (!level) {
+// One pill split into High | Medium | Low parts, in the colours of the intent cards above. Each part is as wide
+// as that level's share of the page's sessions and shows its percentage.
+function IntentBar({ split }) {
+  if (!split) {
     return (
       <Typography variant="caption" color="text.secondary">
         -
       </Typography>
     );
   }
-  const color = INTENT_COLORS[level];
+  const summary = INTENT_LEVELS.map(
+    (level) => `${INTENT_NAMES[level]}: ${formatShare(split[level].pct)} (${formatCount(split[level].sessions)} sessions)`,
+  ).join("\n");
   return (
-    <Chip
-      size="small"
-      label={INTENT_CHIP_LABELS[level]}
-      sx={{
-        height: 22,
-        fontWeight: 600,
-        fontSize: "0.7rem",
-        color,
-        bgcolor: alpha(color, 0.14),
-        border: "1px solid",
-        borderColor: alpha(color, 0.4),
-      }}
-    />
+    <Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{summary}</span>} arrow placement="top">
+      <Box
+        role="img"
+        aria-label={summary.replace(/\n/g, ", ")}
+        sx={{
+          display: "flex",
+          width: 150,
+          height: 22,
+          ml: "auto",
+          borderRadius: 11,
+          overflow: "hidden",
+          border: "1px solid",
+          borderColor: "divider",
+        }}
+      >
+        {INTENT_LEVELS.filter((level) => split[level].pct > 0).map((level) => (
+          <Box
+            key={level}
+            sx={{
+              flex: `${split[level].pct} 1 0`,
+              minWidth: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: INTENT_COLORS[level],
+              color: "#fff",
+              fontSize: "0.68rem",
+              fontWeight: 700,
+              lineHeight: 1,
+              // dividers between the parts
+              "& + &": { borderLeft: "1px solid rgba(0,0,0,0.35)" },
+            }}
+          >
+            {split[level].pct >= MIN_LABEL_PCT ? `${Math.round(split[level].pct)}%` : ""}
+          </Box>
+        ))}
+      </Box>
+    </Tooltip>
   );
 }
 
@@ -56,14 +86,13 @@ export default function PopularPagesTable({
   totalViews,
   totalPages,
   latestDate,
-  intentTotals,
   search,
   onSearchChange,
   onSelect,
 }) {
   const hasSearch = Boolean(search.trim());
-  // the Intent column needs the site totals to compare against; without them (rollup not refilled) it is hidden
-  const showIntent = Boolean(intentTotals);
+  // the Intent column needs the rollup's intent counts; without them (rollup not refilled) it is hidden
+  const showIntent = pages.some((page) => page.intent);
   const [pageIndex, setPageIndex] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -146,7 +175,7 @@ export default function PopularPagesTable({
                     </TableCell>
                     {showIntent ? (
                       <TableCell align="right">
-                        <IntentChip level={pageIntentLevel(page.intent, intentTotals)} />
+                        <IntentBar split={intentSplit(page.intent)} />
                       </TableCell>
                     ) : null}
                     <TableCell align="right">{formatCount(page.views)}</TableCell>

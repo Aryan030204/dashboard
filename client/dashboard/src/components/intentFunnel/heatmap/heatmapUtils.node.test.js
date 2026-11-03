@@ -8,7 +8,7 @@ import {
   formatCount,
   formatShare,
   humanizeSlug,
-  pageIntentLevel,
+  intentSplit,
   pageShare,
 } from "./heatmapUtils.js";
 
@@ -89,17 +89,19 @@ test("a page's share of all page views", () => {
   assert.equal(pageShare(undefined, 100), 0);
 });
 
-test("a page's intent is compared with the site's average level", () => {
-  const site = { high: 100, medium: 250, low: 650 }; // average level 0.45
-  assert.equal(pageIntentLevel({ high: 40, medium: 40, low: 20 }, site), "high");
-  assert.equal(pageIntentLevel({ high: 10, medium: 25, low: 65 }, site), "medium");
-  assert.equal(pageIntentLevel({ high: 2, medium: 10, low: 88 }, site), "low");
+test("a page's sessions split into high, medium and low percentages that add up to 100", () => {
+  const split = intentSplit({ high: 30, medium: 15, low: 55 });
+  assert.equal(split.total, 100);
+  assert.ok(Math.abs(split.high.pct - 30) < 1e-9);
+  assert.ok(Math.abs(split.medium.pct - 15) < 1e-9);
+  assert.ok(Math.abs(split.low.pct - 55) < 1e-9);
+  assert.equal(split.low.sessions, 55);
+  const uneven = intentSplit({ high: 1, medium: 1, low: 1 });
+  assert.ok(Math.abs(uneven.high.pct + uneven.medium.pct + uneven.low.pct - 100) < 1e-9);
 });
 
-test("a page with few classified sessions, or no site baseline, gets no level", () => {
-  const site = { high: 100, medium: 250, low: 650 };
-  assert.equal(pageIntentLevel({ high: 5, medium: 5, low: 5 }, site), null);
-  assert.equal(pageIntentLevel({ high: 50, medium: 50, low: 50 }, { high: 0, medium: 0, low: 0 }), null);
-  assert.equal(pageIntentLevel(undefined, site), null);
-  assert.equal(pageIntentLevel({ high: 50, medium: 50, low: 50 }, undefined), null);
+test("a page with no classified sessions has no split", () => {
+  assert.equal(intentSplit({ high: 0, medium: 0, low: 0 }), null);
+  assert.equal(intentSplit(undefined), null);
+  assert.equal(intentSplit(null), null);
 });
