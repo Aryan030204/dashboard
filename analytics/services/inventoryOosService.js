@@ -177,7 +177,10 @@ function buildInventoryOosService({ now = () => Date.now(), loadNames = loadVari
     const rangeStartMs = buckets[0].startMs;
     const rangeEndMs = buckets[buckets.length - 1].endMs;
 
-    const productClause = productId ? " AND product_id = :productId" : "";
+    // Positional `?` only: the tenant connection (shared/db/tenantConnection.js) formats with mysql2, which does not
+    // understand Sequelize's named `:name` replacements.
+    const productClause = productId ? " AND product_id = ?" : "";
+    const productParams = productId ? [productId] : [];
     let rows;
     let openNow;
     try {
@@ -187,15 +190,15 @@ function buildInventoryOosService({ now = () => Date.now(), loadNames = loadVari
                 DATE_FORMAT(back_in_stock_at, '%Y-%m-%d %H:%i:%s') AS back_at,
                 start_quantity, recovery_quantity
            FROM inventory_oos_history
-          WHERE out_of_stock_at < :rangeEnd
-            AND (back_in_stock_at IS NULL OR back_in_stock_at >= :rangeStart)${productClause}
+          WHERE out_of_stock_at < ?
+            AND (back_in_stock_at IS NULL OR back_in_stock_at >= ?)${productClause}
           ORDER BY out_of_stock_at DESC
           LIMIT ${ROW_SAFETY_CAP + 1}`,
-        { type: QueryTypes.SELECT, replacements: { rangeStart: toDbUtc(rangeStartMs), rangeEnd: toDbUtc(rangeEndMs), productId } },
+        { type: QueryTypes.SELECT, replacements: [toDbUtc(rangeEndMs), toDbUtc(rangeStartMs), ...productParams] },
       );
       const openRows = await conn.query(
         `SELECT COUNT(*) AS n FROM inventory_oos_history WHERE back_in_stock_at IS NULL${productClause}`,
-        { type: QueryTypes.SELECT, replacements: { productId } },
+        { type: QueryTypes.SELECT, replacements: productParams },
       );
       openNow = Number((openRows[0] && openRows[0].n) || 0);
     } catch (err) {

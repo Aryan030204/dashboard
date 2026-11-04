@@ -15,6 +15,8 @@ const {
 
 const { localToUtcMs, zoneOffsetMs, parseDbUtc, toDbUtc, isMissingTableError } = _internal;
 
+const mysqlCore = require("mysql2");
+
 const IST = "Asia/Kolkata";
 const NOW = Date.parse("2026-11-04T08:00:00Z"); // 13:30 in India
 
@@ -33,7 +35,9 @@ function fakeConn({ rows = ROWS, open = 2, error = null } = {}) {
   return {
     calls,
     query: jest.fn(async (sql, options) => {
-      calls.push({ sql, replacements: options.replacements });
+      // Same formatting the tenant connection applies (mysql2 format: positional `?` only).
+      const finalSql = mysqlCore.format(sql, options.replacements);
+      calls.push({ sql, replacements: options.replacements, finalSql });
       if (error) throw error;
       return /COUNT\(\*\)/.test(sql) ? [{ n: open }] : rows;
     }),
@@ -92,7 +96,10 @@ describe("getOosTrend: daily", () => {
   test("reads the range in UTC, bucketed by the brand's day", async () => {
     const conn = fakeConn();
     const out = await service().getOosTrend({ ...args, conn });
-    expect(conn.calls[0].replacements).toMatchObject({ rangeStart: "2026-11-02 18:30:00", rangeEnd: "2026-11-04 18:30:00" });
+    expect(conn.calls[0].replacements).toEqual(["2026-11-04 18:30:00", "2026-11-02 18:30:00"]);
+    expect(conn.calls[0].finalSql).toContain("out_of_stock_at < '2026-11-04 18:30:00'");
+    expect(conn.calls[0].finalSql).toContain("back_in_stock_at >= '2026-11-02 18:30:00'");
+    for (const call of conn.calls) expect(call.finalSql).not.toMatch(/:\w+(?![^']*')/); // no unreplaced :name left
     expect(out.available).toBe(true);
     expect(out.buckets.map((b) => b.label)).toEqual(["2026-11-03", "2026-11-04"]);
 
@@ -152,8 +159,8 @@ describe("getOosTrend: one product", () => {
     const out = await service({ loadNames: async () => names }).getOosTrend({
       ...base, start: "2026-11-03", end: "2026-11-04", granularity: "daily", productId: "100", conn,
     });
-    expect(conn.calls[0].sql).toContain("product_id = :productId");
-    expect(conn.calls[0].replacements.productId).toBe("100");
+    expect(conn.calls[0].finalSql).toContain("AND product_id = '100'");
+    expect(conn.calls[1].finalSql).toContain("back_in_stock_at IS NULL AND product_id = '100'");
     expect(out.product_id).toBe("100");
     expect(out.episodes).toHaveLength(2);
 
