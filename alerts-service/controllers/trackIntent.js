@@ -25,6 +25,15 @@ function isIntentEvent(body) {
   return isKafkaEvent(body?.event_name);
 }
 
+// The brand of an intent event: the body's brand_id when the pixel sends one, otherwise the X-Brand header (the
+// Click Signal V2 pixel sends the brand only in that header). A brand_id in the body always wins, and either way the
+// value must be on the brand allow-list, so the header cannot be used to reach an unlisted brand.
+function resolveBrand(req, body) {
+  if (typeof body.brand_id === "string" && body.brand_id.trim() !== "") return body.brand_id;
+  const header = typeof req.get === "function" ? req.get("x-brand") : req.headers?.["x-brand"];
+  return typeof header === "string" && header.trim() !== "" ? header.trim() : null;
+}
+
 // Builds the normalized contract message (schema_version 1). Pure: no I/O.
 function buildIntentMessage(body, brand, brandTimezone) {
   const { kind, e, when, actorId } = normalizeIntentBody(body);
@@ -70,7 +79,7 @@ function buildIntentMessage(body, brand, brandTimezone) {
 function createIntentTrack({ publisher, brandAllowlist, logger }) {
   async function handle(req, res) {
     const body = req.body || {};
-    const brand = typeof body.brand_id === "string" ? body.brand_id : null;
+    const brand = resolveBrand(req, body);
     const ctx = { event_id: body.event_id ?? null, brand, event_name: body.event_name };
 
     if (!brandAllowlist) {
