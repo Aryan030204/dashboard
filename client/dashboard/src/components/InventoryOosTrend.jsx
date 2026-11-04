@@ -18,18 +18,19 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import {
+  Area,
+  AreaChart,
   Bar,
+  BarChart,
   CartesianGrid,
-  ComposedChart,
-  Legend,
-  Line,
   ResponsiveContainer,
-  Tooltip,
+  Tooltip as ChartTooltip,
   XAxis,
   YAxis,
 } from "recharts";
@@ -64,21 +65,36 @@ const SERIES = [
 ];
 const nfInt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
+// One cell of the summary strip: small label, the figure, and a one-line note.
 function Stat({ label, value, hint }) {
   return (
-    <Box sx={{ minWidth: 120, flex: "1 1 120px" }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontWeight: 600 }}>
+    <Box sx={{ flex: "1 1 130px", minWidth: 0, px: 2, py: 1.25 }}>
+      <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontWeight: 600 }}>
         {label}
       </Typography>
-      <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-        {value}
-      </Typography>
+      <Typography sx={{ fontWeight: 700, fontSize: 20, lineHeight: 1.3 }}>{value}</Typography>
       {hint ? (
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontSize: 11 }}>
           {hint}
         </Typography>
       ) : null}
     </Box>
+  );
+}
+
+// A small caption above a chart panel: coloured dot(s) and what the panel shows.
+function PanelTitle({ items }) {
+  return (
+    <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 0.5, pl: 0.5 }}>
+      {items.map((item) => (
+        <Stack key={item.label} direction="row" spacing={0.75} alignItems="center">
+          <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: item.color }} />
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+            {item.label}
+          </Typography>
+        </Stack>
+      ))}
+    </Stack>
   );
 }
 
@@ -137,7 +153,24 @@ function EpisodeList({ episodes, timezone }) {
     );
   }
   return (
-    <TableContainer sx={{ maxHeight: 320 }}>
+    <TableContainer
+      sx={{
+        maxHeight: 320,
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: 2,
+        "& .MuiTableCell-root": { borderColor: "divider", py: 0.9 },
+        "& .MuiTableCell-head": {
+          bgcolor: "transparent",
+          color: "text.secondary",
+          fontSize: 11,
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+        },
+        "& .MuiTableBody-root .MuiTableRow-root:last-of-type .MuiTableCell-root": { borderBottom: 0 },
+      }}
+    >
       <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
@@ -188,7 +221,7 @@ function ProductFilter({ options, loading, selection, onChange }) {
   return (
     <Autocomplete
       size="small"
-      sx={{ flex: "1 1 240px", minWidth: { xs: "100%", sm: 170 }, maxWidth: { sm: 360 }, flexShrink: "1 !important" }}
+      sx={{ flex: "1 1 240px", minWidth: { xs: "100%", sm: 200 }, maxWidth: { sm: 360 }, flexShrink: "1 !important" }}
       options={listed}
       value={value}
       loading={loading}
@@ -243,21 +276,38 @@ function ProductFilter({ options, loading, selection, onChange }) {
               "&:first-of-type": { borderTop: "none" },
             }}
           >
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography
-                variant="body2"
-                noWrap
-                title={option.label}
-                sx={{ fontWeight: isVariant ? 400 : 600, fontSize: isVariant ? 13 : 14 }}
-              >
-                {option.label}
-              </Typography>
-              {option.subtitle ? (
-                <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
-                  {option.subtitle}
+            <Tooltip
+              arrow
+              enterDelay={250}
+              placement="top-start"
+              title={
+                <Box>
+                  <Typography variant="caption" sx={{ display: "block", fontWeight: 700 }}>
+                    {option.title}
+                  </Typography>
+                  {isVariant ? (
+                    <Typography variant="caption" sx={{ display: "block" }}>
+                      {option.label}
+                    </Typography>
+                  ) : option.subtitle ? (
+                    <Typography variant="caption" sx={{ display: "block" }}>
+                      {option.subtitle}
+                    </Typography>
+                  ) : null}
+                </Box>
+              }
+            >
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="body2" noWrap sx={{ fontWeight: isVariant ? 400 : 600, fontSize: isVariant ? 13 : 14 }}>
+                  {option.label}
                 </Typography>
-              ) : null}
-            </Box>
+                {option.subtitle ? (
+                  <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                    {option.subtitle}
+                  </Typography>
+                ) : null}
+              </Box>
+            </Tooltip>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
               {option.outNow ? (
                 <Chip size="small" color="warning" variant="outlined" label="OOS" sx={{ height: 20, fontSize: 11 }} />
@@ -284,7 +334,6 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
     const initial = defaultRange(today);
     return suggestGranularity(initial.start, initial.end);
   });
-  const [hidden, setHidden] = useState([]);
   const [state, setState] = useState({ status: "idle", data: null });
   const [filterList, setFilterList] = useState({ loading: false, options: [] });
 
@@ -323,10 +372,6 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
     const next = clampRange(startDay.format("YYYY-MM-DD"), endDay.format("YYYY-MM-DD"), MAX_RANGE_DAYS);
     setRange(next);
     setPreferredGranularity(suggestGranularity(next.start, next.end));
-  }, []);
-
-  const toggleSeries = useCallback((key) => {
-    setHidden((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   }, []);
 
   const data = state.data;
@@ -401,7 +446,16 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
           </Typography>
         ) : (
           <>
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+            <Box
+              sx={{
+                display: "flex",
+                flexWrap: "wrap",
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 2,
+                "& > *:not(:first-of-type)": { borderLeft: { sm: "1px solid" }, borderColor: "divider" },
+              }}
+            >
               <Stat
                 label="Out of stock now"
                 value={summary ? nfInt.format(summary.currently_out_of_stock) : "-"}
@@ -422,7 +476,7 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
                 value={summary ? formatDuration(summary.avg_duration_minutes) : "-"}
                 hint="for restocked variants"
               />
-            </Stack>
+            </Box>
 
             {state.status === "loading" && !data ? (
               <Skeleton variant="rounded" width="100%" height={260} />
@@ -433,71 +487,80 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
                 </Typography>
               </Box>
             ) : (
-              <Box sx={{ width: "100%", height: 280, opacity: state.status === "loading" ? 0.5 : 1, transition: "opacity 0.2s" }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={chartData} margin={{ top: 10, right: 12, left: 0, bottom: 5 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
-                    <XAxis
-                      dataKey="label"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={10}
-                      minTickGap={isMobile ? 18 : 12}
-                      interval="preserveStartEnd"
-                      tickFormatter={(label) => formatTick(label, granularity)}
-                      tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
-                    />
-                    <YAxis
-                      yAxisId="state"
-                      allowDecimals={false}
-                      tickLine={false}
-                      axisLine={false}
-                      width={44}
-                      tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
-                    />
-                    <YAxis yAxisId="events" orientation="right" allowDecimals={false} hide />
-                    <Tooltip
-                      cursor={{ fill: alpha(theme.palette.divider, 0.2) }}
-                      content={<TrendTooltip granularity={granularity} />}
-                    />
-                    <Legend
-                      onClick={(entry) => toggleSeries(entry.dataKey)}
-                      wrapperStyle={{ cursor: "pointer", fontSize: 12 }}
-                      formatter={(value, entry) => (
-                        <span style={{ opacity: hidden.includes(entry.dataKey) ? 0.4 : 1 }}>{value}</span>
-                      )}
-                    />
-                    <Bar
-                      yAxisId="events"
-                      dataKey="new_oos"
-                      name="Went out of stock"
-                      fill={COLORS.newOos}
-                      hide={hidden.includes("new_oos")}
-                      maxBarSize={18}
-                      radius={[3, 3, 0, 0]}
-                    />
-                    <Bar
-                      yAxisId="events"
-                      dataKey="restocked"
-                      name="Back in stock"
-                      fill={COLORS.restocked}
-                      hide={hidden.includes("restocked")}
-                      maxBarSize={18}
-                      radius={[3, 3, 0, 0]}
-                    />
-                    <Line
-                      yAxisId="state"
-                      dataKey="oos_count"
-                      name="Out of stock"
-                      type="stepAfter"
-                      stroke={COLORS.oos}
-                      strokeWidth={2.5}
-                      dot={false}
-                      connectNulls={false}
-                      hide={hidden.includes("oos_count")}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
+              <Box sx={{ opacity: state.status === "loading" ? 0.5 : 1, transition: "opacity 0.2s" }}>
+                {/* Two panels on the same time axis: how many are out of stock, then what happened in each bucket. */}
+                <PanelTitle items={[{ label: "Variants out of stock", color: COLORS.oos }]} />
+                <Box sx={{ width: "100%", height: 110 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} syncId="inventory-oos" margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
+                      <XAxis dataKey="label" hide />
+                      <YAxis
+                        allowDecimals={false}
+                        domain={[0, (max) => Math.max(1, max)]}
+                        tickLine={false}
+                        axisLine={false}
+                        width={36}
+                        tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
+                      />
+                      <ChartTooltip
+                        cursor={{ stroke: theme.palette.divider, strokeDasharray: "4 4" }}
+                        content={<TrendTooltip granularity={granularity} />}
+                      />
+                      <Area
+                        type="stepAfter"
+                        dataKey="oos_count"
+                        stroke={COLORS.oos}
+                        strokeWidth={2}
+                        fill={COLORS.oos}
+                        fillOpacity={0.14}
+                        dot={false}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </Box>
+
+                <Box sx={{ mt: 1.5 }}>
+                  <PanelTitle
+                    items={[
+                      { label: "Went out of stock", color: COLORS.newOos },
+                      { label: "Back in stock", color: COLORS.restocked },
+                    ]}
+                  />
+                </Box>
+                <Box sx={{ width: "100%", height: 150 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} syncId="inventory-oos" margin={{ top: 6, right: 12, left: 0, bottom: 0 }} barGap={2}>
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.5)} />
+                      <XAxis
+                        dataKey="label"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        minTickGap={isMobile ? 18 : 12}
+                        interval="preserveStartEnd"
+                        tickFormatter={(label) => formatTick(label, granularity)}
+                        tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        domain={[0, (max) => Math.max(1, max)]}
+                        tickLine={false}
+                        axisLine={false}
+                        width={36}
+                        tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
+                      />
+                      <ChartTooltip
+                        cursor={{ fill: alpha(theme.palette.divider, 0.2) }}
+                        content={<TrendTooltip granularity={granularity} />}
+                      />
+                      <Bar dataKey="new_oos" fill={COLORS.newOos} maxBarSize={16} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                      <Bar dataKey="restocked" fill={COLORS.restocked} maxBarSize={16} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
               </Box>
             )}
 
