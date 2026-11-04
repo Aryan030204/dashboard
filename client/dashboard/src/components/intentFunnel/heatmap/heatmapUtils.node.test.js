@@ -100,6 +100,18 @@ test("a page's sessions split into high, medium and low percentages that add up 
   assert.ok(Math.abs(uneven.high.pct + uneven.medium.pct + uneven.low.pct - 100) < 1e-9);
 });
 
+test("the whole-number percentages shown always add up to exactly 100", () => {
+  const sum = (split) => split.high.shown + split.medium.shown + split.low.shown;
+  assert.equal(sum(intentSplit({ high: 1, medium: 1, low: 1 })), 100); // 33.3 each
+  assert.equal(sum(intentSplit({ high: 16, medium: 32, low: 53 })), 100);
+  assert.equal(sum(intentSplit({ high: 1, medium: 2, low: 4 })), 100);
+  assert.equal(sum(intentSplit({ high: 0, medium: 0, low: 7 })), 100);
+  const split = intentSplit({ high: 30, medium: 15, low: 55 });
+  assert.deepEqual([split.high.shown, split.medium.shown, split.low.shown], [30, 15, 55]);
+  const thirds = intentSplit({ high: 1, medium: 1, low: 1 });
+  assert.deepEqual([thirds.high.shown, thirds.medium.shown, thirds.low.shown], [34, 33, 33]);
+});
+
 test("a page with no classified sessions has no split", () => {
   assert.equal(intentSplit({ high: 0, medium: 0, low: 0 }), null);
   assert.equal(intentSplit(undefined), null);

@@ -1198,4 +1198,6 @@ module.exports = {
   // also used by the intent funnel's product dropdown (same Redis top-products cache)
   getDefaultRedisClient,
   getInventoryTopProductSalesCache,
+  // also used by the out-of-stock trend (variant names for the drill-down)
+  getShopInventoryCache,
 };
