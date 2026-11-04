@@ -87,6 +87,76 @@ export function formatDuration(minutes) {
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
+// ---- product / variant filter ---------------------------------------------------------------------------------
+
+export const FILTER_OPTION_LIMIT = 300;
+
+export function selectionKey(productId, variantId = null) {
+  return variantId ? `v:${productId}:${variantId}` : `p:${productId}`;
+}
+
+// Flat, grouped list for the filter: for each product an "all variants" entry followed by its variants.
+export function buildFilterOptions(products = []) {
+  const options = [];
+  for (const product of products) {
+    const group = product.title || `Product ${product.product_id}`;
+    options.push({
+      key: selectionKey(product.product_id),
+      productId: String(product.product_id),
+      variantId: null,
+      title: group,
+      group,
+      label: product.variants && product.variants.length > 1 ? "All variants" : "Product",
+      count: product.stock_outs || 0,
+      outNow: (product.out_now || 0) > 0,
+    });
+    if (product.variants && product.variants.length > 1) {
+      for (const variant of product.variants) {
+        options.push({
+          key: selectionKey(product.product_id, variant.variant_id),
+          productId: String(product.product_id),
+          variantId: String(variant.variant_id),
+          title: group,
+          group,
+          label: variant.sku || `Variant ${variant.variant_id}`,
+          count: variant.stock_outs || 0,
+          outNow: !!variant.out_now,
+        });
+      }
+    }
+  }
+  return options;
+}
+
+// Case-insensitive "contains" over the product title, SKU and ids; capped so a huge list stays fast.
+export function filterOptions(options, query, limit = FILTER_OPTION_LIMIT) {
+  const needle = String(query || "").trim().toLowerCase();
+  const matches = needle
+    ? options.filter((o) => `${o.group} ${o.label} ${o.productId} ${o.variantId || ""}`.toLowerCase().includes(needle))
+    : options;
+  return matches.slice(0, limit);
+}
+
+// The option that stands for the current selection, even when it is not in the loaded list (for example a
+// product picked in the table that had no stock-out in this range).
+export function optionForSelection(selection, options) {
+  if (!selection || !selection.productId) return null;
+  const key = selectionKey(selection.productId, selection.variantId || null);
+  const found = options.find((o) => o.key === key);
+  if (found) return found;
+  const title = selection.title || `Product ${selection.productId}`;
+  return {
+    key,
+    productId: String(selection.productId),
+    variantId: selection.variantId ? String(selection.variantId) : null,
+    title,
+    group: title,
+    label: selection.variantId ? selection.variantLabel || `Variant ${selection.variantId}` : "All variants",
+    count: 0,
+    outNow: false,
+  };
+}
+
 // An ISO instant shown in the brand's timezone, e.g. "4 Nov, 9:55 am".
 export function formatInstant(isoString, timezone) {
   if (!isoString) return "-";

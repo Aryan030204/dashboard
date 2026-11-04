@@ -9,6 +9,7 @@ function buildProductConversionRouter() {
 
   router.get('/product-conversion', requireAnyPermission(['product_conversion', 'inventory_panel']), brandContext, controller.productConversion);
   router.get('/product-conversion/oos-trend', requireAnyPermission(['product_conversion', 'inventory_panel']), brandContext, controller.oosTrend);
+  router.get('/product-conversion/oos-trend/options', requireAnyPermission(['product_conversion', 'inventory_panel']), brandContext, controller.oosOptions);
   router.get('/product-conversion/export', requirePermission('product_conversion'), brandContext, controller.productConversionCsv);
 
   return router;

@@ -6,6 +6,7 @@ const { resolveShopSubdomain } = require('../../shared/utils/shop');
 const {
   buildInventoryOosService,
   normalizeOosTrendRequest,
+  normalizeOosOptionsRequest,
 } = require('../../services/inventoryOosService');
 
 function buildProductConversionController() {
@@ -32,6 +33,28 @@ function buildProductConversionController() {
         );
       } catch (e) {
         return handleControllerError(res, e, 'oos-trend failed');
+      }
+    },
+
+    // Products/variants with stock-outs in the range, for the trend chart's filter.
+    oosOptions: async (req, res) => {
+      try {
+        const normalized = normalizeOosOptionsRequest(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!normalized.ok) return res.status(normalized.status).json(normalized.body);
+
+        const conn = req.brandDb?.sequelize;
+        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
+
+        return res.json(
+          await inventoryOosService.getOosOptions({
+            ...normalized.spec,
+            conn,
+            brandKey: req.brandKey,
+            resolveShopSubdomain,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'oos-options failed');
       }
     },
 

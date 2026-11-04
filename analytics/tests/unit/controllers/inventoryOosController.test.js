@@ -9,6 +9,24 @@ jest.mock("../../../shared/utils/logger", () => ({
 
 const { buildProductConversionController } = require("../../../modules/product-conversion/controller");
 
+function runOptions(req) {
+  const res = {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
+  };
+  return buildProductConversionController()
+    .oosOptions(req, res)
+    .then(() => res);
+}
+
 function run(req) {
   const res = {
     statusCode: 200,
@@ -59,5 +77,18 @@ describe("GET /product-conversion/oos-trend", () => {
   test("500 when the brand database connection is missing", async () => {
     const res = await run(request({ start: "2026-11-03", end: "2026-11-04" }, { brandDb: undefined }));
     expect(res.statusCode).toBe(500);
+  });
+});
+
+describe("GET /product-conversion/oos-trend/options", () => {
+  test("400 for a bad range, 200 with the product list otherwise", async () => {
+    const bad = await runOptions(request({ start: "2026-09-01", end: "2026-11-30" }));
+    expect(bad.statusCode).toBe(400);
+
+    const optionSql = jest.fn(async () => [{ product_id: "100", variant_id: "1001", stock_outs: "2", out_now: "0" }]);
+    const ok = await runOptions(request({ start: "2026-11-03", end: "2026-11-04" }, { brandDb: { sequelize: { query: optionSql } } }));
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body.products).toHaveLength(1);
+    expect(ok.body.products[0]).toMatchObject({ product_id: "100", stock_outs: 2 });
   });
 });

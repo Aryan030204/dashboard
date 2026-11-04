@@ -68,3 +68,45 @@ test("an instant is shown in the brand's timezone", () => {
   assert.equal(formatInstant(null, "Asia/Kolkata"), "-");
   assert.equal(formatInstant("not a date", "Asia/Kolkata"), "-");
 });
+
+import { buildFilterOptions, filterOptions, optionForSelection, selectionKey } from "./oosTrend.js";
+
+const PRODUCTS = [
+  {
+    product_id: "100", title: "Rose Perfume", stock_outs: 4, out_now: 1,
+    variants: [
+      { variant_id: "1001", sku: "ROSE-50", stock_outs: 3, out_now: false },
+      { variant_id: "1002", sku: "ROSE-100", stock_outs: 1, out_now: true },
+    ],
+  },
+  { product_id: "200", title: null, stock_outs: 2, out_now: 1, variants: [{ variant_id: "2001", sku: null, stock_outs: 2, out_now: true }] },
+];
+
+test("filter options: a product entry, then its variants when it has more than one", () => {
+  const options = buildFilterOptions(PRODUCTS);
+  assert.deepEqual(options.map((o) => [o.key, o.label, o.count]), [
+    ["p:100", "All variants", 4],
+    ["v:100:1001", "ROSE-50", 3],
+    ["v:100:1002", "ROSE-100", 1],
+    ["p:200", "Product", 2],
+  ]);
+  assert.equal(options[3].group, "Product 200"); // no name known
+  assert.equal(options[2].outNow, true);
+});
+
+test("searching matches title, SKU and ids, and is capped", () => {
+  const options = buildFilterOptions(PRODUCTS);
+  assert.deepEqual(filterOptions(options, "rose-100").map((o) => o.key), ["v:100:1002"]);
+  assert.deepEqual(filterOptions(options, "perfume").map((o) => o.key), ["p:100", "v:100:1001", "v:100:1002"]);
+  assert.deepEqual(filterOptions(options, "2001").map((o) => o.key), []); // single-variant products have no variant entry
+  assert.deepEqual(filterOptions(options, "200").map((o) => o.key), ["p:200"]);
+  assert.equal(filterOptions(options, "", 2).length, 2);
+});
+
+test("the current selection maps to a listed option, or to a stand-in when it is not listed", () => {
+  const options = buildFilterOptions(PRODUCTS);
+  assert.equal(optionForSelection({ productId: "100", variantId: "1001" }, options).label, "ROSE-50");
+  const standIn = optionForSelection({ productId: "999", title: "Table pick" }, options);
+  assert.deepEqual([standIn.key, standIn.group, standIn.label, standIn.count], [selectionKey("999"), "Table pick", "All variants", 0]);
+  assert.equal(optionForSelection(null, options), null);
+});

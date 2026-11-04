@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import {
+  Autocomplete,
   Box,
   Card,
   CardContent,
@@ -16,6 +17,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Typography,
   useMediaQuery,
 } from "@mui/material";
@@ -31,17 +33,20 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { getInventoryOosTrend } from "../lib/api.js";
+import { getInventoryOosOptions, getInventoryOosTrend } from "../lib/api.js";
 import { FunnelDateRangePicker } from "./DailyFunnelPanel.jsx";
 import {
   MAX_RANGE_DAYS,
+  buildFilterOptions,
   clampRange,
   defaultRange,
+  filterOptions,
   formatBucketTitle,
   formatDuration,
   formatInstant,
   formatTick,
   hourlyAllowed,
+  optionForSelection,
   resolveGranularity,
   suggestGranularity,
 } from "../lib/oosTrend.js";
@@ -168,7 +173,59 @@ function EpisodeList({ episodes, timezone }) {
   );
 }
 
-function InventoryOosTrend({ brandKey, selectedProduct = null, onClearProduct }) {
+// Product / variant filter. `selection` is { productId, title, variantId?, variantLabel? } or null (all products).
+function ProductFilter({ options, loading, selection, onChange }) {
+  const value = useMemo(() => optionForSelection(selection, options), [selection, options]);
+  const listed = useMemo(() => {
+    if (!value || options.some((o) => o.key === value.key)) return options;
+    return [value, ...options];
+  }, [options, value]);
+  return (
+    <Autocomplete
+      size="small"
+      sx={{ width: { xs: "100%", sm: 300 } }}
+      options={listed}
+      value={value}
+      loading={loading}
+      loadingText="Loading products..."
+      noOptionsText="No product went out of stock in this range"
+      groupBy={(option) => option.group}
+      getOptionLabel={(option) => (option.variantId ? `${option.group} - ${option.label}` : option.group)}
+      isOptionEqualToValue={(a, b) => a.key === b.key}
+      filterOptions={(all, state) => filterOptions(all, state.inputValue)}
+      onChange={(_event, option) =>
+        onChange(
+          option
+            ? {
+                productId: option.productId,
+                title: option.title,
+                variantId: option.variantId,
+                variantLabel: option.variantId ? option.label : null,
+              }
+            : null,
+        )
+      }
+      renderInput={(params) => <TextField {...params} placeholder="All products and variants" />}
+      renderOption={(props, option) => (
+        <Box component="li" {...props} key={option.key} sx={{ display: "flex", gap: 1, justifyContent: "space-between" }}>
+          <Typography variant="body2" sx={{ pl: option.variantId ? 1.5 : 0, fontWeight: option.variantId ? 400 : 600 }}>
+            {option.label}
+          </Typography>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {option.outNow ? <Chip size="small" color="warning" variant="outlined" label="out now" /> : null}
+            {option.count > 0 ? (
+              <Typography variant="caption" color="text.secondary">
+                {nfInt.format(option.count)}x
+              </Typography>
+            ) : null}
+          </Stack>
+        </Box>
+      )}
+    />
+  );
+}
+
+function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, onClearProduct }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const today = dayjs().format("YYYY-MM-DD");
@@ -179,16 +236,18 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onClearProduct })
   });
   const [hidden, setHidden] = useState([]);
   const [state, setState] = useState({ status: "idle", data: null });
+  const [filterList, setFilterList] = useState({ loading: false, options: [] });
 
   const granularity = resolveGranularity(preferredGranularity, range.start, range.end);
   const productId = selectedProduct?.productId || null;
+  const variantId = selectedProduct?.variantId || null;
 
   useEffect(() => {
     if (!brandKey) return undefined;
     const controller = new AbortController();
     setState((prev) => ({ status: "loading", data: prev.data }));
     getInventoryOosTrend(
-      { brand_key: brandKey, start: range.start, end: range.end, granularity, product_id: productId },
+      { brand_key: brandKey, start: range.start, end: range.end, granularity, product_id: productId, variant_id: variantId },
       { signal: controller.signal },
     ).then((resp) => {
       if (resp.aborted) return;
@@ -196,7 +255,19 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onClearProduct })
       else setState({ status: "succeeded", data: resp });
     });
     return () => controller.abort();
-  }, [brandKey, range.start, range.end, granularity, productId]);
+  }, [brandKey, range.start, range.end, granularity, productId, variantId]);
+
+  // The products and variants that went out of stock in the range, for the filter.
+  useEffect(() => {
+    if (!brandKey) return undefined;
+    const controller = new AbortController();
+    setFilterList((prev) => ({ ...prev, loading: true }));
+    getInventoryOosOptions({ brand_key: brandKey, start: range.start, end: range.end }, { signal: controller.signal }).then((resp) => {
+      if (resp.aborted) return;
+      setFilterList({ loading: false, options: resp.error ? [] : buildFilterOptions(resp.products) });
+    });
+    return () => controller.abort();
+  }, [brandKey, range.start, range.end]);
 
   const handleRange = useCallback((startDay, endDay) => {
     const next = clampRange(startDay.format("YYYY-MM-DD"), endDay.format("YYYY-MM-DD"), MAX_RANGE_DAYS);
@@ -231,15 +302,12 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onClearProduct })
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-            {selectedProduct ? (
-              <Chip
-                color="primary"
-                variant="outlined"
-                label={`Product: ${selectedProduct.title || selectedProduct.productId}`}
-                onDelete={onClearProduct}
-                sx={{ maxWidth: 260 }}
-              />
-            ) : null}
+            <ProductFilter
+              options={filterList.options}
+              loading={filterList.loading}
+              selection={selectedProduct}
+              onChange={(selection) => (selection ? onSelectProduct?.(selection) : onClearProduct?.())}
+            />
             <FunnelDateRangePicker startDate={range.start} endDate={range.end} onApply={handleRange} />
             <FormControl size="small">
               <Select
@@ -274,9 +342,13 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onClearProduct })
               <Stat
                 label="Out of stock now"
                 value={summary ? nfInt.format(summary.currently_out_of_stock) : "-"}
-                hint={productId ? "variants of this product" : "variants"}
+                hint={variantId ? "this variant" : productId ? "variants of this product" : "variants"}
               />
-              <Stat label="Went out of stock" value={summary ? nfInt.format(summary.stock_outs_in_range) : "-"} hint="in range" />
+              <Stat
+                label="Went out of stock"
+                value={summary ? nfInt.format(summary.stock_outs_in_range) : "-"}
+                hint={variantId ? "times, this variant" : productId ? "times, this product" : "in range"}
+              />
               <Stat
                 label="Back in stock"
                 value={summary ? nfInt.format(summary.restocks_in_range) : "-"}
@@ -366,7 +438,7 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onClearProduct })
               </Box>
             )}
 
-            {productId ? <EpisodeList episodes={data?.episodes || []} timezone={timezone} /> : null}
+            {productId || variantId ? <EpisodeList episodes={data?.episodes || []} timezone={timezone} /> : null}
           </>
         )}
       </CardContent>

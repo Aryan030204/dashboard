@@ -15,6 +15,7 @@ const MAX_RANGE_DAYS = 31;
 const MAX_HOURLY_RANGE_DAYS = 7;
 const EPISODE_LIST_CAP = 500;
 const ROW_SAFETY_CAP = 50000;
+const OPTIONS_ROW_CAP = 3000;
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const HOUR_MS = 3600 * 1000;
 
@@ -95,7 +96,20 @@ function normalizeOosTrendRequest(query = {}, { timezone } = {}) {
     if (!/^\d{1,20}$/.test(productId)) return bad("product_id must be a numeric Shopify product id");
   }
 
-  return { ok: true, spec: { start, end, granularity, productId, timezone: normalizeTimezone(timezone) } };
+  let variantId = null;
+  if (query.variant_id !== undefined && query.variant_id !== null && String(query.variant_id).trim() !== "") {
+    variantId = String(query.variant_id).trim().split("/").pop();
+    if (!/^\d{1,20}$/.test(variantId)) return bad("variant_id must be a numeric Shopify variant id");
+  }
+
+  return { ok: true, spec: { start, end, granularity, productId, variantId, timezone: normalizeTimezone(timezone) } };
+}
+
+// The list behind the chart's product / variant filter: only the range matters.
+function normalizeOosOptionsRequest(query = {}, { timezone } = {}) {
+  const normalized = normalizeOosTrendRequest({ start: query.start, end: query.end, granularity: "daily" }, { timezone });
+  if (!normalized.ok) return normalized;
+  return { ok: true, spec: { start: normalized.spec.start, end: normalized.spec.end, timezone: normalized.spec.timezone } };
 }
 
 // ---- bucketing ---------------------------------------------------------------------------------------------------
@@ -171,7 +185,7 @@ function isMissingTableError(err) {
 }
 
 function buildInventoryOosService({ now = () => Date.now(), loadNames = loadVariantNames } = {}) {
-  async function getOosTrend({ conn, brandKey, resolveShopSubdomain, start, end, granularity, productId, timezone }) {
+  async function getOosTrend({ conn, brandKey, resolveShopSubdomain, start, end, granularity, productId, variantId = null, timezone }) {
     const nowMs = now();
     const buckets = buildBuckets({ start, end, granularity, timezone });
     const rangeStartMs = buckets[0].startMs;
@@ -179,8 +193,8 @@ function buildInventoryOosService({ now = () => Date.now(), loadNames = loadVari
 
     // Positional `?` only: the tenant connection (shared/db/tenantConnection.js) formats with mysql2, which does not
     // understand Sequelize's named `:name` replacements.
-    const productClause = productId ? " AND product_id = ?" : "";
-    const productParams = productId ? [productId] : [];
+    const productClause = (productId ? " AND product_id = ?" : "") + (variantId ? " AND variant_id = ?" : "");
+    const productParams = [...(productId ? [productId] : []), ...(variantId ? [variantId] : [])];
     let rows;
     let openNow;
     try {
@@ -233,7 +247,7 @@ function buildInventoryOosService({ now = () => Date.now(), loadNames = loadVari
     };
 
     let episodeList = [];
-    if (productId) {
+    if (productId || variantId) {
       const names = await loadNames(brandKey, resolveShopSubdomain);
       episodeList = episodes.slice(0, EPISODE_LIST_CAP).map((e) => {
         const name = names.get(e.variantId) || {};
@@ -261,18 +275,67 @@ function buildInventoryOosService({ now = () => Date.now(), loadNames = loadVari
       generated_at: iso(nowMs),
       truncated,
       product_id: productId,
+      variant_id: variantId,
       buckets: outBuckets,
       summary,
       episodes: episodeList,
     };
   }
 
-  return { getOosTrend };
+  // Products and variants that had a stock-out overlapping the range, with how many times each went out of stock
+  // in it, for the chart's product / variant filter.
+  async function getOosOptions({ conn, brandKey, resolveShopSubdomain, start, end, timezone }) {
+    const rangeStartMs = localToUtcMs(start, 0, timezone);
+    const rangeEndMs = localToUtcMs(shiftDays(end, 1), 0, timezone);
+    const from = toDbUtc(rangeStartMs);
+    const to = toDbUtc(rangeEndMs);
+    let rows;
+    try {
+      rows = await conn.query(
+        `SELECT product_id, variant_id,
+                SUM(out_of_stock_at >= ? AND out_of_stock_at < ?) AS stock_outs,
+                SUM(back_in_stock_at IS NULL) AS out_now
+           FROM inventory_oos_history
+          WHERE out_of_stock_at < ?
+            AND (back_in_stock_at IS NULL OR back_in_stock_at >= ?)
+          GROUP BY product_id, variant_id
+          ORDER BY stock_outs DESC, product_id, variant_id
+          LIMIT ${OPTIONS_ROW_CAP + 1}`,
+        { type: QueryTypes.SELECT, replacements: [from, to, to, from] },
+      );
+    } catch (err) {
+      if (isMissingTableError(err)) return { available: false };
+      throw err;
+    }
+    const truncated = rows.length > OPTIONS_ROW_CAP;
+    if (truncated) rows = rows.slice(0, OPTIONS_ROW_CAP);
+
+    const names = await loadNames(brandKey, resolveShopSubdomain);
+    const products = new Map();
+    for (const r of rows) {
+      const productId = String(r.product_id);
+      const variantId = String(r.variant_id);
+      const name = names.get(variantId) || {};
+      if (!products.has(productId)) products.set(productId, { product_id: productId, title: null, stock_outs: 0, out_now: 0, variants: [] });
+      const product = products.get(productId);
+      if (!product.title && name.title) product.title = name.title;
+      const stockOuts = Number(r.stock_outs || 0);
+      const outNow = Number(r.out_now || 0);
+      product.stock_outs += stockOuts;
+      product.out_now += outNow;
+      product.variants.push({ variant_id: variantId, sku: name.sku || null, stock_outs: stockOuts, out_now: outNow > 0 });
+    }
+    const list = [...products.values()].sort((a, b) => b.stock_outs - a.stock_outs || a.product_id.localeCompare(b.product_id));
+    return { available: true, range: { start, end }, truncated, products: list };
+  }
+
+  return { getOosTrend, getOosOptions };
 }
 
 module.exports = {
   buildInventoryOosService,
   normalizeOosTrendRequest,
+  normalizeOosOptionsRequest,
   MAX_RANGE_DAYS,
   MAX_HOURLY_RANGE_DAYS,
   EPISODE_LIST_CAP,

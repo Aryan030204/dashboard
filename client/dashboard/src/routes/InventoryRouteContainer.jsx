@@ -46,6 +46,7 @@ export default function InventoryRouteContainer({
         <InventoryOosTrend
           brandKey={activeBrandKey}
           selectedProduct={selectedProduct}
+          onSelectProduct={setSelectedProduct}
           onClearProduct={() => setSelectedProduct(null)}
         />
       </Suspense>

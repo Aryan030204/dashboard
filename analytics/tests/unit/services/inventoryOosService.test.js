@@ -10,6 +10,7 @@ jest.mock("../../../shared/utils/logger", () => ({
 const {
   buildInventoryOosService,
   normalizeOosTrendRequest,
+  normalizeOosOptionsRequest,
   _internal,
 } = require("../../../services/inventoryOosService");
 
@@ -149,6 +150,68 @@ describe("getOosTrend: hourly", () => {
     // 13:30 IST now: the 14:00 hour has not started
     expect(byLabel["2026-11-04 14:00"]).toMatchObject({ future: true, oos_count: null });
     expect(byLabel["2026-11-04 13:00"].future).toBe(false);
+  });
+});
+
+describe("getOosTrend: one variant", () => {
+  test("filters by variant too, and a variant alone is enough to get the episode list", async () => {
+    const conn = fakeConn({ rows: ROWS.filter((r) => r.variant_id === "1001") });
+    const out = await service().getOosTrend({
+      ...base, start: "2026-11-03", end: "2026-11-04", granularity: "daily", productId: "100", variantId: "1001", conn,
+    });
+    expect(conn.calls[0].finalSql).toContain("AND product_id = '100' AND variant_id = '1001'");
+    expect(conn.calls[1].finalSql).toContain("AND product_id = '100' AND variant_id = '1001'");
+    expect(out.variant_id).toBe("1001");
+    expect(out.episodes.map((e) => e.variant_id)).toEqual(["1001"]);
+    expect(out.summary).toMatchObject({ stock_outs_in_range: 1, restocks_in_range: 1, units_restocked: 9137 });
+
+    const alone = await service().getOosTrend({ ...base, start: "2026-11-03", end: "2026-11-04", granularity: "daily", variantId: "1001", conn });
+    expect(alone.episodes).toHaveLength(1);
+  });
+
+  test("the request accepts a variant id (also as a gid) and rejects junk", () => {
+    expect(normalizeOosTrendRequest({ start: "2026-11-04", variant_id: "gid://shopify/ProductVariant/55" }).spec.variantId).toBe("55");
+    expect(normalizeOosTrendRequest({ start: "2026-11-04", variant_id: "x" }).ok).toBe(false);
+    expect(normalizeOosTrendRequest({ start: "2026-11-04" }).spec.variantId).toBeNull();
+  });
+});
+
+describe("getOosOptions", () => {
+  const optionRows = [
+    { product_id: "100", variant_id: "1001", stock_outs: "3", out_now: "0" },
+    { product_id: "100", variant_id: "1002", stock_outs: "1", out_now: "1" },
+    { product_id: "200", variant_id: "2001", stock_outs: "2", out_now: "1" },
+  ];
+  const names = new Map([
+    ["1001", { sku: "ROSE-50", title: "Rose Perfume" }],
+    ["1002", { sku: "ROSE-100", title: "Rose Perfume" }],
+  ]);
+
+  test("groups variants by product, counts stock-outs, names them from the inventory cache, busiest first", async () => {
+    const conn = fakeConn({ rows: optionRows });
+    const out = await service({ loadNames: async () => names }).getOosOptions({ ...base, conn, start: "2026-11-03", end: "2026-11-04" });
+    expect(conn.calls[0].replacements).toEqual(["2026-11-02 18:30:00", "2026-11-04 18:30:00", "2026-11-04 18:30:00", "2026-11-02 18:30:00"]);
+    expect(out.available).toBe(true);
+    expect(out.products.map((p) => [p.product_id, p.title, p.stock_outs, p.out_now])).toEqual([
+      ["100", "Rose Perfume", 4, 1],
+      ["200", null, 2, 1],
+    ]);
+    expect(out.products[0].variants).toEqual([
+      { variant_id: "1001", sku: "ROSE-50", stock_outs: 3, out_now: false },
+      { variant_id: "1002", sku: "ROSE-100", stock_outs: 1, out_now: true },
+    ]);
+  });
+
+  test("a brand without the table gets available:false", async () => {
+    const error = Object.assign(new Error("x"), { original: { code: "ER_NO_SUCH_TABLE", errno: 1146, message: "Table 'T.inventory_oos_history' doesn't exist" } });
+    const out = await service().getOosOptions({ ...base, conn: fakeConn({ error }), start: "2026-11-03", end: "2026-11-04" });
+    expect(out).toEqual({ available: false });
+  });
+
+  test("the options request only needs a valid range (no granularity limit)", () => {
+    expect(normalizeOosOptionsRequest({ start: "2026-10-05", end: "2026-11-04" }).ok).toBe(true);
+    expect(normalizeOosOptionsRequest({ start: "2026-09-01", end: "2026-11-04" }).ok).toBe(false);
+    expect(normalizeOosOptionsRequest({}).ok).toBe(false);
   });
 });
 

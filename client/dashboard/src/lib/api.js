@@ -681,6 +681,7 @@ export async function getInventoryOosTrend(args, options = {}) {
       end: args.end,
       granularity: args.granularity,
       product_id: args.product_id || args.productId || undefined,
+      variant_id: args.variant_id || args.variantId || undefined,
     },
     args,
   );
@@ -699,6 +700,17 @@ export async function getInventoryOosTrend(args, options = {}) {
     summary: json.summary || null,
     episodes: Array.isArray(json.episodes) ? json.episodes : [],
   };
+}
+
+// Products and variants that went out of stock in a date range (the chart's filter list).
+export async function getInventoryOosOptions(args, options = {}) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const res = await doGet("/metrics/product-conversion/oos-trend/options", params, { signal: options.signal });
+  if (res.aborted) return { error: true, aborted: true };
+  if (res.error) return { error: true };
+  const json = res.data || {};
+  if (json.available === false) return { available: false, products: [] };
+  return { available: true, truncated: !!json.truncated, products: Array.isArray(json.products) ? json.products : [] };
 }
 
 export async function getProductConversion(args, options = {}) {
