@@ -3,11 +3,38 @@ const {
   buildProductConversionService,
 } = require('../../services/productConversionService');
 const { resolveShopSubdomain } = require('../../shared/utils/shop');
+const {
+  buildInventoryOosService,
+  normalizeOosTrendRequest,
+} = require('../../services/inventoryOosService');
 
 function buildProductConversionController() {
   const productConversionService = buildProductConversionService();
+  const inventoryOosService = buildInventoryOosService();
 
   return {
+    // Out-of-stock trend for the Inventory panel (inventory_oos_history of the brand database).
+    oosTrend: async (req, res) => {
+      try {
+        const normalized = normalizeOosTrendRequest(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!normalized.ok) return res.status(normalized.status).json(normalized.body);
+
+        const conn = req.brandDb?.sequelize;
+        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
+
+        return res.json(
+          await inventoryOosService.getOosTrend({
+            ...normalized.spec,
+            conn,
+            brandKey: req.brandKey,
+            resolveShopSubdomain,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'oos-trend failed');
+      }
+    },
+
     productConversion: async (req, res) => {
       try {
         const normalized = productConversionService.normalizeProductConversionRequest(req.query, {

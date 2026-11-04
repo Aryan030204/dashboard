@@ -672,6 +672,35 @@ export async function fetchProductTypes(brandKey, start, end) {
   return getJSON("/metrics/product-types", params);
 }
 
+// Out-of-stock history for the Inventory panel's trend chart (inventory_oos_history).
+// Returns { available, buckets, summary, episodes, ... } or { error } / { aborted }.
+export async function getInventoryOosTrend(args, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      granularity: args.granularity,
+      product_id: args.product_id || args.productId || undefined,
+    },
+    args,
+  );
+  const res = await doGet("/metrics/product-conversion/oos-trend", params, { signal: options.signal });
+  if (res.aborted) return { error: true, aborted: true };
+  if (res.error) return { error: true };
+  const json = res.data || {};
+  if (json.available === false) return { available: false };
+  return {
+    available: true,
+    range: json.range || null,
+    granularity: json.granularity || args.granularity,
+    timezone: json.timezone || "Asia/Kolkata",
+    truncated: !!json.truncated,
+    buckets: Array.isArray(json.buckets) ? json.buckets : [],
+    summary: json.summary || null,
+    episodes: Array.isArray(json.episodes) ? json.episodes : [],
+  };
+}
+
 export async function getProductConversion(args, options = {}) {
   const params = appendBrandKey(
     {

@@ -112,7 +112,7 @@ function formatInventoryUpdatedAgo(value, nowValue = Date.now()) {
   return `inventory updated ${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-function InventoryTable({ brandKey, startDate, endDate }) {
+function InventoryTable({ brandKey, startDate, endDate, selectedProductId = null, onSelectProduct = null }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [rows, setRows] = useState([]);
@@ -442,8 +442,17 @@ function InventoryTable({ brandKey, startDate, endDate }) {
                   </TableRow>
                 )}
 
-                {rows.map((row, idx) => (
-                  <TableRow key={`${row.landing_page_path || "path"}-${idx}`}>
+                {rows.map((row, idx) => {
+                  const selectable = typeof onSelectProduct === "function" && !!row.product_id;
+                  const selected = selectable && String(row.product_id) === String(selectedProductId);
+                  return (
+                  <TableRow
+                    key={`${row.landing_page_path || "path"}-${idx}`}
+                    hover={selectable}
+                    selected={selected}
+                    onClick={selectable ? () => onSelectProduct(selected ? null : row) : undefined}
+                    sx={selectable ? { cursor: "pointer" } : undefined}
+                  >
                     <TableCell
                       align="left"
                       sx={{
@@ -526,7 +535,8 @@ function InventoryTable({ brandKey, startDate, endDate }) {
                       {formatDoh(row.doh)}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
 
