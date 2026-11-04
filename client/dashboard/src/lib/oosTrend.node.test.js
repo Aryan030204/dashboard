@@ -69,7 +69,7 @@ test("an instant is shown in the brand's timezone", () => {
   assert.equal(formatInstant("not a date", "Asia/Kolkata"), "-");
 });
 
-import { buildFilterOptions, filterOptions, optionForSelection, selectionKey } from "./oosTrend.js";
+import { buildFilterOptions, filterOptions, optionForSelection, optionText, selectionKey } from "./oosTrend.js";
 
 const PRODUCTS = [
   {
@@ -82,31 +82,41 @@ const PRODUCTS = [
   { product_id: "200", title: null, stock_outs: 2, out_now: 1, variants: [{ variant_id: "2001", sku: null, stock_outs: 2, out_now: true }] },
 ];
 
-test("filter options: a product entry, then its variants when it has more than one", () => {
+test("filter options: a product row, then its variants when it has more than one; no group headers", () => {
   const options = buildFilterOptions(PRODUCTS);
-  assert.deepEqual(options.map((o) => [o.key, o.label, o.count]), [
-    ["p:100", "All variants", 4],
-    ["v:100:1001", "ROSE-50", 3],
-    ["v:100:1002", "ROSE-100", 1],
-    ["p:200", "Product", 2],
+  assert.deepEqual(options.map((o) => [o.key, o.kind, o.label, o.subtitle, o.count]), [
+    ["p:100", "product", "Rose Perfume", "2 variants", 4],
+    ["v:100:1001", "variant", "ROSE-50", "", 3],
+    ["v:100:1002", "variant", "ROSE-100", "", 1],
+    ["p:200", "product", "Product 200", "", 2], // no name known, no SKU known
   ]);
-  assert.equal(options[3].group, "Product 200"); // no name known
   assert.equal(options[2].outNow, true);
+  assert.equal(optionText(options[0]), "Rose Perfume");
+  assert.equal(optionText(options[1]), "Rose Perfume - ROSE-50");
+  assert.equal(optionText(null), "");
+});
+
+test("a product with a single variant shows that variant's SKU under its name", () => {
+  const options = buildFilterOptions([{ product_id: "300", title: "Oud", stock_outs: 1, out_now: 0, variants: [{ variant_id: "3001", sku: "OUD-30", stock_outs: 1, out_now: false }] }]);
+  assert.equal(options.length, 1);
+  assert.deepEqual([options[0].label, options[0].subtitle], ["Oud", "OUD-30"]);
 });
 
 test("searching matches title, SKU and ids, and is capped", () => {
   const options = buildFilterOptions(PRODUCTS);
   assert.deepEqual(filterOptions(options, "rose-100").map((o) => o.key), ["v:100:1002"]);
   assert.deepEqual(filterOptions(options, "perfume").map((o) => o.key), ["p:100", "v:100:1001", "v:100:1002"]);
-  assert.deepEqual(filterOptions(options, "2001").map((o) => o.key), []); // single-variant products have no variant entry
   assert.deepEqual(filterOptions(options, "200").map((o) => o.key), ["p:200"]);
   assert.equal(filterOptions(options, "", 2).length, 2);
+  const single = buildFilterOptions([{ product_id: "300", title: "Oud", stock_outs: 1, out_now: 0, variants: [{ variant_id: "3001", sku: "OUD-30", stock_outs: 1, out_now: false }] }]);
+  assert.deepEqual(filterOptions(single, "oud-30").map((o) => o.key), ["p:300"]); // the SKU of a single variant finds its product
 });
 
 test("the current selection maps to a listed option, or to a stand-in when it is not listed", () => {
   const options = buildFilterOptions(PRODUCTS);
   assert.equal(optionForSelection({ productId: "100", variantId: "1001" }, options).label, "ROSE-50");
   const standIn = optionForSelection({ productId: "999", title: "Table pick" }, options);
-  assert.deepEqual([standIn.key, standIn.group, standIn.label, standIn.count], [selectionKey("999"), "Table pick", "All variants", 0]);
+  assert.deepEqual([standIn.key, standIn.kind, standIn.label, standIn.count], [selectionKey("999"), "product", "Table pick", 0]);
+  assert.equal(optionText(standIn), "Table pick");
   assert.equal(optionForSelection(null, options), null);
 });

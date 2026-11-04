@@ -95,30 +95,35 @@ export function selectionKey(productId, variantId = null) {
   return variantId ? `v:${productId}:${variantId}` : `p:${productId}`;
 }
 
-// Flat, grouped list for the filter: for each product an "all variants" entry followed by its variants.
+// Flat list for the filter, no group headers: a product row (its name, and how many variants or the SKU of its only
+// variant), followed by one row per variant when it has more than one.
 export function buildFilterOptions(products = []) {
   const options = [];
   for (const product of products) {
-    const group = product.title || `Product ${product.product_id}`;
+    const title = product.title || `Product ${product.product_id}`;
+    const variants = product.variants || [];
+    const many = variants.length > 1;
     options.push({
       key: selectionKey(product.product_id),
+      kind: "product",
       productId: String(product.product_id),
       variantId: null,
-      title: group,
-      group,
-      label: product.variants && product.variants.length > 1 ? "All variants" : "Product",
+      title,
+      label: title,
+      subtitle: many ? `${variants.length} variants` : (variants[0] && variants[0].sku) || "",
       count: product.stock_outs || 0,
       outNow: (product.out_now || 0) > 0,
     });
-    if (product.variants && product.variants.length > 1) {
-      for (const variant of product.variants) {
+    if (many) {
+      for (const variant of variants) {
         options.push({
           key: selectionKey(product.product_id, variant.variant_id),
+          kind: "variant",
           productId: String(product.product_id),
           variantId: String(variant.variant_id),
-          title: group,
-          group,
+          title,
           label: variant.sku || `Variant ${variant.variant_id}`,
+          subtitle: "",
           count: variant.stock_outs || 0,
           outNow: !!variant.out_now,
         });
@@ -128,11 +133,17 @@ export function buildFilterOptions(products = []) {
   return options;
 }
 
+// What the filter box shows for a choice: the product name, or "name - SKU" for a single variant.
+export function optionText(option) {
+  if (!option) return "";
+  return option.kind === "variant" ? `${option.title} - ${option.label}` : option.title;
+}
+
 // Case-insensitive "contains" over the product title, SKU and ids; capped so a huge list stays fast.
 export function filterOptions(options, query, limit = FILTER_OPTION_LIMIT) {
   const needle = String(query || "").trim().toLowerCase();
   const matches = needle
-    ? options.filter((o) => `${o.group} ${o.label} ${o.productId} ${o.variantId || ""}`.toLowerCase().includes(needle))
+    ? options.filter((o) => `${o.title} ${o.label} ${o.subtitle} ${o.productId} ${o.variantId || ""}`.toLowerCase().includes(needle))
     : options;
   return matches.slice(0, limit);
 }
@@ -147,11 +158,12 @@ export function optionForSelection(selection, options) {
   const title = selection.title || `Product ${selection.productId}`;
   return {
     key,
+    kind: selection.variantId ? "variant" : "product",
     productId: String(selection.productId),
     variantId: selection.variantId ? String(selection.variantId) : null,
     title,
-    group: title,
-    label: selection.variantId ? selection.variantLabel || `Variant ${selection.variantId}` : "All variants",
+    label: selection.variantId ? selection.variantLabel || `Variant ${selection.variantId}` : title,
+    subtitle: "",
     count: 0,
     outNow: false,
   };

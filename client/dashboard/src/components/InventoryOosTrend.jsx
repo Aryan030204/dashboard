@@ -47,6 +47,7 @@ import {
   formatTick,
   hourlyAllowed,
   optionForSelection,
+  optionText,
   resolveGranularity,
   suggestGranularity,
 } from "../lib/oosTrend.js";
@@ -174,7 +175,10 @@ function EpisodeList({ episodes, timezone }) {
 }
 
 // Product / variant filter. `selection` is { productId, title, variantId?, variantLabel? } or null (all products).
+// Rows: a product (name, and how many variants or its SKU) followed by its variants, indented; counts and an
+// "out now" marker on the right. The list opens wider than the input so names are not cut off.
 function ProductFilter({ options, loading, selection, onChange }) {
+  const theme = useTheme();
   const value = useMemo(() => optionForSelection(selection, options), [selection, options]);
   const listed = useMemo(() => {
     if (!value || options.some((o) => o.key === value.key)) return options;
@@ -189,8 +193,7 @@ function ProductFilter({ options, loading, selection, onChange }) {
       loading={loading}
       loadingText="Loading products..."
       noOptionsText="No product went out of stock in this range"
-      groupBy={(option) => option.group}
-      getOptionLabel={(option) => (option.variantId ? `${option.group} - ${option.label}` : option.group)}
+      getOptionLabel={optionText}
       isOptionEqualToValue={(a, b) => a.key === b.key}
       filterOptions={(all, state) => filterOptions(all, state.inputValue)}
       onChange={(_event, option) =>
@@ -205,22 +208,69 @@ function ProductFilter({ options, loading, selection, onChange }) {
             : null,
         )
       }
+      slotProps={{
+        popper: { placement: "bottom-end", style: { width: 440, maxWidth: "calc(100vw - 32px)" } },
+        paper: {
+          sx: {
+            bgcolor: "background.paper",
+            backgroundImage: "none",
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 2,
+            boxShadow: "0 12px 32px rgba(0, 0, 0, 0.45)",
+            mt: 0.5,
+          },
+        },
+        listbox: { sx: { py: 0.5, maxHeight: 380 } },
+      }}
       renderInput={(params) => <TextField {...params} placeholder="All products and variants" />}
-      renderOption={(props, option) => (
-        <Box component="li" {...props} key={option.key} sx={{ display: "flex", gap: 1, justifyContent: "space-between" }}>
-          <Typography variant="body2" sx={{ pl: option.variantId ? 1.5 : 0, fontWeight: option.variantId ? 400 : 600 }}>
-            {option.label}
-          </Typography>
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            {option.outNow ? <Chip size="small" color="warning" variant="outlined" label="out now" /> : null}
-            {option.count > 0 ? (
-              <Typography variant="caption" color="text.secondary">
-                {nfInt.format(option.count)}x
+      renderOption={(props, option) => {
+        const { key: _ignored, ...rest } = props;
+        const isVariant = option.kind === "variant";
+        return (
+          <Box
+            component="li"
+            key={option.key}
+            {...rest}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1.5,
+              py: isVariant ? 0.5 : 0.75,
+              pl: isVariant ? 4 : 2,
+              pr: 2,
+              borderTop: !isVariant ? `1px solid ${alpha(theme.palette.divider, 0.5)}` : "none",
+              "&:first-of-type": { borderTop: "none" },
+            }}
+          >
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography
+                variant="body2"
+                noWrap
+                title={option.label}
+                sx={{ fontWeight: isVariant ? 400 : 600, fontSize: isVariant ? 13 : 14 }}
+              >
+                {option.label}
               </Typography>
-            ) : null}
-          </Stack>
-        </Box>
-      )}
+              {option.subtitle ? (
+                <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                  {option.subtitle}
+                </Typography>
+              ) : null}
+            </Box>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+              {option.outNow ? (
+                <Chip size="small" color="warning" variant="outlined" label="out now" sx={{ height: 20, fontSize: 11 }} />
+              ) : null}
+              {option.count > 0 ? (
+                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, textAlign: "right" }}>
+                  {nfInt.format(option.count)}x
+                </Typography>
+              ) : null}
+            </Stack>
+          </Box>
+        );
+      }}
     />
   );
 }
