@@ -221,7 +221,7 @@ function ProductFilter({ options, loading, selection, onChange }) {
   return (
     <Autocomplete
       size="small"
-      sx={{ flex: "1 1 240px", minWidth: { xs: "100%", sm: 200 }, maxWidth: { sm: 360 }, flexShrink: "1 !important" }}
+      sx={{ width: "100%", maxWidth: 520 }}
       options={listed}
       value={value}
       loading={loading}
@@ -276,10 +276,13 @@ function ProductFilter({ options, loading, selection, onChange }) {
               "&:first-of-type": { borderTop: "none" },
             }}
           >
+            {/* followCursor: the bubble is placed from the mouse position, not from the row. Anchored to a row inside the
+                scrolling list it showed up hundreds of pixels away, over the inventory table. */}
             <Tooltip
-              arrow
+              followCursor
               enterDelay={250}
-              placement="top-start"
+              placement="bottom-start"
+              slotProps={{ popper: { modifiers: [{ name: "offset", options: { offset: [0, 16] } }] } }}
               title={
                 <Box>
                   <Typography variant="caption" sx={{ display: "block", fontWeight: 700 }}>
@@ -298,9 +301,39 @@ function ProductFilter({ options, loading, selection, onChange }) {
               }
             >
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="body2" noWrap sx={{ fontWeight: isVariant ? 400 : 600, fontSize: isVariant ? 13 : 14 }}>
-                  {option.label}
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0 }}>
+                  <Typography
+                    variant="body2"
+                    noWrap
+                    sx={{ minWidth: 0, fontWeight: isVariant ? 400 : 600, fontSize: isVariant ? 13 : 14 }}
+                  >
+                    {option.label}
+                  </Typography>
+                  {/* The OOS tag sits right after the name; the name is what gets cut when space is short. */}
+                  {option.outNow ? (
+                    <Box
+                      component="span"
+                      sx={{
+                        flexShrink: 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        height: 18,
+                        px: 0.75,
+                        borderRadius: "9px",
+                        border: "1px solid",
+                        borderColor: "warning.main",
+                        color: "warning.main",
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        letterSpacing: 0.3,
+                        lineHeight: 1,
+                      }}
+                    >
+                      OOS
+                    </Box>
+                  ) : null}
+                </Box>
                 {option.subtitle ? (
                   <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
                     {option.subtitle}
@@ -308,16 +341,14 @@ function ProductFilter({ options, loading, selection, onChange }) {
                 ) : null}
               </Box>
             </Tooltip>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
-              {option.outNow ? (
-                <Chip size="small" color="warning" variant="outlined" label="OOS" sx={{ height: 20, fontSize: 11 }} />
-              ) : null}
-              {option.count > 0 ? (
-                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, textAlign: "right" }}>
-                  {nfInt.format(option.count)}x
-                </Typography>
-              ) : null}
-            </Stack>
+            {/* The count has a fixed column on the right so the numbers line up in every row. */}
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ width: 30, flexShrink: 0, textAlign: "right", lineHeight: 1, alignSelf: "center" }}
+            >
+              {option.count > 0 ? `${nfInt.format(option.count)}x` : ""}
+            </Typography>
           </Box>
         );
       }}
@@ -387,7 +418,7 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
   return (
     <Card variant="outlined" sx={{ mt: 2 }}>
       <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {/* Title on the left; the three controls stay on one row and move below the title when there is no room. */}
+        {/* Title on the left; date range and granularity stay together on the right and move below the title when there is no room. */}
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "center", justifyContent: "space-between" }}>
           <Box sx={{ flex: "1 1 240px", minWidth: 0 }}>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -410,12 +441,6 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
               "& > *": { flexShrink: 0 },
             }}
           >
-            <ProductFilter
-              options={filterList.options}
-              loading={filterList.loading}
-              selection={selectedProduct}
-              onChange={(selection) => (selection ? onSelectProduct?.(selection) : onClearProduct?.())}
-            />
             <FunnelDateRangePicker startDate={range.start} endDate={range.end} onApply={handleRange} />
             <FormControl size="small">
               <Select
@@ -439,6 +464,14 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
             </FormControl>
           </Box>
         </Box>
+
+        {/* The filter has a row of its own: names and SKUs need the width, and the header keeps just date and granularity. */}
+        <ProductFilter
+          options={filterList.options}
+          loading={filterList.loading}
+          selection={selectedProduct}
+          onChange={(selection) => (selection ? onSelectProduct?.(selection) : onClearProduct?.())}
+        />
 
         {state.status === "failed" ? (
           <Typography variant="body2" color="error">
