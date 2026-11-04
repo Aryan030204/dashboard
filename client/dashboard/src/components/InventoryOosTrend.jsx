@@ -221,7 +221,7 @@ function ProductFilter({ options, loading, selection, onChange }) {
   return (
     <Autocomplete
       size="small"
-      sx={{ flex: "1 1 240px", minWidth: { xs: "100%", sm: 200 }, maxWidth: { sm: 360 }, flexShrink: "1 !important" }}
+      sx={{ width: "100%", maxWidth: 520 }}
       options={listed}
       value={value}
       loading={loading}
@@ -407,7 +407,7 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
   return (
     <Card variant="outlined" sx={{ mt: 2 }}>
       <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {/* Title on the left; the three controls stay on one row and move below the title when there is no room. */}
+        {/* Title on the left; date range and granularity stay together on the right and move below the title when there is no room. */}
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "center", justifyContent: "space-between" }}>
           <Box sx={{ flex: "1 1 240px", minWidth: 0 }}>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -430,12 +430,6 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
               "& > *": { flexShrink: 0 },
             }}
           >
-            <ProductFilter
-              options={filterList.options}
-              loading={filterList.loading}
-              selection={selectedProduct}
-              onChange={(selection) => (selection ? onSelectProduct?.(selection) : onClearProduct?.())}
-            />
             <FunnelDateRangePicker startDate={range.start} endDate={range.end} onApply={handleRange} />
             <FormControl size="small">
               <Select
@@ -459,6 +453,14 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
             </FormControl>
           </Box>
         </Box>
+
+        {/* The filter has a row of its own: names and SKUs need the width, and the header keeps just date and granularity. */}
+        <ProductFilter
+          options={filterList.options}
+          loading={filterList.loading}
+          selection={selectedProduct}
+          onChange={(selection) => (selection ? onSelectProduct?.(selection) : onClearProduct?.())}
+        />
 
         {state.status === "failed" ? (
           <Typography variant="body2" color="error">
