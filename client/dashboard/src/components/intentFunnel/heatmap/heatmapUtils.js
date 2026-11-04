@@ -89,16 +89,30 @@ export function pageShare(views, totalViews) {
 
 // How a page's sessions split across the Behaviour intent levels, as percentages of its classified sessions
 // (high + medium + low). Null when the page has none, so the table shows a dash instead of an empty bar.
+// `pct` is exact (for tooltips); `shown` is whole numbers that always add up to exactly 100: each level is
+// rounded down, then the leftover points go to the levels with the largest remainders.
 export function intentSplit(pageIntent) {
-  const high = Number(pageIntent?.high) || 0;
-  const medium = Number(pageIntent?.medium) || 0;
-  const low = Number(pageIntent?.low) || 0;
-  const total = high + medium + low;
+  const levels = ["high", "medium", "low"];
+  const sessions = levels.map((level) => Number(pageIntent?.[level]) || 0);
+  const total = sessions.reduce((sum, value) => sum + value, 0);
   if (total <= 0) return null;
-  return {
-    total,
-    high: { sessions: high, pct: (high / total) * 100 },
-    medium: { sessions: medium, pct: (medium / total) * 100 },
-    low: { sessions: low, pct: (low / total) * 100 },
-  };
+
+  const exact = sessions.map((value) => (value / total) * 100);
+  const shown = exact.map((value) => Math.floor(value + 1e-9));
+  let leftover = 100 - shown.reduce((sum, value) => sum + value, 0);
+  exact
+    .map((value, index) => ({ index, remainder: value - Math.floor(value + 1e-9) }))
+    .sort((a, b) => b.remainder - a.remainder || a.index - b.index)
+    .forEach(({ index }) => {
+      if (leftover > 0) {
+        shown[index] += 1;
+        leftover -= 1;
+      }
+    });
+
+  const split = { total };
+  levels.forEach((level, index) => {
+    split[level] = { sessions: sessions[index], pct: exact[index], shown: shown[index] };
+  });
+  return split;
 }

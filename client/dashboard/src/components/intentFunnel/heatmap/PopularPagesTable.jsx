@@ -15,17 +15,17 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import SearchIcon from "@mui/icons-material/Search";
 import { INTENT_COLORS } from "../intentFunnelUtils.js";
 import { describePage, formatCount, formatShare, intentSplit, pageShare } from "./heatmapUtils.js";
 
 const INTENT_LEVELS = ["high", "medium", "low"];
 const INTENT_NAMES = { high: "High", medium: "Medium", low: "Low" };
-// a part narrower than this share of the bar is too small to hold its percentage; the tooltip still has it
-const MIN_LABEL_PCT = 14;
 
-// One pill split into High | Medium | Low parts, in the colours of the intent cards above. Each part is as wide
-// as that level's share of the page's sessions and shows its percentage.
+// One pill split into three equal parts, High | Medium | Low, each showing that level's percentage of the page's
+// sessions (the three always add up to 100). Drawn like the circles of the User Overlap diagram: a see-through
+// fill with a border in the level's colour (the intent card colours), with white text so it reads on any of them.
 function IntentBar({ split }) {
   if (!split) {
     return (
@@ -37,43 +37,43 @@ function IntentBar({ split }) {
   const summary = INTENT_LEVELS.map(
     (level) => `${INTENT_NAMES[level]}: ${formatShare(split[level].pct)} (${formatCount(split[level].sessions)} sessions)`,
   ).join("\n");
+  const radius = 11;
   return (
     <Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{summary}</span>} arrow placement="top">
       <Box
         role="img"
         aria-label={summary.replace(/\n/g, ", ")}
-        sx={{
-          display: "flex",
-          width: 150,
-          height: 22,
-          ml: "auto",
-          borderRadius: 11,
-          overflow: "hidden",
-          border: "1px solid",
-          borderColor: "divider",
-        }}
+        sx={{ display: "flex", width: 150, height: 22, ml: "auto" }}
       >
-        {INTENT_LEVELS.filter((level) => split[level].pct > 0).map((level) => (
-          <Box
-            key={level}
-            sx={{
-              flex: `${split[level].pct} 1 0`,
-              minWidth: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: INTENT_COLORS[level],
-              color: "#fff",
-              fontSize: "0.68rem",
-              fontWeight: 700,
-              lineHeight: 1,
-              // dividers between the parts
-              "& + &": { borderLeft: "1px solid rgba(0,0,0,0.35)" },
-            }}
-          >
-            {split[level].pct >= MIN_LABEL_PCT ? `${Math.round(split[level].pct)}%` : ""}
-          </Box>
-        ))}
+        {INTENT_LEVELS.map((level, index) => {
+          const color = INTENT_COLORS[level];
+          const first = index === 0;
+          const last = index === INTENT_LEVELS.length - 1;
+          return (
+            <Box
+              key={level}
+              sx={{
+                flex: "1 1 0",
+                minWidth: 0,
+                boxSizing: "border-box",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                bgcolor: alpha(color, 0.2),
+                border: `1.5px solid ${color}`,
+                // neighbouring parts share one border line instead of doubling it
+                ml: first ? 0 : "-1.5px",
+                borderRadius: `${first ? radius : 0}px ${last ? radius : 0}px ${last ? radius : 0}px ${first ? radius : 0}px`,
+                color: "#fff",
+                fontSize: "0.68rem",
+                fontWeight: 700,
+                lineHeight: 1,
+              }}
+            >
+              {split[level].shown}%
+            </Box>
+          );
+        })}
       </Box>
     </Tooltip>
   );
