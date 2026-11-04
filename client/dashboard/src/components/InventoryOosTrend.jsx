@@ -188,7 +188,7 @@ function ProductFilter({ options, loading, selection, onChange }) {
   return (
     <Autocomplete
       size="small"
-      sx={{ width: { xs: "100%", sm: 360 } }}
+      sx={{ flex: "1 1 240px", minWidth: { xs: "100%", sm: 170 }, maxWidth: { sm: 360 }, flexShrink: "1 !important" }}
       options={listed}
       value={value}
       loading={loading}
@@ -342,8 +342,9 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
   return (
     <Card variant="outlined" sx={{ mt: 2 }}>
       <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ md: "center" }}>
-          <Box>
+        {/* Title on the left; the three controls stay on one row and move below the title when there is no room. */}
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "center", justifyContent: "space-between" }}>
+          <Box sx={{ flex: "1 1 240px", minWidth: 0 }}>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
               Out-of-stock trend
             </Typography>
@@ -351,7 +352,19 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
               When variants went out of stock and when they came back{timezone ? ` (${timezone})` : ""}.
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: { xs: "wrap", sm: "nowrap" },
+              gap: 1,
+              alignItems: "center",
+              justifyContent: "flex-end",
+              flex: { xs: "1 1 100%", sm: "0 1 auto" },
+              minWidth: 0,
+              maxWidth: "100%",
+              "& > *": { flexShrink: 0 },
+            }}
+          >
             <ProductFilter
               options={filterList.options}
               loading={filterList.loading}
@@ -379,8 +392,8 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
                 <MenuItem value="daily">Daily</MenuItem>
               </Select>
             </FormControl>
-          </Stack>
-        </Stack>
+          </Box>
+        </Box>
 
         {state.status === "failed" ? (
           <Typography variant="body2" color="error">
