@@ -276,10 +276,13 @@ function ProductFilter({ options, loading, selection, onChange }) {
               "&:first-of-type": { borderTop: "none" },
             }}
           >
+            {/* followCursor: the bubble is placed from the mouse position, not from the row. Anchored to a row inside the
+                scrolling list it showed up hundreds of pixels away, over the inventory table. */}
             <Tooltip
-              arrow
+              followCursor
               enterDelay={250}
-              placement="top-start"
+              placement="bottom-start"
+              slotProps={{ popper: { modifiers: [{ name: "offset", options: { offset: [0, 16] } }] } }}
               title={
                 <Box>
                   <Typography variant="caption" sx={{ display: "block", fontWeight: 700 }}>
