@@ -176,7 +176,8 @@ function EpisodeList({ episodes, timezone }) {
 
 // Product / variant filter. `selection` is { productId, title, variantId?, variantLabel? } or null (all products).
 // Rows: a product (name, and how many variants or its SKU) followed by its variants, indented; counts and an
-// "out now" marker on the right. The list opens wider than the input so names are not cut off.
+// "out now" marker on the right. The list opens directly under the input at the same width (MUI default placement),
+// so it cannot drift away from it; long names are cut with an ellipsis and show in full on hover.
 function ProductFilter({ options, loading, selection, onChange }) {
   const theme = useTheme();
   const value = useMemo(() => optionForSelection(selection, options), [selection, options]);
@@ -187,7 +188,7 @@ function ProductFilter({ options, loading, selection, onChange }) {
   return (
     <Autocomplete
       size="small"
-      sx={{ width: { xs: "100%", sm: 300 } }}
+      sx={{ width: { xs: "100%", sm: 360 } }}
       options={listed}
       value={value}
       loading={loading}
@@ -209,7 +210,6 @@ function ProductFilter({ options, loading, selection, onChange }) {
         )
       }
       slotProps={{
-        popper: { placement: "bottom-end", style: { width: 440, maxWidth: "calc(100vw - 32px)" } },
         paper: {
           sx: {
             bgcolor: "background.paper",
@@ -221,7 +221,7 @@ function ProductFilter({ options, loading, selection, onChange }) {
             mt: 0.5,
           },
         },
-        listbox: { sx: { py: 0.5, maxHeight: 380 } },
+        listbox: { sx: { py: 0.5, maxHeight: 300 } },
       }}
       renderInput={(params) => <TextField {...params} placeholder="All products and variants" />}
       renderOption={(props, option) => {
