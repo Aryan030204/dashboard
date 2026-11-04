@@ -260,7 +260,7 @@ function ProductFilter({ options, loading, selection, onChange }) {
             </Box>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
               {option.outNow ? (
-                <Chip size="small" color="warning" variant="outlined" label="out now" sx={{ height: 20, fontSize: 11 }} />
+                <Chip size="small" color="warning" variant="outlined" label="OOS" sx={{ height: 20, fontSize: 11 }} />
               ) : null}
               {option.count > 0 ? (
                 <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, textAlign: "right" }}>
