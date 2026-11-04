@@ -308,16 +308,36 @@ function ProductFilter({ options, loading, selection, onChange }) {
                 ) : null}
               </Box>
             </Tooltip>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
-              {option.outNow ? (
-                <Chip size="small" color="warning" variant="outlined" label="OOS" sx={{ height: 20, fontSize: 11 }} />
-              ) : null}
-              {option.count > 0 ? (
-                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, textAlign: "right" }}>
-                  {nfInt.format(option.count)}x
-                </Typography>
-              ) : null}
-            </Stack>
+            {/* Two fixed slots on the right, empty or not, so the OOS tag and the count line up in every row. */}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0, alignSelf: "center" }}>
+              <Box sx={{ width: 40, display: "flex", justifyContent: "flex-end" }}>
+                {option.outNow ? (
+                  <Box
+                    component="span"
+                    sx={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      height: 18,
+                      px: 0.75,
+                      borderRadius: "9px",
+                      border: "1px solid",
+                      borderColor: "warning.main",
+                      color: "warning.main",
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      letterSpacing: 0.3,
+                      lineHeight: 1,
+                    }}
+                  >
+                    OOS
+                  </Box>
+                ) : null}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ width: 30, textAlign: "right", lineHeight: 1 }}>
+                {option.count > 0 ? `${nfInt.format(option.count)}x` : ""}
+              </Typography>
+            </Box>
           </Box>
         );
       }}
