@@ -298,9 +298,39 @@ function ProductFilter({ options, loading, selection, onChange }) {
               }
             >
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="body2" noWrap sx={{ fontWeight: isVariant ? 400 : 600, fontSize: isVariant ? 13 : 14 }}>
-                  {option.label}
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0 }}>
+                  <Typography
+                    variant="body2"
+                    noWrap
+                    sx={{ minWidth: 0, fontWeight: isVariant ? 400 : 600, fontSize: isVariant ? 13 : 14 }}
+                  >
+                    {option.label}
+                  </Typography>
+                  {/* The OOS tag sits right after the name; the name is what gets cut when space is short. */}
+                  {option.outNow ? (
+                    <Box
+                      component="span"
+                      sx={{
+                        flexShrink: 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        height: 18,
+                        px: 0.75,
+                        borderRadius: "9px",
+                        border: "1px solid",
+                        borderColor: "warning.main",
+                        color: "warning.main",
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        letterSpacing: 0.3,
+                        lineHeight: 1,
+                      }}
+                    >
+                      OOS
+                    </Box>
+                  ) : null}
+                </Box>
                 {option.subtitle ? (
                   <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
                     {option.subtitle}
@@ -308,36 +338,14 @@ function ProductFilter({ options, loading, selection, onChange }) {
                 ) : null}
               </Box>
             </Tooltip>
-            {/* Two fixed slots on the right, empty or not, so the OOS tag and the count line up in every row. */}
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0, alignSelf: "center" }}>
-              <Box sx={{ width: 40, display: "flex", justifyContent: "flex-end" }}>
-                {option.outNow ? (
-                  <Box
-                    component="span"
-                    sx={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      height: 18,
-                      px: 0.75,
-                      borderRadius: "9px",
-                      border: "1px solid",
-                      borderColor: "warning.main",
-                      color: "warning.main",
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      letterSpacing: 0.3,
-                      lineHeight: 1,
-                    }}
-                  >
-                    OOS
-                  </Box>
-                ) : null}
-              </Box>
-              <Typography variant="caption" color="text.secondary" sx={{ width: 30, textAlign: "right", lineHeight: 1 }}>
-                {option.count > 0 ? `${nfInt.format(option.count)}x` : ""}
-              </Typography>
-            </Box>
+            {/* The count has a fixed column on the right so the numbers line up in every row. */}
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ width: 30, flexShrink: 0, textAlign: "right", lineHeight: 1, alignSelf: "center" }}
+            >
+              {option.count > 0 ? `${nfInt.format(option.count)}x` : ""}
+            </Typography>
           </Box>
         );
       }}
