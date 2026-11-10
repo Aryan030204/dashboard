@@ -1560,12 +1560,14 @@ export async function getWebVitalsTrend(args = {}) {
       start: args.start,
       end: args.end,
       granularity: args.granularity || "daily",
+      url: args.url || undefined,
     },
     args,
   );
   const json = await getJSON("/web-vitals/trend", params);
   return {
     granularity: json?.granularity || "daily",
+    url: json?.url || null,
     points: Array.isArray(json?.points) ? json.points : [],
     error: json?.__error,
   };

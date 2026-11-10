@@ -146,3 +146,44 @@ export function buildPageRowsFromPagespeed(results) {
   });
   return rows.sort((a, b) => (a.performance ?? Infinity) - (b.performance ?? Infinity));
 }
+
+// ---- Daily Trend: which metric, which page ---------------------------------------------------------------------
+
+// The pages offered in the Daily Trend's page select, one per URL of the table rows, in the table's order. The id
+// is the row's URL (what the trend endpoint is asked for); the label is the page name, else the URL's path.
+export function pageOptionsFromRows(rows) {
+  const seen = new Set();
+  const options = [];
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const url = row?.url;
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    let label = row.page_name ? String(row.page_name) : "";
+    if (!label) {
+      try {
+        label = new URL(normalizeWebVitalsUrl(url)).pathname || url;
+      } catch {
+        label = String(url);
+      }
+    }
+    options.push({ url, label });
+  });
+  return options;
+}
+
+// Y axis for a metric's daily trend: the 0-100 score is fixed; the others start at 0 and end a little above the
+// largest value shown (never a flat axis for an all-zero series).
+export function trendAxis(metricId, values) {
+  if (metricId === "performance") return { domain: [0, 100] };
+  const numbers = (Array.isArray(values) ? values : []).filter((v) => v !== null && v !== undefined && Number.isFinite(Number(v))).map(Number);
+  const max = numbers.length ? Math.max(...numbers) : 0;
+  if (max <= 0) return { domain: [0, metricId === "cls" ? 0.1 : 1] };
+  return { domain: [0, Number((max * 1.15).toPrecision(2))] };
+}
+
+// "Daily Trend (LCP)" for the brand, "Daily Trend (LCP) - perfume" for one page.
+export function trendTitle(metricId, pageLabel) {
+  const def = METRIC_DEFS[metricId] || METRIC_DEFS.performance;
+  const metric = metricId === "performance" ? def.label : def.shortLabel;
+  return pageLabel ? `Daily Trend (${metric}) - ${pageLabel}` : `Daily Trend (${metric})`;
+}
