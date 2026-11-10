@@ -4,7 +4,7 @@ const { ensureLogger, stopwatch } = require("../logger");
 
 // Every method that is reachable from a request takes the brand key and puts it in the WHERE
 // clause. A report id alone never grants access (PRD section 9 / SEC-3).
-const REPORT_COLUMNS = `id, brand_key, title, reporting_week, version, source_type, source_size_bytes, status,
+const REPORT_COLUMNS = `id, brand_key, title, reporting_week, description, version, source_type, source_size_bytes, status,
   stage, slide_count, slides_total, slides_done, error_code, error_detail, uploaded_by, published_by,
   uploaded_at, published_at, created_at, updated_at`;
 
@@ -61,7 +61,7 @@ function buildReportsRepo(pool, { logger } = {}) {
     // "locked" so the worker does not claim it while the source file is still uploading to S3.
     // A per-brand named lock serialises this so two uploads at once cannot take the same title or
     // version; it is released only AFTER the commit so the next upload sees this one.
-    async createReport({ brandKey, title, reportingWeek, sourceType, uploadedBy }) {
+    async createReport({ brandKey, title, reportingWeek, description = null, sourceType, uploadedBy }) {
       const elapsed = stopwatch();
       const conn = await pool.getConnection();
       const lockName = `wr:create:${brandKey}`;
@@ -84,9 +84,9 @@ function buildReportsRepo(pool, { logger } = {}) {
           const version = Number(rows[0].next);
           const [res] = await conn.query(
             `INSERT INTO weekly_reports
-               (brand_key, title, reporting_week, version, source_type, status, locked_at, locked_by, uploaded_by)
-             VALUES (?, ?, ?, ?, ?, 'PROCESSING', UTC_TIMESTAMP(), 'upload', ?)`,
-            [brandKey, finalTitle, reportingWeek, version, sourceType, uploadedBy],
+               (brand_key, title, reporting_week, description, version, source_type, status, locked_at, locked_by, uploaded_by)
+             VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', UTC_TIMESTAMP(), 'upload', ?)`,
+            [brandKey, finalTitle, reportingWeek, description || null, version, sourceType, uploadedBy],
           );
           await conn.commit();
           log.info("report row created", {
@@ -230,6 +230,23 @@ function buildReportsRepo(pool, { logger } = {}) {
       });
     },
 
+    // Author-only edit of the description. The brand is in the WHERE clause like every other write.
+    async updateDescription(id, brandKey, description) {
+      const [res] = await pool.query(
+        "UPDATE weekly_reports SET description = ? WHERE id = ? AND brand_key = ? AND deleted_at IS NULL",
+        [description || null, id, brandKey],
+      );
+      if (!res.affectedRows) {
+        // MySQL reports 0 affected rows when the value is unchanged, so confirm the report exists.
+        const [rows] = await pool.query(
+          "SELECT 1 FROM weekly_reports WHERE id = ? AND brand_key = ? AND deleted_at IS NULL",
+          [id, brandKey],
+        );
+        if (!rows.length) throw httpError(404, "NOT_FOUND", "Report not found.");
+      }
+      log.info("report description updated", { report: id, brand: brandKey, words: description ? description.split(/\s+/).length : 0 });
+    },
+
     async markPurged(id) {
       log.debug("files marked as removed", { report: id });
       await pool.query("UPDATE weekly_reports SET storage_purged_at = UTC_TIMESTAMP() WHERE id = ?", [id]);
@@ -263,7 +280,12 @@ function buildReportsRepo(pool, { logger } = {}) {
         else {
           log.error("schema check FAILED: weekly_reports.source_type does not accept 'pdf'. Apply migrations/004-allow-pdf-source.sql, otherwise PDF uploads are stored with an empty type", { type });
         }
-        return { ok: pdfAllowed, type };
+        const [descRows] = await pool.query("SHOW COLUMNS FROM weekly_reports LIKE 'description'");
+        const descriptionOk = descRows.length > 0;
+        if (!descriptionOk) {
+          log.error("schema check FAILED: weekly_reports.description is missing. Apply migrations/005-add-description.sql, otherwise listing and uploading reports will fail");
+        }
+        return { ok: pdfAllowed && descriptionOk, type };
       } catch (err) {
         log.error("schema check could not run", { error: err });
         return { ok: false, type: null };

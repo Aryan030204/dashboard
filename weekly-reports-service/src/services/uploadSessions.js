@@ -75,7 +75,7 @@ function buildUploadSessions({ config, now = () => Date.now(), logger } = {}) {
     return removed;
   }
 
-  async function create({ brandKey, userId, filename, size, title, reportingWeek }) {
+  async function create({ brandKey, userId, filename, size, title, reportingWeek, description = null }) {
     await sweep();
     if (!extensionOf(filename)) throw httpError(415, "UNSUPPORTED_FILE_TYPE", UNSUPPORTED_TYPE_MESSAGE);
     if (!Number.isInteger(size) || size <= 0) throw httpError(422, "CORRUPT_FILE", "The file is empty.");
@@ -93,7 +93,7 @@ function buildUploadSessions({ config, now = () => Date.now(), logger } = {}) {
     const filePath = path.join(dir, "data");
     await fs.promises.writeFile(filePath, "");
     const session = {
-      id, dir, filePath, brandKey, userId, filename, size, title, reportingWeek,
+      id, dir, filePath, brandKey, userId, filename, size, title, reportingWeek, description,
       received: 0, nextIndex: 0, last: null, touchedAt: now(), queue: Promise.resolve(),
     };
     sessions.set(id, session);

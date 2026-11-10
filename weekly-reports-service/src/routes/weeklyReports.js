@@ -24,6 +24,18 @@ const createSchema = z.object({
   reporting_week: z.string().trim().min(1, "Reporting week is required.").max(40, "Reporting week is too long (40 characters max)."),
 });
 
+// Optional, author-only. At most MAX_DESCRIPTION_WORDS words (and a character safety cap); blank -> null.
+const MAX_DESCRIPTION_WORDS = 250;
+const MAX_DESCRIPTION_CHARS = 3000;
+const wordCount = (text) => (text.match(/\S+/g) || []).length;
+const descriptionSchema = z
+  .string({ invalid_type_error: "Description must be text." })
+  .trim()
+  .max(MAX_DESCRIPTION_CHARS, `Description is too long (${MAX_DESCRIPTION_WORDS} words max).`)
+  .refine((text) => wordCount(text) <= MAX_DESCRIPTION_WORDS, `Description is too long (${MAX_DESCRIPTION_WORDS} words max).`)
+  .nullish()
+  .transform((text) => text || null);
+
 // What a client may ever see: no storage keys, no error detail, no internal user ids, no history.
 function clientDto(r) {
   return {
@@ -43,6 +55,7 @@ function managerDto(r) {
     brand_key: r.brand_key,
     title: r.title,
     reporting_week: r.reporting_week,
+    description: r.description || null, // author-only: clientDto must never include this
     version: Number(r.version),
     status: r.status,
     stage: r.stage || null,
@@ -233,14 +246,16 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, logger, sessio
   // Everything that happens to a fully received file, whichever way it arrived (one multipart request
   // or assembled from chunks): check its real content, create the next version, store the source in S3
   // and hand it to the worker.
-  async function ingestUpload({ principal, filePath, originalName, sizeBytes, title, reportingWeek, reqId }) {
+  async function ingestUpload({ principal, filePath, originalName, sizeBytes, title, reportingWeek, description, reqId }) {
     const total = stopwatch();
     const { brand_key: brand, user_id: userId } = principal;
     const ctx = { req: reqId, brand, user: userId };
     log.info("ingest step 1/5: upload received, checking the form fields", { ...ctx, file: originalName, sizeBytes, title, reportingWeek });
     let fields;
+    let cleanDescription;
     try {
       fields = createSchema.parse({ title, reporting_week: reportingWeek });
+      cleanDescription = descriptionSchema.parse(description);
     } catch (err) {
       log.warn("ingest stopped: the title or reporting week is not valid", { ...ctx, file: originalName, issues: err && err.issues && err.issues.map((i) => `${i.path.join(".")}: ${i.message}`) });
       throw err;
@@ -262,6 +277,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, logger, sessio
       brandKey: brand,
       title: fields.title,
       reportingWeek: fields.reporting_week,
+      description: cleanDescription,
       sourceType: info.ext,
       uploadedBy: userId,
     });
@@ -313,6 +329,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, logger, sessio
         sizeBytes: file.size,
         title: req.body.title,
         reportingWeek: req.body.reporting_week,
+        description: req.body.description,
         reqId: req.reqId,
       });
       res.status(202).json(body);
@@ -337,6 +354,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, logger, sessio
     size: z.number({ invalid_type_error: "The file size is required." }).int().positive("The file is empty."),
     title: createSchema.shape.title,
     reporting_week: createSchema.shape.reporting_week,
+    description: descriptionSchema,
   });
 
   router.post("/uploads", requireAuthor, brandGuard, async (req, res, next) => {
@@ -345,7 +363,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, logger, sessio
       const { brand_key: brandKey, user_id: userId } = req.principal;
       log.info("chunked upload requested", { req: req.reqId, brand: brandKey, user: userId, file: body.filename, size: body.size, title: body.title, reportingWeek: body.reporting_week });
       const { session, chunkSize, totalChunks } = await sessions.create({
-        brandKey, userId, filename: body.filename, size: body.size, title: body.title, reportingWeek: body.reporting_week,
+        brandKey, userId, filename: body.filename, size: body.size, title: body.title, reportingWeek: body.reporting_week, description: body.description,
       });
       res.status(201).json({ upload_id: session.id, chunk_size: chunkSize, total_chunks: totalChunks });
     } catch (err) {
@@ -395,6 +413,7 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, logger, sessio
         sizeBytes: session.size,
         title: session.title,
         reportingWeek: session.reportingWeek,
+        description: session.description,
         reqId: req.reqId,
       });
       // The temporary copy is deleted BEFORE answering, so it is already gone when the client sees 202.
@@ -426,6 +445,28 @@ function buildWeeklyReportsRouter({ config, repo, storage, audit, logger, sessio
       log.info("publish requested", { req: req.reqId, report: report.id, brand, user: userId, status: report.status });
       await repo.publish(report.id, brand, userId);
       await audit.record({ brandKey: brand, reportId: report.id, userId, action: A.PUBLISHED, metadata: { version: report.version } });
+      res.json(managerDto(await repo.findById(report.id)));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Author-only: set or change the description of a presentation (any non-deleted status).
+  router.post("/:id/description", requireAuthor, brandGuard, async (req, res, next) => {
+    try {
+      const report = await loadAuthorizedReport(req);
+      const { brand_key: brand, user_id: userId } = req.principal;
+      const body = req.body || {};
+      if (!Object.prototype.hasOwnProperty.call(body, "description")) {
+        throw httpError(400, "DESCRIPTION_REQUIRED", "Send the description (an empty string clears it).");
+      }
+      const description = descriptionSchema.parse(body.description);
+      log.info("description update requested", { req: req.reqId, report: report.id, brand, user: userId, words: description ? wordCount(description) : 0 });
+      await repo.updateDescription(report.id, brand, description);
+      await audit.record({
+        brandKey: brand, reportId: report.id, userId, action: A.DESCRIPTION_UPDATED,
+        metadata: { words: description ? wordCount(description) : 0 },
+      });
       res.json(managerDto(await repo.findById(report.id)));
     } catch (err) {
       next(err);
