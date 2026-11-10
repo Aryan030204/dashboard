@@ -284,7 +284,7 @@ export default function UploadCard({ brandKey, onUploaded }) {
 
       <TextField
         label="Description (optional)"
-        placeholder="Add a short note about this presentation (up to 100 words). Only authors can see it."
+        placeholder="Add a short note about this presentation (up to 250 words). Only authors can see it."
         size="small"
         fullWidth
         multiline
