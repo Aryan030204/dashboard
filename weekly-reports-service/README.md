@@ -58,6 +58,14 @@ therefore uploads in chunks and the service assembles them:
 - **`UPLOAD_CHUNK_BYTES` must stay well under 4.5 MB** (default 3 MiB) as long as uploads go through Vercel.
 - The single-request `POST /weekly-reports` (multipart) still exists for direct API use.
 
+## Description (author-only)
+
+Each presentation can carry an optional description of at most 100 words (`weekly_reports.description`, migration 005).
+It is sent with the upload (`description` in `POST /uploads` or the multipart form) and can be changed later with
+`POST /weekly-reports/:id/description` `{description}` (an empty string clears it). Both are elevated-role only.
+It is returned only by the manager view (`managerDto`); `clientDto` never includes it, so users with
+`weekly_report_preview` cannot read it. The text is never written to the logs (only its word count).
+
 ## Duplicate titles and weeks
 
 Both are warnings, never errors. The upload form asks `GET /weekly-reports/check` first.
@@ -87,7 +95,7 @@ Both are warnings, never errors. The upload form asks `GET /weekly-reports/check
 1. Create a **private** S3 bucket (Block Public Access on, default encryption on) and give the host's
    IAM role Get/Put/Delete on that bucket only. Set `WEEKLY_REPORTS_BUCKET`.
 2. Apply `migrations/001-create-weekly-reports.sql`, `002-add-progress-columns.sql`,
-   `003-add-storage-purge.sql` and `004-allow-pdf-source.sql` (once each, in that order) to the central
+   `003-add-storage-purge.sql`, `004-allow-pdf-source.sql` and `005-add-description.sql` (once each, in that order) to the central
    MySQL 8 database (needs `FOR UPDATE SKIP LOCKED`).
 3. Copy `.env.example` to `.env` and fill `WR_DB_*`, `WEEKLY_REPORTS_BUCKET`, `GATEWAY_SHARED_SECRET`.
 4. Optional: put brand fonts used in decks into `fonts/` before building the worker image.

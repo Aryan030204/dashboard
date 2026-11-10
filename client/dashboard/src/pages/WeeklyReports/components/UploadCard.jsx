@@ -20,11 +20,14 @@ import {
 } from "../../../lib/api.js";
 import {
   ACCEPT_ATTRIBUTE,
+  MAX_DESCRIPTION_WORDS,
   MAX_TITLE_LENGTH,
   MAX_WEEK,
   MIN_WEEK,
+  countWords,
   formatFileSize,
   isValidWeek,
+  limitWords,
   titleFromFileName,
   validatePresentationFile,
 } from "../weeklyReportsFormat.js";
@@ -38,6 +41,7 @@ export default function UploadCard({ brandKey, onUploaded }) {
   const [fileError, setFileError] = useState("");
   const [title, setTitle] = useState("");
   const [week, setWeek] = useState("");
+  const [description, setDescription] = useState("");
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -96,6 +100,7 @@ export default function UploadCard({ brandKey, onUploaded }) {
     setFileError("");
     setTitle("");
     setWeek("");
+    setDescription("");
     setProgress(0);
     titleTouchedRef.current = false;
   };
@@ -110,6 +115,7 @@ export default function UploadCard({ brandKey, onUploaded }) {
       file,
       title: title.trim(),
       reportingWeek: week.trim(),
+      description: description.trim(),
       onProgress: setProgress,
     });
     uploadRef.current = upload;
@@ -275,6 +281,21 @@ export default function UploadCard({ brandKey, onUploaded }) {
           sx={{ width: { xs: "100%", sm: 200 }, flexShrink: 0 }}
         />
       </Stack>
+
+      <TextField
+        label="Description (optional)"
+        placeholder="Add a short note about this presentation (up to 100 words). Only authors can see it."
+        size="small"
+        fullWidth
+        multiline
+        minRows={4}
+        maxRows={10}
+        value={description}
+        disabled={uploading}
+        onChange={(event) => setDescription(limitWords(event.target.value, MAX_DESCRIPTION_WORDS))}
+        helperText={`${countWords(description)} / ${MAX_DESCRIPTION_WORDS} words`}
+        sx={{ mt: 2 }}
+      />
 
       {existing?.title_exists && existing?.suggested_title && (
         <Alert severity="info" sx={{ mt: 1.5 }}>

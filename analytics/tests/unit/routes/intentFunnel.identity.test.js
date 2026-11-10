@@ -16,6 +16,7 @@ jest.mock("../../../modules/metrics/intentFunnelController", () => ({
   buildIntentFunnelController: jest.fn(() => ({
     getIntentFunnel: mockHandler,
     getSourceOverlap: mockHandler,
+    getTopProducts: mockHandler,
     getIntentReport: mockHandler,
     getPaths: mockHandler,
     getPathProducts: mockHandler,

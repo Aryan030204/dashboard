@@ -33,6 +33,7 @@ export async function chunkedUpload({
   file,
   title,
   reportingWeek,
+  description,
   send,
   onProgress,
   signal,
@@ -57,7 +58,14 @@ export async function chunkedUpload({
   const start = await send({
     method: "POST",
     path: "/uploads",
-    json: { filename: file.name, size: file.size, title, reporting_week: reportingWeek },
+    json: {
+      filename: file.name,
+      size: file.size,
+      title,
+      reporting_week: reportingWeek,
+      // Only sent when filled in, so a blank description is simply absent.
+      ...(description ? { description } : {}),
+    },
     signal,
   });
   if (wasAborted(start)) return cancelled;

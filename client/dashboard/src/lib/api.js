@@ -2074,6 +2074,13 @@ export async function unpublishWeeklyReport({ brandKey, id }) {
   return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/unpublish`, brandKey), {});
 }
 
+// Author-only. An empty string clears the description.
+export async function updateWeeklyReportDescription({ brandKey, id, description }) {
+  return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/description`, brandKey), {
+    description: description ?? "",
+  });
+}
+
 export async function cancelWeeklyReport({ brandKey, id }) {
   return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/cancel`, brandKey), {});
 }
@@ -2155,13 +2162,14 @@ function weeklyReportsUploadTransport(brandKey) {
 
 // Uploads a deck in small chunks (see lib/chunkedUpload.js for why). Returns { promise, abort }.
 // The promise resolves to { error, status, data, aborted }, as the single-request upload did.
-export function uploadWeeklyReport({ brandKey, file, title, reportingWeek, onProgress }) {
+export function uploadWeeklyReport({ brandKey, file, title, reportingWeek, description, onProgress }) {
   const controller = new AbortController();
 
   const promise = chunkedUpload({
     file,
     title,
     reportingWeek,
+    description,
     onProgress,
     signal: controller.signal,
     send: weeklyReportsUploadTransport(brandKey),

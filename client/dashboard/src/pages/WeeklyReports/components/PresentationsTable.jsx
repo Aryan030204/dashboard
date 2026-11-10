@@ -70,7 +70,7 @@ function StatusDetail({ report }) {
   );
 }
 
-function RowActions({ report, busy, onPreview, onAction }) {
+function RowActions({ report, busy, onPreview, onAction, onEditDescription }) {
   const { status } = report;
   const canPreview = hasSlides(report);
   return (
@@ -78,6 +78,11 @@ function RowActions({ report, busy, onPreview, onAction }) {
       {canPreview && (
         <Button size="small" variant="outlined" disabled={busy} onClick={() => onPreview(report)}>
           Preview
+        </Button>
+      )}
+      {onEditDescription && (
+        <Button size="small" variant="outlined" color="inherit" disabled={busy} onClick={() => onEditDescription(report)}>
+          {report.description ? "Edit note" : "Add note"}
         </Button>
       )}
       {(status === "READY" || status === "UNPUBLISHED") && (
@@ -135,6 +140,7 @@ export default function PresentationsTable({
   onRetry,
   onPreview,
   onAction,
+  onEditDescription,
 }) {
   return (
     <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 2 }}>
@@ -192,6 +198,24 @@ export default function PresentationsTable({
                       <Typography variant="caption" color="text.secondary">
                         {subline}
                       </Typography>
+                      {report.description && (
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          title={report.description}
+                          sx={{
+                            mt: 0.5,
+                            maxWidth: 520,
+                            whiteSpace: "pre-wrap",
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {report.description}
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell sx={{ verticalAlign: "top" }}>
                       <Chip size="small" label={meta.label} color={meta.color} variant="outlined" />
@@ -203,6 +227,7 @@ export default function PresentationsTable({
                         busy={busyId === report.id}
                         onPreview={onPreview}
                         onAction={onAction}
+                        onEditDescription={onEditDescription}
                       />
                     </TableCell>
                   </TableRow>
