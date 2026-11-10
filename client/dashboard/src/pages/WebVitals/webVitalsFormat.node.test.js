@@ -74,3 +74,33 @@ test("the shared fetch is called once for identical arguments", async () => {
   assert.equal(calls, 1);
   assert.equal(a, b);
 });
+
+import { pageOptionsFromRows, trendAxis, trendTitle } from "./webVitalsFormat.js";
+
+test("page options: one per URL in the table's order, labelled by name or path", () => {
+  const options = pageOptionsFromRows([
+    { url: "https://shop.example/products/a", page_name: "a page" },
+    { url: "https://shop.example/products/a", page_name: "dup" },
+    { url: "https://shop.example/shop.example/collections/all", page_name: "" },
+    { url: "", page_name: "no url" },
+  ]);
+  assert.deepEqual(options, [
+    { url: "https://shop.example/products/a", label: "a page" },
+    { url: "https://shop.example/shop.example/collections/all", label: "/collections/all" },
+  ]);
+  assert.deepEqual(pageOptionsFromRows(null), []);
+});
+
+test("trend axis: the score is 0-100, other metrics end just above their largest value, flat series stay readable", () => {
+  assert.deepEqual(trendAxis("performance", [10, 20]).domain, [0, 100]);
+  assert.deepEqual(trendAxis("lcp", [2, 4, null]).domain, [0, 4.6]);
+  assert.deepEqual(trendAxis("inp", [0, 0]).domain, [0, 1]);
+  assert.deepEqual(trendAxis("cls", []).domain, [0, 0.1]);
+  assert.ok(trendAxis("ttfb", [0.5]).domain[1] > 0.5);
+});
+
+test("trend title names the metric and the page", () => {
+  assert.equal(trendTitle("performance", null), "Daily Trend (Performance)");
+  assert.equal(trendTitle("lcp", null), "Daily Trend (LCP)");
+  assert.equal(trendTitle("lcp", "perfume"), "Daily Trend (LCP) - perfume");
+});
