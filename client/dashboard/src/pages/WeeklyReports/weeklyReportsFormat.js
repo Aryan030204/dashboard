@@ -15,7 +15,7 @@ export const UNSUPPORTED_FORMAT_MESSAGE =
 export const MAX_TITLE_LENGTH = 200;
 export const MIN_WEEK = 1;
 export const MAX_WEEK = 53;
-export const MAX_DESCRIPTION_WORDS = 100;
+export const MAX_DESCRIPTION_WORDS = 250;
 
 export function countWords(text) {
   return ((text ?? "").toString().match(/\S+/g) || []).length;
