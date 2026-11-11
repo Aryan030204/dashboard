@@ -1,6 +1,7 @@
 const { handleControllerError } = require("../shared/middleware/handleControllerError");
 const adsPerformanceService = require("../services/adsPerformance.service");
 const adsAlertRulesService = require("../services/adsAlertRules.service");
+const metaAdsCredentialsService = require("../services/metaAdsCredentials.service");
 const { triggerPnlBackfill } = require("../shared/utils/pipelineClient");
 
 function isoDaysAgo(days) {
