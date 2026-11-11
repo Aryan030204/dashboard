@@ -1297,8 +1297,20 @@ export default memo(function HourlySalesCompare({
                 : previousPerformanceMap.get(point.date);
           }
 
+          let comparisonLabel = null;
+          if (viewMode !== "hourly" && point.date) {
+            const dt = new Date(`${point.date}T00:00:00Z`);
+            if (!Number.isNaN(dt.getTime())) {
+              comparisonLabel =
+                viewMode === "monthly"
+                  ? MONTH_NAMES[dt.getUTCMonth()]
+                  : `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
+            }
+          }
+
           return {
             date: point.date || null,
+            label: comparisonLabel,
             metrics: hasPerformanceSelected || hasPaymentCompositeSelected
               ? {
                   ...(point.metrics || {}),
@@ -1315,6 +1327,7 @@ export default memo(function HourlySalesCompare({
           ? buildWeeklyBuckets(normalizedPoints, normalizedComparisonPoints)
           : normalizedPoints.map((point, index) => ({
               ...point,
+              comparisonLabel: normalizedComparisonPoints[index]?.label || null,
               comparisonMetrics:
                 normalizedComparisonPoints[index]?.metrics || null,
             }));
@@ -1368,12 +1381,19 @@ export default memo(function HourlySalesCompare({
     hasPaymentCompositeSelected,
   ]);
 
+  const showComparisonDates =
+    shouldShowCompare &&
+    visibleRangeLines.includes("comparison") &&
+    !visibleRangeLines.includes("primary");
+
   const processedChartData = useMemo(() => {
     if (selectedDefs.length === 0) return [];
 
     const mapped = chartData.map((point) => {
       const nextPoint = {
         label: point.label,
+        // X-axis text: when only the comparison range is toggled on, show its dates instead of the current range's.
+        axisLabel: showComparisonDates && point.comparisonLabel ? point.comparisonLabel : point.label,
         hour: point.hour,
         isInProgressHour: point.isInProgressHour,
       };
@@ -1441,7 +1461,7 @@ export default memo(function HourlySalesCompare({
     });
 
     return enriched;
-  }, [activeDef, chartData, selectedDefs, shouldShowCompare, viewMode]);
+  }, [activeDef, chartData, selectedDefs, shouldShowCompare, showComparisonDates, viewMode]);
 
   const showHourlyTail = useMemo(() => {
     if (viewMode !== "hourly" || processedChartData.length < 2) return false;
@@ -1816,7 +1836,7 @@ export default memo(function HourlySalesCompare({
                     stroke={alpha(theme.palette.divider, 0.5)}
                   />
                   <XAxis
-                    dataKey="label"
+                    dataKey="axisLabel"
                     tickLine={false}
                     axisLine={false}
                     tickMargin={12}
@@ -1956,7 +1976,7 @@ export default memo(function HourlySalesCompare({
                   stroke={alpha(theme.palette.divider, 0.5)}
                 />
                 <XAxis
-                  dataKey="label"
+                  dataKey="axisLabel"
                   tickLine={false}
                   axisLine={false}
                   tickMargin={12}
