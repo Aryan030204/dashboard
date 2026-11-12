@@ -1,4 +1,4 @@
-const { normalizeIntentBody, classifyClickSignals } = require("../services/intent/normalize");
+const { normalizeIntentBody, classifyClick } = require("../services/intent/normalize");
 const { toStoreLocalOccurredAt } = require("../services/intent/timezone");
 const { resolveProductId } = require("../services/intent/productResolution");
 const {
@@ -55,14 +55,11 @@ function buildIntentMessage(body, brand, brandTimezone) {
   };
 
   if (kind === "click") {
-    // One classification, computed here from what the pixel observed: the message carries the cleaned signals
-    // (including response_signals) and the bucket the intent pipeline counts.
-    const signals = classifyClickSignals(e.data.signals);
     return buildClickMessage({
       ...common,
       click: e.data.click,
-      signals,
-      click_bucket: signals.useful_click ? "useful_click" : "dead_click",
+      signals: e.data.signals,
+      click_bucket: classifyClick(e.data.signals),
       raw: e,
     });
   }
