@@ -29,6 +29,24 @@ function getConfig(env = process.env) {
       connectionLimit: toInt(env.WR_DB_POOL, 10),
     },
 
+    // Meeting Pointers: Fireflies connection config lives in MongoDB (optional: the feature is simply
+    // unavailable when WR_MONGO_URI is not set, Weekly Reports is unaffected).
+    mongo: {
+      uri: env.WR_MONGO_URI || "",
+      dbName: env.WR_MONGO_DB || "datum_meetings",
+    },
+
+    // Meeting Pointers: Fireflies import. The API key is stored AES-256-CBC encrypted; this server-side
+    // secret (32 bytes: 64 hex chars or base64) is the AES key and must never be stored next to it.
+    fireflies: {
+      encryptionKey: env.FIREFLIES_API_KEY_ENCRYPTION_KEY || "",
+      timeoutMs: toInt(env.FIREFLIES_TIMEOUT_MS, 15 * 1000),
+      maxAttempts: toInt(env.FIREFLIES_IMPORT_MAX_ATTEMPTS, 5),
+      retryBaseMs: toInt(env.FIREFLIES_RETRY_BASE_MS, 30 * 1000),
+      retryMaxMs: toInt(env.FIREFLIES_RETRY_MAX_MS, 15 * 60 * 1000),
+      staleMs: toInt(env.MEETING_IMPORT_STALE_MS, 5 * 60 * 1000),
+    },
+
     // Dedicated private bucket. Credentials come from the default AWS provider chain
     // (instance profile / env), never from this file.
     bucket: env.WEEKLY_REPORTS_BUCKET || "",

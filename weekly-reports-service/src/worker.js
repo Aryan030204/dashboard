@@ -10,6 +10,12 @@ const { buildProcessor } = require("./services/processor");
 const { buildPurger } = require("./services/purger");
 const { run } = require("./services/converter");
 const { createLogger } = require("./logger");
+const { connectMongo } = require("./db/mongo");
+const { buildMeetingRepo } = require("./services/meetingRepo");
+const { buildMeetingAudit } = require("./services/meetingAudit");
+const { buildFirefliesConnectionStore } = require("./services/firefliesConnectionStore");
+const { buildFirefliesClient } = require("./services/firefliesClient");
+const { buildMeetingImportService } = require("./services/meetingImportService");
 
 const log = createLogger("worker");
 
@@ -75,6 +81,19 @@ async function main() {
   const purger = buildPurger({ repo, storage, logger: log.child("purger") });
   const workerId = `${os.hostname()}:${process.pid}`;
 
+  // Meeting Pointers: Fireflies imports are claimed from MySQL like conversions. They are handled in their own
+  // try/catch below, so a Fireflies, Mongo or schema problem can never stop report conversions.
+  const meetingRepo = buildMeetingRepo(pool, { logger: log.child("meeting-repo") });
+  const meetings = buildMeetingImportService({
+    config,
+    repo: meetingRepo,
+    connections: buildFirefliesConnectionStore({ config }),
+    firefliesClient: buildFirefliesClient({ timeoutMs: config.fireflies.timeoutMs, logger: log.child("fireflies") }),
+    audit: buildMeetingAudit(pool, log.child("meeting-audit")),
+    logger: log.child("meeting-import"),
+  });
+  let meetingsPausedUntil = 0;
+
   let stopping = false;
   const stop = (signal) => {
     log.warn("stop requested, finishing the current job first", { signal });
@@ -89,6 +108,8 @@ async function main() {
   });
 
   await repo.checkSchema();
+  await meetingRepo.checkSchema();
+  connectMongo(config, log.child("mongo")).catch((err) => log.error("mongo connect failed", { error: err }));
   await logToolchain(config);
   log.info(`started as ${workerId}`, { workerId });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -107,6 +128,23 @@ async function main() {
       // Remove the S3 files of deleted/cancelled reports (retries anything the API could not finish).
       const swept = await purger.sweep(5);
       if (swept.purged) log.info("removed the files of deleted report(s)", swept);
+
+      // Fireflies imports first: they are short. A failure here (for example the migration is not applied yet) is
+      // logged once and the imports are paused for a minute; report conversions carry on regardless.
+      if (Date.now() >= meetingsPausedUntil) {
+        try {
+          await meetingRepo.recoverStale(config.fireflies.staleMs, config.fireflies.maxAttempts);
+          const importJob = await meetingRepo.claimNextImport(workerId);
+          if (importJob) {
+            const outcome = await meetings.processImport(importJob);
+            log.info("import processed", { import: importJob.id, brand: importJob.brandKey, status: outcome.status });
+            // No `continue`: one import per pass, then conversions get their turn, so neither starves the other.
+          }
+        } catch (err) {
+          meetingsPausedUntil = Date.now() + 60 * 1000;
+          log.error("meeting import polling failed (paused for 1 minute, conversions are not affected)", { error: err });
+        }
+      }
 
       const job = await repo.claimNext(workerId);
       if (job) {

@@ -66,6 +66,41 @@ It is sent with the upload (`description` in `POST /uploads` or the multipart fo
 It is returned only by the manager view (`managerDto`); `clientDto` never includes it, so users with
 `weekly_report_preview` cannot read it. The text is never written to the logs (only its word count).
 
+## Meeting Pointers (Fireflies import, Phase 1: backend only)
+
+Brings the action items of a Fireflies meeting into Datum, per brand, as raw "pointers". No UI yet, no Todoist, no
+Fireflies webhook, no AI. Served by this API under `/meeting-pointers` (gateway: `/meeting-pointers`, `/api/meeting-pointers`);
+imports run in the existing worker (`src/worker.js`), which claims `meeting_imports` rows like it claims conversions.
+
+```
+POST /meeting-pointers/import  {fireflies_url, brand_key}  -> 202 {import_id, status: "QUEUED"}
+GET  /meeting-pointers/imports/:id                         -> status, meeting_id, error_code, safe error_message
+GET  /meeting-pointers/meetings/:id                        -> meeting + its pointers (original_text kept verbatim)
+GET/POST /meeting-pointers/integrations/fireflies          -> connection status / save the Fireflies API key (never returned)
+```
+
+- **Permissions** (gateway-signed `x-permissions`): `meeting_pointers_manage` (import, import status), `meeting_pointers_view`
+  (read a meeting). Elevated roles pass these through the gateway's `all` permission. Saving or reading the Fireflies
+  connection needs role `admin`/`super_admin` or the explicit `meeting_integration_manage`; plain authors and `all` do not qualify.
+- **Brand**: the target `brand_key` is required and must equal the gateway-signed brand (400 `BRAND_MISMATCH` otherwise). Every
+  query is filtered by `brand_key`; another brand's import or meeting id answers 404.
+- **The Fireflies key** is stored in MongoDB (`fireflies_connections`) as AES-256-CBC ciphertext plus its IV (a fresh random IV
+  per encryption). The AES key is `FIREFLIES_API_KEY_ENCRYPTION_KEY` in the server environment only (32 bytes: 64 hex characters or
+  base64). The plaintext key is never stored, returned, logged or put in an audit record; it only exists in memory while one
+  Fireflies request is made. If the AES key is missing or invalid only `/meeting-pointers` is affected (503).
+- **URL safety**: only `https://app.fireflies.ai/view/<slug>::<id>` (or `/view/<id>`) is accepted and it is only parsed for its id.
+  The call always goes to the fixed `https://api.fireflies.ai/graphql`, never to a user-supplied address.
+- **States**: `QUEUED -> FETCHING -> IMPORTED`, or `NOT_FOUND`, `ACCESS_DENIED`, `DUPLICATE`, `FETCH_FAILED` (`INVALID_LINK` is in
+  the enum; a bad link is refused with 400 before any job exists). Retryable problems (rate limit, timeouts, 5xx, Mongo/MySQL
+  hiccups) go back to `QUEUED` with exponential backoff up to `FIREFLIES_IMPORT_MAX_ATTEMPTS`, then `FETCH_FAILED`.
+  A job left `FETCHING` by a crashed worker is requeued after `MEETING_IMPORT_STALE_MS`.
+- **Duplicates**: UNIQUE `(brand_key, fireflies_transcript_id)` on `meeting_records`, plus a UNIQUE on the active import of the
+  same meeting, so two simultaneous requests cannot both succeed. The same meeting may exist once per brand.
+- **Fireflies free plan limits** are small (docs: 30 requests/min, 500/day); an import makes exactly one request.
+- **Action items**: Fireflies returns `summary.action_items` as one text block. Phase 1 stores one pointer per line, verbatim
+  (`original_text`), skipping bold group headings. Who an item belongs to is not captured yet.
+- **Logs**: `docker logs weekly-reports-worker-main 2>&1 | grep '"import":<id>'` follows one import.
+
 ## Duplicate titles and weeks
 
 Both are warnings, never errors. The upload form asks `GET /weekly-reports/check` first.
@@ -95,7 +130,7 @@ Both are warnings, never errors. The upload form asks `GET /weekly-reports/check
 1. Create a **private** S3 bucket (Block Public Access on, default encryption on) and give the host's
    IAM role Get/Put/Delete on that bucket only. Set `WEEKLY_REPORTS_BUCKET`.
 2. Apply `migrations/001-create-weekly-reports.sql`, `002-add-progress-columns.sql`,
-   `003-add-storage-purge.sql`, `004-allow-pdf-source.sql` and `005-add-description.sql` (once each, in that order) to the central
+   `003-add-storage-purge.sql`, `004-allow-pdf-source.sql`, `005-add-description.sql` and (for Meeting Pointers) `006-create-meeting-pointers.sql` (once each, in that order) to the central
    MySQL 8 database (needs `FOR UPDATE SKIP LOCKED`).
 3. Copy `.env.example` to `.env` and fill `WR_DB_*`, `WEEKLY_REPORTS_BUCKET`, `GATEWAY_SHARED_SECRET`.
 4. Optional: put brand fonts used in decks into `fonts/` before building the worker image.

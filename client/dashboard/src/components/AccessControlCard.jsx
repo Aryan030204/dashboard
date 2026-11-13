@@ -126,6 +126,9 @@ const PERMISSION_OPTIONS = [
   "pnl_panel",
   "ads_panel",
   "weekly_report_preview",
+  "meeting_pointers_view",
+  "meeting_pointers_manage",
+  "meeting_integration_manage",
 ];
 
 const COLUMN_PERMISSIONS = [
@@ -208,6 +211,10 @@ const PERMISSION_CATEGORIES = [
   {
     label: "Product Table Filters",
     permissions: FILTER_PANEL_PERMISSIONS.map((p) => p.id),
+  },
+  {
+    label: "Meeting Pointers",
+    permissions: ["meeting_pointers_view", "meeting_pointers_manage", "meeting_integration_manage"],
   },
   {
     label: "Other",

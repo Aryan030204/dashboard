@@ -53,6 +53,10 @@ const ALL_PERMISSIONS = Object.freeze([
   "web_vitals_panel",
   "pnl_panel",
   "ads_panel",
+  // Meeting Pointers (Fireflies imports), served by weekly-reports-service.
+  "meeting_pointers_view",
+  "meeting_pointers_manage",
+  "meeting_integration_manage",
 ]);
 
 module.exports = { ALL_PERMISSIONS };

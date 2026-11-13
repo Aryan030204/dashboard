@@ -21,7 +21,7 @@ test("setup: apply the real migration", opts, async () => {
     password: env.WR_TEST_DB_PASSWORD, database: env.WR_TEST_DB_NAME, multipleStatements: true, timezone: "Z",
   });
   await pool.query("DROP TABLE IF EXISTS weekly_report_events, weekly_report_slides, weekly_reports");
-  for (const file of ["001-create-weekly-reports.sql", "002-add-progress-columns.sql", "003-add-storage-purge.sql", "004-allow-pdf-source.sql"]) {
+  for (const file of ["001-create-weekly-reports.sql", "002-add-progress-columns.sql", "003-add-storage-purge.sql", "004-allow-pdf-source.sql", "005-add-description.sql"]) {
     await pool.query(fs.readFileSync(path.join(__dirname, "..", "migrations", file), "utf8"));
   }
   repo = buildReportsRepo(pool);

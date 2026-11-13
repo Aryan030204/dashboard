@@ -8,6 +8,12 @@ const { buildAudit } = require("./services/audit");
 const { buildUploadSessions } = require("./services/uploadSessions");
 const { buildApp } = require("./app");
 const { createLogger } = require("./logger");
+const { connectMongo } = require("./db/mongo");
+const { buildMeetingRepo } = require("./services/meetingRepo");
+const { buildMeetingAudit } = require("./services/meetingAudit");
+const { buildFirefliesConnectionStore } = require("./services/firefliesConnectionStore");
+const { buildFirefliesClient } = require("./services/firefliesClient");
+const { buildMeetingImportService } = require("./services/meetingImportService");
 
 const log = createLogger("api");
 
@@ -57,6 +63,20 @@ function start() {
   const sessions = buildUploadSessions({ config, logger: log.child("sessions") });
   const repo = buildReportsRepo(pool, { logger: log.child("repo") });
   repo.checkSchema();
+
+  // Meeting Pointers (Fireflies). A Mongo or schema problem only affects /meeting-pointers, never Weekly Reports.
+  const meetingRepo = buildMeetingRepo(pool, { logger: log.child("meeting-repo") });
+  meetingRepo.checkSchema();
+  connectMongo(config, log.child("mongo")).catch((err) => log.error("mongo connect failed", { error: err }));
+  const meetings = buildMeetingImportService({
+    config,
+    repo: meetingRepo,
+    connections: buildFirefliesConnectionStore({ config }),
+    firefliesClient: buildFirefliesClient({ timeoutMs: config.fireflies.timeoutMs, logger: log.child("fireflies") }),
+    audit: buildMeetingAudit(pool, log.child("meeting-audit")),
+    logger: log.child("meeting-import"),
+  });
+
   const app = buildApp({
     config,
     repo,
@@ -64,6 +84,7 @@ function start() {
     audit: buildAudit(pool, log.child("audit")),
     sessions,
     logger: log,
+    meetings,
   });
 
   // Idle uploads are dropped after UPLOAD_SESSION_TTL_MS; folders left by a previous run are removed once.

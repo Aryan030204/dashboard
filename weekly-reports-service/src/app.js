@@ -3,13 +3,14 @@ const cors = require("cors");
 const helmet = require("helmet");
 const { buildAuthMiddleware } = require("./middleware/auth");
 const { buildWeeklyReportsRouter } = require("./routes/weeklyReports");
+const { buildMeetingPointersRouter } = require("./routes/meetingPointers");
 const { HttpError } = require("./errors");
 const crypto = require("crypto");
 const { ensureLogger } = require("./logger");
 
 // Dependencies (repo, storage, audit) are injected so tests can run the real routes without
 // MySQL or S3.
-function buildApp({ config, repo, storage, audit, sessions, logger }) {
+function buildApp({ config, repo, storage, audit, sessions, logger, meetings }) {
   const log = ensureLogger(logger, "api");
   const router = buildWeeklyReportsRouter({ config, repo, storage, audit, sessions, logger: log.child("routes") });
 
@@ -59,6 +60,11 @@ function buildApp({ config, repo, storage, audit, sessions, logger }) {
   // Upload bodies are multipart (handled by multer in the router); JSON bodies stay small.
   app.use(express.json({ limit: "100kb" }));
   app.use("/weekly-reports", buildAuthMiddleware(config), router);
+  // Meeting Pointers (Fireflies import). Mounted only when its service is supplied, so Weekly Reports behaves exactly
+  // as before without it.
+  if (meetings) {
+    app.use("/meeting-pointers", buildAuthMiddleware(config), buildMeetingPointersRouter({ service: meetings, logger: log.child("meetings") }));
+  }
 
   app.use((err, req, res, _next) => {
     // Why a request failed, with who asked, before the answer is sent. The user only ever sees the safe message.

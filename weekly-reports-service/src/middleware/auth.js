@@ -72,10 +72,22 @@ function requireAuthor(req, res, next) {
   return next();
 }
 
+// Fireflies credential management: admin / super_admin by role, or an explicit meeting_integration_manage
+// grant. Plain authors and the catch-all "all" permission do NOT qualify (the key is shared company-wide).
+function requireIntegrationManage(req, res, next) {
+  const principal = req.principal;
+  if (!principal) return res.status(401).json({ error: "Unauthorized", code: "MISSING_IDENTITY" });
+  const allowed =
+    ["admin", "super_admin"].includes(principal.role) || principal.permissions.includes("meeting_integration_manage");
+  if (!allowed) return res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+  return next();
+}
+
 module.exports = {
   buildAuthMiddleware,
   principalFromGatewayHeaders,
   verifyGatewaySignature,
   requirePermission,
   requireAuthor,
+  requireIntegrationManage,
 };
