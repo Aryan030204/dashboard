@@ -24,7 +24,7 @@ export default function EditDescriptionDialog({ report, saving = false, onSave, 
           maxRows={12}
           margin="dense"
           label={report?.title ? `Description for "${report.title}"` : "Description"}
-          placeholder="Up to 100 words. Only authors can see it."
+          placeholder="Up to 250 words. Only authors can see it."
           value={value}
           disabled={saving}
           onChange={(event) => setValue(limitWords(event.target.value, MAX_DESCRIPTION_WORDS))}

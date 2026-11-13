@@ -60,7 +60,7 @@ therefore uploads in chunks and the service assembles them:
 
 ## Description (author-only)
 
-Each presentation can carry an optional description of at most 100 words (`weekly_reports.description`, migration 005).
+Each presentation can carry an optional description of at most 250 words (`weekly_reports.description`, migration 005).
 It is sent with the upload (`description` in `POST /uploads` or the multipart form) and can be changed later with
 `POST /weekly-reports/:id/description` `{description}` (an empty string clears it). Both are elevated-role only.
 It is returned only by the manager view (`managerDto`); `clientDto` never includes it, so users with

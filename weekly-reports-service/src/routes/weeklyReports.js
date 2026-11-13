@@ -25,8 +25,8 @@ const createSchema = z.object({
 });
 
 // Optional, author-only. At most MAX_DESCRIPTION_WORDS words (and a character safety cap); blank -> null.
-const MAX_DESCRIPTION_WORDS = 100;
-const MAX_DESCRIPTION_CHARS = 1500;
+const MAX_DESCRIPTION_WORDS = 250;
+const MAX_DESCRIPTION_CHARS = 3000;
 const wordCount = (text) => (text.match(/\S+/g) || []).length;
 const descriptionSchema = z
   .string({ invalid_type_error: "Description must be text." })

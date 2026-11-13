@@ -6,7 +6,7 @@ import { METRIC_DEFS, METRIC_ORDER, getStatusMeta } from "../webVitalsFormat.js"
 const GOOD_COLOR = "#10b981";
 const BAD_COLOR = "#ef4444";
 
-function KpiCard({ metricId, current, previous, loading }) {
+function KpiCard({ metricId, current, previous, loading, selected, onSelect }) {
   const def = METRIC_DEFS[metricId];
   const value = current?.value ?? null;
   const previousValue = previous?.value ?? null;
@@ -27,12 +27,29 @@ function KpiCard({ metricId, current, previous, loading }) {
   return (
     <Card
       variant="outlined"
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={`Show the ${def.label} trend`}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       sx={{
         p: 2,
         height: "100%",
         display: "flex",
         flexDirection: "column",
         gap: 0.75,
+        cursor: "pointer",
+        borderColor: selected ? GOOD_COLOR : undefined,
+        boxShadow: selected ? `0 0 0 1px ${GOOD_COLOR}, 0 0 14px rgba(16, 185, 129, 0.25)` : "none",
+        transition: "border-color 0.15s, box-shadow 0.15s",
+        "&:hover": { borderColor: selected ? GOOD_COLOR : "text.secondary" },
+        "&:focus-visible": { outline: `2px solid ${GOOD_COLOR}`, outlineOffset: 2 },
       }}
     >
       <Typography
@@ -97,7 +114,7 @@ function KpiCard({ metricId, current, previous, loading }) {
   );
 }
 
-export default function WebVitalsKpiRow({ snapshot, loading }) {
+export default function WebVitalsKpiRow({ snapshot, loading, selectedMetric = "performance", onSelectMetric = () => {} }) {
   const metrics = snapshot?.metrics || {};
   const previousMetrics = snapshot?.previousMetrics || {};
 
@@ -120,6 +137,8 @@ export default function WebVitalsKpiRow({ snapshot, loading }) {
           current={metrics[metricId]}
           previous={previousMetrics[metricId]}
           loading={loading}
+          selected={metricId === selectedMetric}
+          onSelect={() => onSelectMetric(metricId)}
         />
       ))}
     </Box>

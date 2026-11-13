@@ -1,4 +1,4 @@
-// The optional description (about 100 words) is author-only: stored on upload, editable by authors,
+// The optional description (about 250 words) is author-only: stored on upload, editable by authors,
 // and never present in anything a client can read.
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -35,10 +35,10 @@ test("the description is optional: omitted or blank is stored as null", async ()
   assert.equal(blank.body.description, null);
 });
 
-test("exactly 100 words is accepted, 101 is rejected", async () => {
+test("exactly 250 words is accepted, 251 is rejected", async () => {
   const ctx = makeApp();
-  assert.equal((await upload(ctx, { title: "A", description: words(100) })).status, 202);
-  const over = await upload(ctx, { title: "B", description: words(101) });
+  assert.equal((await upload(ctx, { title: "A", description: words(250) })).status, 202);
+  const over = await upload(ctx, { title: "B", description: words(251) });
   assert.equal(over.status, 400);
   assert.equal(ctx.repo._reports.length, 1, "a rejected description must not create a report");
 });
@@ -82,7 +82,7 @@ test("editing validates the word limit and requires the field", async () => {
   const ctx = makeApp();
   const row = ctx.repo.seed({ brand: "BBB", status: "READY" });
   const url = `/weekly-reports/${row.id}/description`;
-  assert.equal((await request(ctx.app).post(url).set(author("BBB")).send({ description: words(101) })).status, 400);
+  assert.equal((await request(ctx.app).post(url).set(author("BBB")).send({ description: words(251) })).status, 400);
   assert.equal((await request(ctx.app).post(url).set(author("BBB")).send({})).status, 400);
   assert.equal(row.description, null);
 });
@@ -118,6 +118,6 @@ test("chunked upload carries the description through to the report", async () =>
   assert.equal(done.body.description, "From chunks");
 
   const tooLong = await request(ctx.app).post("/weekly-reports/uploads").set(author("BBB"))
-    .send({ filename: "d.pptx", size: 10, title: "T", reporting_week: "1", description: words(101) });
+    .send({ filename: "d.pptx", size: 10, title: "T", reporting_week: "1", description: words(251) });
   assert.equal(tooLong.status, 400);
 });
