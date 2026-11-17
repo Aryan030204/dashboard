@@ -599,10 +599,31 @@ export function getPaymentShareLabel(def, metricValues = {}, selectedDefs = []) 
   return nfPercent1.format(Number(metricValues[def.id] || 0) / total);
 }
 
+// Change of `current` relative to the baseline (the comparison range). Null when there is nothing to compare
+// against; a zero baseline has no percentage, so it is reported as "new" instead of Infinity.
+function computeDelta(current, baseline) {
+  if (current == null || baseline == null) return null;
+  const cur = Number(current);
+  const base = Number(baseline);
+  if (!Number.isFinite(cur) || !Number.isFinite(base)) return null;
+  if (base === 0) return cur === 0 ? { pct: 0, direction: 0 } : { pct: null, direction: cur > 0 ? 1 : -1 };
+  const pct = ((cur - base) / Math.abs(base)) * 100;
+  return { pct, direction: Math.sign(pct) };
+}
+
+function formatDeltaPct(delta) {
+  if (!delta) return "";
+  if (delta.pct === null) return "new";
+  const rounded = Math.round(Math.abs(delta.pct) * 10) / 10;
+  if (rounded === 0) return "0.0%";
+  return `${delta.direction > 0 ? "+" : "-"}${rounded.toFixed(1)}%`;
+}
+
 function CustomTooltip({
   active,
   label,
   compareMode = false,
+  compareUnitKind = null,
   selectedDefs = [],
   rangeLabels,
   compareFormatter,
@@ -673,6 +694,51 @@ function CustomTooltip({
                 </Typography>
               </Box>
             )}
+          {/* Change for this point relative to the comparison range (the baseline). Needs both lines visible. */}
+          {visibleRangeLines.includes("primary") &&
+            visibleRangeLines.includes("comparison") &&
+            (() => {
+              const delta = computeDelta(currentValue, compareValue);
+              if (!delta) return null;
+              const color =
+                delta.direction > 0
+                  ? "#10b981"
+                  : delta.direction < 0
+                    ? "#ef4444"
+                    : "text.secondary";
+              // Percent metrics (e.g. conversion rate) also get the absolute gap in percentage points.
+              const points =
+                compareUnitKind === "percent" && delta.pct !== null
+                  ? (Number(currentValue) - Number(compareValue)) * 100
+                  : null;
+              return (
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    mt: 0.75,
+                    pt: 0.75,
+                    borderTop: "1px solid",
+                    borderColor: "divider",
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                    vs {rangeLabels.previous}
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, ml: "auto", color }}>
+                    {delta.direction > 0 ? "▲ " : delta.direction < 0 ? "▼ " : ""}
+                    {formatDeltaPct(delta)}
+                    {points !== null && Math.abs(points) >= 0.005 && (
+                      <Box component="span" sx={{ ml: 0.75, fontWeight: 500, color: "text.secondary" }}>
+                        ({points > 0 ? "+" : "-"}
+                        {Math.abs(points).toFixed(2)} pp)
+                      </Box>
+                    )}
+                  </Typography>
+                </Box>
+              );
+            })()}
         </>
       ) : (
         selectedDefs
@@ -1901,6 +1967,7 @@ export default memo(function HourlySalesCompare({
                           active={active}
                           label={label}
                           compareMode={shouldShowCompare}
+                          compareUnitKind={activeDef?.unitKind}
                           selectedDefs={selectedDefs}
                           rangeLabels={rangeLabels}
                           compareFormatter={
@@ -2051,6 +2118,7 @@ export default memo(function HourlySalesCompare({
                         active={active}
                         label={label}
                         compareMode={shouldShowCompare}
+                        compareUnitKind={activeDef?.unitKind}
                         selectedDefs={selectedDefs}
                         rangeLabels={rangeLabels}
                         compareFormatter={
