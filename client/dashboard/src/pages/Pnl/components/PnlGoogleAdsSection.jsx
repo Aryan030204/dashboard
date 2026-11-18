@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, Card, Chip, CircularProgress, Stack, TextField, Typography } from "@mui/material";
 import dayjs from "dayjs";
-import SearchableSelect from "../../../components/ui/SearchableSelect.jsx";
+import { Banner, Checklist, Field, Segmented, Skeleton, SourceCard } from "./pnlUi.jsx";
 import { syncNotice } from "../pnlFormat.js";
 import {
   connectGoogleAds,
@@ -46,9 +45,19 @@ function randomState() {
 // client secret, so it can never happen in the browser) and the token is
 // never sent back to this page. Pasting a refresh token directly stays as a
 // fallback for a brand that already has one.
-export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
+// `onStatusChange` / `openSignal`: see PnlMetaAdsSection.
+export default function PnlGoogleAdsSection({ brandKey, onConnectionChange, onStatusChange, openSignal }) {
   const [status, setStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    onStatusChange?.(status ? { connected: !!status.connected } : null);
+  }, [status, onStatusChange]);
+
+  useEffect(() => {
+    if (openSignal) setExpanded(true);
+  }, [openSignal]);
 
   const [connectMode, setConnectMode] = useState("oauth");
   const [connecting, setConnecting] = useState(false);
@@ -255,222 +264,205 @@ export default function PnlGoogleAdsSection({ brandKey, onConnectionChange }) {
     detail: describeAccount(account),
   }));
 
-  return (
-    <Card variant="outlined" sx={{ p: 2.5 }}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        alignItems={{ xs: "flex-start", sm: "center" }}
-        justifyContent="space-between"
-        spacing={1}
-        sx={{ mb: 2 }}
-      >
-        <Stack spacing={0.25}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Google Ads Integration
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Connect this brand&apos;s Google Ads account to pull real ad spend into the Google line above.
-          </Typography>
-        </Stack>
-        {status?.connected ? (
-          <Stack direction="row" spacing={0.75}>
-            <Chip label="Connected" size="small" color="success" />
-            {status.authMethod === "oauth" ? (
-              <Chip label="Google login" size="small" variant="outlined" />
-            ) : null}
-          </Stack>
-        ) : null}
-      </Stack>
+  const connected = !!status?.connected;
+  const connectedIds = connected
+    ? (status.customerIds?.length ? status.customerIds : [status.customerId]).filter(Boolean)
+    : [];
 
-      {loadingStatus ? (
-        <CircularProgress size={20} />
-      ) : pending ? (
-        <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
-          <Typography variant="body2" color="text.secondary">
-            Google login verified. Pick which of this brand&apos;s Google Ads account(s) to connect
-            {pickerForOtherBrand ? ` for brand ${pending.brandKey}` : ""}.
-          </Typography>
-          {pickerForOtherBrand ? (
-            <Alert severity="warning">
-              This connect was started for brand <strong>{pending.brandKey}</strong>, not the one currently
-              selected. Cancel and reconnect if that isn&apos;t what you want.
-            </Alert>
-          ) : null}
-          {connectError ? <Alert severity="error">{connectError}</Alert> : null}
-          {accounts.length > 0 ? (
-            <SearchableSelect
-              label="Ad accounts"
-              options={accountOptions}
-              value={customerIds}
-              onChange={setCustomerIds}
-              multiple
-              size="small"
-              sx={{ width: "100%" }}
-              selectSx={{ width: "100%" }}
-            />
-          ) : (
-            <>
-              {accountsListError ? (
-                <Alert severity="warning">
-                  Couldn&apos;t list your Google Ads accounts automatically ({accountsListError}). Type the
-                  customer id(s) below instead — separate multiple with a comma.
-                </Alert>
-              ) : null}
-              <TextField
-                size="small"
-                label="Customer id(s)"
+  const mccField = (
+    <Field label="Manager (MCC) customer id — optional" hint="Only if this account is reached through a manager account.">
+      <input
+        type="text"
+        placeholder="987-654-3210"
+        autoComplete="off"
+        value={loginCustomerId}
+        onChange={(event) => setLoginCustomerId(event.target.value)}
+      />
+    </Field>
+  );
+
+  let body;
+  if (loadingStatus) {
+    body = <Skeleton height={44} />;
+  } else if (pending) {
+    body = (
+      <div className="pnl-source-form">
+        <p className="pnl-source-detail">
+          Google login verified. Pick which of this brand&apos;s Google Ads account(s) to connect
+          {pickerForOtherBrand ? ` for brand ${pending.brandKey}` : ""}.
+        </p>
+        {pickerForOtherBrand ? (
+          <Banner>
+            This connect was started for brand <strong>{pending.brandKey}</strong>, not the one currently selected.
+            Cancel and reconnect if that isn&apos;t what you want.
+          </Banner>
+        ) : null}
+        {connectError ? <Banner tone="bad">{connectError}</Banner> : null}
+        {accounts.length > 0 ? (
+          <Checklist label="Ad accounts" options={accountOptions} value={customerIds} onChange={setCustomerIds} />
+        ) : (
+          <>
+            {accountsListError ? (
+              <Banner>
+                Couldn&apos;t list your Google Ads accounts automatically ({accountsListError}). Type the customer
+                id(s) below instead — separate multiple with a comma.
+              </Banner>
+            ) : null}
+            <Field
+              label="Customer id(s)"
+              hint="Shown at the top right of Google Ads. Dashes optional, comma-separate for more than one."
+            >
+              <input
+                type="text"
                 placeholder="123-456-7890, 987-654-3210"
+                autoComplete="off"
                 value={typedCustomerIds}
                 onChange={(event) => setTypedCustomerIds(event.target.value)}
-                helperText="Shown at the top right of Google Ads. Dashes optional, comma-separate for more than one."
-                autoComplete="off"
               />
-            </>
-          )}
-          <TextField
-            size="small"
-            label="Manager (MCC) customer id — optional"
-            placeholder="987-654-3210"
-            value={loginCustomerId}
-            onChange={(event) => setLoginCustomerId(event.target.value)}
-            helperText="Only if this account is reached through a manager account."
-            autoComplete="off"
-          />
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="contained"
-              size="small"
-              onClick={handleFinishOauthConnect}
-              disabled={saving || !canFinishOauth}
-            >
-              {saving ? "Connecting…" : "Connect this account"}
-            </Button>
-            <Button size="small" onClick={resetPending} disabled={saving}>
-              Cancel
-            </Button>
-          </Stack>
-        </Stack>
-      ) : status?.connected ? (
-        <Stack spacing={1}>
-          {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
-          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-            {(status.customerIds?.length ? status.customerIds : [status.customerId]).filter(Boolean).map((id) => (
-              <Chip key={id} label={formatCustomerId(id)} size="small" variant="outlined" />
-            ))}
-          </Stack>
-          <Typography variant="body2" color="text.secondary">
-            {status.loginCustomerId ? `Via manager ${formatCustomerId(status.loginCustomerId)}` : ""}
-            {status.loginCustomerId && status.tokenSuffix ? " · " : ""}
-            {status.tokenSuffix ? `Token ${status.tokenSuffix}` : ""}
-          </Typography>
-          {status.capturedAt ? (
-            <Typography variant="caption" color="text.secondary">
-              Saved {dayjs(status.capturedAt).format("MMM DD, YYYY HH:mm")}
-              {status.updatedByEmail ? ` by ${status.updatedByEmail}` : ""}
-            </Typography>
-          ) : null}
-          {status.lastError ? (
-            <Alert severity="warning">
-              Last spend sync failed: {status.lastError}. Reconnect if the token was revoked.
-            </Alert>
-          ) : null}
-          <Stack direction="row" spacing={1}>
-            <Button size="small" color="error" onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting ? "Disconnecting…" : "Disconnect"}
-            </Button>
-          </Stack>
-        </Stack>
-      ) : (
-        <Box>
-          <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
-            <Stack direction="row" spacing={1}>
-              <Button
-                size="small"
-                variant={connectMode === "oauth" ? "contained" : "outlined"}
-                onClick={() => {
-                  setConnectMode("oauth");
-                  setConnectError("");
-                }}
-              >
-                Google login
-              </Button>
-              <Button
-                size="small"
-                variant={connectMode === "manual" ? "contained" : "outlined"}
-                onClick={() => {
-                  setConnectMode("manual");
-                  setConnectError("");
-                }}
-              >
-                Refresh token
-              </Button>
-            </Stack>
-
-            {connectError ? <Alert severity="error">{connectError}</Alert> : null}
-            {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
-
+            </Field>
+          </>
+        )}
+        {mccField}
+        <div className="pnl-edit-actions">
+          <button
+            type="button"
+            className="pnl-btn"
+            onClick={handleFinishOauthConnect}
+            disabled={saving || !canFinishOauth}
+          >
+            {saving ? "Connecting…" : "Connect this account"}
+          </button>
+          <button type="button" className="pnl-ctl" onClick={resetPending} disabled={saving}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  } else if (connected) {
+    body = (
+      <>
+        {connectMessage ? <Banner tone="good">{connectMessage}</Banner> : null}
+        <p className="pnl-source-detail" style={{ flex: "1 1 auto" }}>
+          Customer ID{connectedIds.length > 1 ? "s" : ""}{" "}
+          <strong>{connectedIds.map(formatCustomerId).join(", ")}</strong>
+          {status.loginCustomerId ? `, via manager ${formatCustomerId(status.loginCustomerId)}` : ""}.
+          {status.authMethod === "oauth" ? " Connected with a Google login." : ""}
+          {status.tokenSuffix ? ` Token ${status.tokenSuffix}.` : ""}
+          {status.capturedAt
+            ? ` Saved ${dayjs(status.capturedAt).format("DD MMM YYYY, HH:mm")}${status.updatedByEmail ? ` by ${status.updatedByEmail}` : ""}.`
+            : ""}{" "}
+          Spend flows into the Google Ads line.
+        </p>
+        {status.lastError ? (
+          <Banner>Last spend sync failed: {status.lastError}. Reconnect if the token was revoked.</Banner>
+        ) : null}
+        <button
+          type="button"
+          className="pnl-ctl"
+          style={{ alignSelf: "flex-start" }}
+          onClick={handleDisconnect}
+          disabled={disconnecting}
+        >
+          {disconnecting ? "Disconnecting…" : "Disconnect"}
+        </button>
+      </>
+    );
+  } else {
+    body = (
+      <>
+        <p className="pnl-source-detail" style={{ flex: "1 1 auto" }}>
+          Sign in with the Google account that manages this brand&apos;s Ads account to pull spend into the Google
+          Ads line.
+        </p>
+        {connectError ? <Banner tone="bad">{connectError}</Banner> : null}
+        {connectMessage ? <Banner tone="good">{connectMessage}</Banner> : null}
+        {!expanded ? (
+          <button type="button" className="pnl-btn" style={{ alignSelf: "flex-start" }} onClick={() => setExpanded(true)}>
+            Connect Google Ads
+          </button>
+        ) : (
+          <div className="pnl-source-form">
+            <Segmented
+              label="How to connect Google Ads"
+              value={connectMode}
+              onChange={(mode) => {
+                setConnectMode(mode);
+                setConnectError("");
+              }}
+              options={[
+                { value: "oauth", label: "Google login" },
+                { value: "manual", label: "Refresh token" },
+              ]}
+            />
             {connectMode === "oauth" ? (
               <>
-                <Typography variant="body2" color="text.secondary">
-                  You&apos;ll be sent to Google to sign in with the account that has access to this brand&apos;s
-                  Ads account, then asked for the Customer ID. The refresh token from that login is stored
-                  encrypted and never shown again.
-                </Typography>
-                <Box>
-                  <Button variant="contained" size="small" onClick={handleConnectWithGoogle} disabled={connecting}>
+                <p className="pnl-source-detail">
+                  You&apos;ll be sent to Google to sign in with the account that has access to this brand&apos;s Ads
+                  account, then asked for the Customer ID. The refresh token from that login is stored encrypted and
+                  never shown again.
+                </p>
+                <div className="pnl-edit-actions">
+                  <button type="button" className="pnl-btn" onClick={handleConnectWithGoogle} disabled={connecting}>
                     {connecting ? "Working…" : "Connect with Google"}
-                  </Button>
-                </Box>
+                  </button>
+                  <button type="button" className="pnl-ctl" onClick={() => setExpanded(false)}>
+                    Cancel
+                  </button>
+                </div>
               </>
             ) : (
               <>
-                <Typography variant="body2" color="text.secondary">
-                  For a brand that already has a Google Ads refresh token: paste the customer id and token
-                  directly. Stored encrypted and never shown again.
-                </Typography>
-                <TextField
-                  size="small"
-                  label="Customer id"
-                  placeholder="123-456-7890"
-                  value={manualCustomerId}
-                  onChange={(event) => setManualCustomerId(event.target.value)}
-                  helperText="Shown at the top right of Google Ads. Dashes optional."
-                  autoComplete="off"
-                />
-                <TextField
-                  size="small"
-                  label="Manager (MCC) customer id — optional"
-                  placeholder="987-654-3210"
-                  value={loginCustomerId}
-                  onChange={(event) => setLoginCustomerId(event.target.value)}
-                  helperText="Only if this account is reached through a manager account."
-                  autoComplete="off"
-                />
-                <TextField
-                  size="small"
-                  label="Refresh token"
-                  type="password"
-                  value={manualToken}
-                  onChange={(event) => setManualToken(event.target.value)}
-                  autoComplete="off"
-                  multiline
-                  minRows={2}
-                />
-                <Box>
-                  <Button
-                    variant="contained"
-                    size="small"
+                <p className="pnl-source-detail">
+                  For a brand that already has a Google Ads refresh token: paste the customer id and token directly.
+                  Stored encrypted and never shown again.
+                </p>
+                <Field label="Customer id" hint="Shown at the top right of Google Ads. Dashes optional.">
+                  <input
+                    type="text"
+                    placeholder="123-456-7890"
+                    autoComplete="off"
+                    value={manualCustomerId}
+                    onChange={(event) => setManualCustomerId(event.target.value)}
+                  />
+                </Field>
+                {mccField}
+                <Field label="Refresh token">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={manualToken}
+                    onChange={(event) => setManualToken(event.target.value)}
+                  />
+                </Field>
+                <div className="pnl-edit-actions">
+                  <button
+                    type="button"
+                    className="pnl-btn"
                     onClick={handleManualSave}
                     disabled={saving || !canManualSave}
                   >
                     {saving ? "Saving…" : "Save token"}
-                  </Button>
-                </Box>
+                  </button>
+                  <button type="button" className="pnl-ctl" onClick={() => setExpanded(false)}>
+                    Cancel
+                  </button>
+                </div>
               </>
             )}
-          </Stack>
-        </Box>
-      )}
-    </Card>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <SourceCard
+      id="source-google"
+      name="Google Ads"
+      status={loadingStatus ? null : connected ? "Connected" : "Not connected"}
+      tone={connected ? "good" : "warn"}
+    >
+      {body}
+    </SourceCard>
   );
 }

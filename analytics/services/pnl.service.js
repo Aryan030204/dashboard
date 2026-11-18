@@ -117,10 +117,19 @@ function daysBetweenInclusive(start, end) {
   return Math.max(1, Math.round(diff / 86400000) + 1);
 }
 
+// Monthly ranges compare against the same number of whole calendar months
+// immediately before the range's first month (one month for a single-month
+// range, six for "last 6 months"). Daily ranges compare against the same
+// number of days immediately before.
 function computePreviousRange(start, end, granularity) {
   if (granularity === "monthly") {
     const s = parseDateUTC(start);
-    const prevMonthStart = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() - 1, 1));
+    const e = parseDateUTC(end);
+    const months = Math.max(
+      1,
+      (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + (e.getUTCMonth() - s.getUTCMonth()) + 1,
+    );
+    const prevMonthStart = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() - months, 1));
     const prevMonthEnd = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), 0));
     return [formatDateUTC(prevMonthStart), formatDateUTC(prevMonthEnd)];
   }
@@ -158,7 +167,10 @@ async function fetchPnlTotals({ conn, brandKey, start, end }) {
     throw error;
   }
 
-  const row = rows?.[0] || {};
+  return rowToTotals(rows?.[0] || {});
+}
+
+function rowToTotals(row) {
   const totals = {};
   for (const [col, field] of Object.entries(COLUMN_FIELD_MAP)) {
     totals[field] = round2(row[col] || 0);
@@ -350,8 +362,23 @@ function describeAdSpend(label, rollup, expectedDays) {
   };
 }
 
-async function getSummary({ brandKey, start, end, granularity = "daily", channel = null, productId = null, conn = null }) {
-  const [previousStart, previousEnd] = computePreviousRange(start, end, granularity);
+// `compareStart` / `compareEnd` override the previous range. The page passes
+// them when one bar of the trend chart is selected, so the statement compares
+// that day (or month) with the bar it was charted against rather than with
+// the day just before it.
+async function getSummary({
+  brandKey,
+  start,
+  end,
+  granularity = "daily",
+  channel = null,
+  productId = null,
+  compareStart = null,
+  compareEnd = null,
+  conn = null,
+}) {
+  const [previousStart, previousEnd] =
+    compareStart && compareEnd ? [compareStart, compareEnd] : computePreviousRange(start, end, granularity);
 
   const [currTotals, currAdSpend, prevTotals, prevAdSpend] = await Promise.all([
     fetchPnlTotals({ conn, brandKey, start, end }),
@@ -402,11 +429,144 @@ async function getSummary({ brandKey, start, end, granularity = "daily", channel
   };
 }
 
+// --- Series (trend chart + KPI sparklines) ---------------------------------
+
+const SERIES_FIELDS = ["netSales", "grossMargin", "cm1", "cm2", "cm3", "ebitda"];
+const BUCKET_FORMATS = { daily: "%Y-%m-%d", monthly: "%Y-%m" };
+
+// One bucket per day (daily) or calendar month (monthly) covering
+// [start, end]; a month bucket is clipped to the range at either edge.
+function enumerateBuckets(start, end, granularity) {
+  const buckets = [];
+  const first = parseDateUTC(start);
+  const last = parseDateUTC(end);
+  if (granularity === "monthly") {
+    let cursor = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1));
+    while (cursor <= last) {
+      const monthEnd = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0));
+      buckets.push({
+        key: formatDateUTC(cursor).slice(0, 7),
+        start: formatDateUTC(cursor < first ? first : cursor),
+        end: formatDateUTC(monthEnd > last ? last : monthEnd),
+      });
+      cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+    }
+    return buckets;
+  }
+  for (let cursor = first; cursor <= last; cursor = addDaysUTC(cursor, 1)) {
+    const day = formatDateUTC(cursor);
+    buckets.push({ key: day, start: day, end: day });
+  }
+  return buckets;
+}
+
+async function fetchPnlBuckets({ conn, brandKey, start, end, granularity }) {
+  if (!conn || !brandKey) return new Map();
+  const sums = Object.keys(COLUMN_FIELD_MAP)
+    .map((col) => `COALESCE(SUM(\`${col}\`), 0) AS \`${col}\``)
+    .join(",\n          ");
+  let rows;
+  try {
+    rows = await conn.query(
+      `
+        SELECT
+          DATE_FORMAT(\`date\`, '${BUCKET_FORMATS[granularity]}') AS bucket,
+          COUNT(*) AS day_count,
+          ${sums}
+        FROM \`${PNL_TABLE}\`
+        WHERE \`brand_key\` = ? AND \`date\` >= ? AND \`date\` <= ?
+        GROUP BY bucket
+      `,
+      { type: QueryTypes.SELECT, replacements: [String(brandKey).toUpperCase(), start, end] },
+    );
+  } catch (error) {
+    if (isMissingTableError(error)) return new Map();
+    throw error;
+  }
+  return new Map((rows || []).map((row) => [String(row.bucket), rowToTotals(row)]));
+}
+
+async function fetchAdSpendBuckets({ conn, start, end, granularity }) {
+  const entries = await Promise.all(
+    Object.entries(AD_SPEND_TABLES).map(async ([field, table]) => {
+      if (!conn) return [field, new Map()];
+      let rows;
+      try {
+        rows = await conn.query(
+          `
+            SELECT
+              DATE_FORMAT(\`date\`, '${BUCKET_FORMATS[granularity]}') AS bucket,
+              COUNT(*) AS day_count,
+              COALESCE(SUM(\`spend\`), 0) AS spend
+            FROM \`${table}\`
+            WHERE \`date\` >= ? AND \`date\` <= ?
+            GROUP BY bucket
+          `,
+          { type: QueryTypes.SELECT, replacements: [start, end] },
+        );
+      } catch (error) {
+        if (isMissingTableError(error)) return [field, new Map()];
+        throw error;
+      }
+      return [
+        field,
+        new Map(
+          (rows || []).map((row) => [
+            String(row.bucket),
+            { days: Number(row.day_count || 0), spend: round2(row.spend || 0) },
+          ]),
+        ),
+      ];
+    }),
+  );
+  return Object.fromEntries(entries);
+}
+
+async function buildSeries({ conn, brandKey, start, end, granularity }) {
+  const [pnl, adSpend] = await Promise.all([
+    fetchPnlBuckets({ conn, brandKey, start, end, granularity }),
+    fetchAdSpendBuckets({ conn, start, end, granularity }),
+  ]);
+  return enumerateBuckets(start, end, granularity).map((bucket) => {
+    const totals = pnl.get(bucket.key) || { dayCount: 0, totals: {} };
+    const period = buildPeriod(totals, {
+      meta: adSpend.meta?.get(bucket.key),
+      google: adSpend.google?.get(bucket.key),
+    });
+    const point = { ...bucket, days: totals.dayCount };
+    for (const field of SERIES_FIELDS) point[field] = period[field];
+    return point;
+  });
+}
+
+// Per-day (or per-month) subtotals for the range and for the range it's
+// compared against, index-aligned: previous[i] is the bucket current[i] is
+// charted against. Same figures and "-" rules as getSummary, bucket by bucket.
+async function getSeries({ brandKey, start, end, granularity = "daily", conn = null }) {
+  const [previousStart, previousEnd] = computePreviousRange(start, end, granularity);
+  const [current, previous] = await Promise.all([
+    buildSeries({ conn, brandKey, start, end, granularity }),
+    buildSeries({ conn, brandKey, start: previousStart, end: previousEnd, granularity }),
+  ]);
+  return {
+    brandKey: brandKey || null,
+    granularity,
+    start,
+    end,
+    previousStart,
+    previousEnd,
+    current,
+    previous,
+  };
+}
+
 module.exports = {
   MISSING,
   META_SPEND_TABLE,
   GOOGLE_SPEND_TABLE,
   getSummary,
+  getSeries,
+  enumerateBuckets,
   computePreviousRange,
   buildPeriod,
   buildLineItems,

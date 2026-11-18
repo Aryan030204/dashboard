@@ -1436,12 +1436,35 @@ export async function getWebVitalsPages(args = {}) {
   };
 }
 
+// Per-day (or per-month) subtotals for the range and the range it's compared
+// against, index-aligned, for the P&L trend chart and KPI sparklines.
+export async function getPnlSeries(args = {}) {
+  const params = appendBrandKey(
+    { start: args.start, end: args.end, granularity: args.granularity || "daily" },
+    args,
+  );
+  const json = await getJSON("/pnl/series", params);
+  return {
+    granularity: json?.granularity || "daily",
+    start: json?.start || null,
+    end: json?.end || null,
+    previousStart: json?.previousStart || null,
+    previousEnd: json?.previousEnd || null,
+    current: Array.isArray(json?.current) ? json.current : [],
+    previous: Array.isArray(json?.previous) ? json.previous : [],
+    error: json?.__error,
+  };
+}
+
 export async function getPnlSummary(args = {}) {
   const params = appendBrandKey(
     {
       start: args.start,
       end: args.end,
       granularity: args.granularity || "daily",
+      ...(args.compareStart && args.compareEnd
+        ? { compare_start: args.compareStart, compare_end: args.compareEnd }
+        : {}),
     },
     args,
   );

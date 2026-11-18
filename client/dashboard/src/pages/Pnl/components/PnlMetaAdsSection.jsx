@@ -1,17 +1,6 @@
 import { useEffect, useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  Chip,
-  CircularProgress,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
 import dayjs from "dayjs";
-import SearchableSelect from "../../../components/ui/SearchableSelect.jsx";
+import { Banner, Checklist, Field, Segmented, Skeleton, SourceCard } from "./pnlUi.jsx";
 import { syncNotice } from "../pnlFormat.js";
 import {
   connectMetaAds,
@@ -37,9 +26,22 @@ function describeAccount(account) {
   return bits.join(" · ");
 }
 
-export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
+// Meta Ads card in the P&L page's Data sources. `onStatusChange` reports
+// { connected } up so the statement and banners can say whether a missing
+// Meta line means "not connected" or "not synced yet"; `openSignal` changing
+// opens the connect form (the statement's "Connect Meta Ads" button).
+export default function PnlMetaAdsSection({ brandKey, onConnectionChange, onStatusChange, openSignal }) {
   const [status, setStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    onStatusChange?.(status ? { connected: !!status.connected } : null);
+  }, [status, onStatusChange]);
+
+  useEffect(() => {
+    if (openSignal) setExpanded(true);
+  }, [openSignal]);
 
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState("");
@@ -294,185 +296,177 @@ export default function PnlMetaAdsSection({ brandKey, onConnectionChange }) {
     detail: describeAccount(account),
   }));
 
-  return (
-    <Card variant="outlined" sx={{ p: 2.5 }}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        alignItems={{ xs: "flex-start", sm: "center" }}
-        justifyContent="space-between"
-        spacing={1}
-        sx={{ mb: 2 }}
-      >
-        <Stack spacing={0.25}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Meta Ads Integration
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Connect this brand&apos;s Meta Ads account to pull real ad spend into the Meta line above.
-          </Typography>
-        </Stack>
-        {status?.connected ? (
-          <Stack direction="row" spacing={0.75}>
-            <Chip label="Connected" size="small" color="success" />
-            {status.tokenType === "system_user" ? (
-              <Chip label="System User token" size="small" variant="outlined" />
-            ) : null}
-          </Stack>
+  const connected = !!status?.connected;
+  const accountIds = connected
+    ? (status.adAccountIds?.length ? status.adAccountIds : [status.adAccountId]).filter(Boolean)
+    : [];
+
+  let body;
+  if (loadingStatus) {
+    body = <Skeleton height={44} />;
+  } else if (pending) {
+    body = (
+      <div className="pnl-source-form">
+        <p className="pnl-source-detail">
+          {pending.viaOauth ? "Continue with Meta succeeded." : "Token verified."} Pick which of this brand&apos;s
+          ad account(s) to connect{pickerForOtherBrand ? ` for brand ${pending.brandKey}` : ""}.
+        </p>
+        {pickerForOtherBrand ? (
+          <Banner>
+            This connect was started for brand <strong>{pending.brandKey}</strong>, not the one currently selected.
+            Cancel and reconnect if that isn&apos;t what you want.
+          </Banner>
         ) : null}
-      </Stack>
-
-      {loadingStatus ? (
-        <CircularProgress size={20} />
-      ) : pending ? (
-        <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
-          <Typography variant="body2" color="text.secondary">
-            {pending.viaOauth ? "Continue with Meta succeeded." : "Token verified."} Pick which of this
-            brand&apos;s ad account(s) to connect
-            {pickerForOtherBrand ? ` for brand ${pending.brandKey}` : ""}.
-          </Typography>
-          {pickerForOtherBrand ? (
-            <Alert severity="warning">
-              This connect was started for brand <strong>{pending.brandKey}</strong>, not the one currently
-              selected. Cancel and reconnect if that isn&apos;t what you want.
-            </Alert>
-          ) : null}
-          {connectError ? <Alert severity="error">{connectError}</Alert> : null}
-          {connecting ? (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <CircularProgress size={16} />
-              <Typography variant="body2">Loading your ad accounts…</Typography>
-            </Stack>
-          ) : (
-            <SearchableSelect
-              label="Ad accounts"
-              options={adAccountOptions}
-              value={selectedAccountIds}
-              onChange={setSelectedAccountIds}
-              multiple
-              size="small"
-              sx={{ width: "100%" }}
-              selectSx={{ width: "100%" }}
+        {connectError ? <Banner tone="bad">{connectError}</Banner> : null}
+        {connecting ? (
+          <>
+            <span className="pnl-hint">Loading your ad accounts…</span>
+            <Skeleton height={88} />
+          </>
+        ) : (
+          <Checklist
+            label="Ad accounts"
+            options={adAccountOptions}
+            value={selectedAccountIds}
+            onChange={setSelectedAccountIds}
+          />
+        )}
+        <div className="pnl-edit-actions">
+          <button
+            type="button"
+            className="pnl-btn"
+            onClick={pending.viaOauth ? handleFinishOauthConnect : handleSaveAccount}
+            disabled={saving || connecting || selectedAccountIds.length === 0}
+          >
+            {saving ? "Connecting…" : "Connect these accounts"}
+          </button>
+          <button type="button" className="pnl-ctl" onClick={resetPending} disabled={saving}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  } else if (connected) {
+    body = (
+      <>
+        {connectMessage ? <Banner tone="good">{connectMessage}</Banner> : null}
+        <p className="pnl-source-detail" style={{ flex: "1 1 auto" }}>
+          Ad account{accountIds.length > 1 ? "s" : ""} <strong>{accountIds.join(", ")}</strong>.
+          {status.lastVerifiedAt ? ` Last verified ${dayjs(status.lastVerifiedAt).format("DD MMM YYYY, HH:mm")}.` : ""}
+          {status.expiresAt
+            ? ` Token expires ${dayjs(status.expiresAt).format("DD MMM YYYY")}.`
+            : status.tokenType === "system_user"
+              ? " System User token, no expiry."
+              : ""}{" "}
+          Spend flows into the Meta Ads line.
+        </p>
+        {status.lastError ? (
+          <Banner>
+            Last fetch failed: {status.lastError}. The Meta Ads line stays empty until this is fixed.
+          </Banner>
+        ) : null}
+        <button
+          type="button"
+          className="pnl-ctl"
+          style={{ alignSelf: "flex-start" }}
+          onClick={handleDisconnect}
+          disabled={disconnecting}
+        >
+          {disconnecting ? "Disconnecting…" : "Disconnect"}
+        </button>
+      </>
+    );
+  } else {
+    body = (
+      <>
+        <p className="pnl-source-detail" style={{ flex: "1 1 auto" }}>
+          Connect this brand&apos;s Meta Ads account to pull real ad spend into the Meta Ads line.
+        </p>
+        {connectError ? <Banner tone="bad">{connectError}</Banner> : null}
+        {connectMessage ? <Banner tone="good">{connectMessage}</Banner> : null}
+        {!expanded ? (
+          <button type="button" className="pnl-btn" style={{ alignSelf: "flex-start" }} onClick={() => setExpanded(true)}>
+            Connect Meta Ads
+          </button>
+        ) : (
+          <div className="pnl-source-form">
+            <Segmented
+              label="How to connect Meta Ads"
+              value={connectMode}
+              onChange={(mode) => {
+                setConnectMode(mode);
+                setConnectError("");
+              }}
+              options={[
+                { value: "oauth", label: "Continue with Meta" },
+                { value: "system_user", label: "Paste a token" },
+              ]}
             />
-          )}
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="contained"
-              size="small"
-              onClick={pending.viaOauth ? handleFinishOauthConnect : handleSaveAccount}
-              disabled={saving || connecting || selectedAccountIds.length === 0}
-            >
-              {saving ? "Connecting…" : "Connect these accounts"}
-            </Button>
-            <Button size="small" onClick={resetPending} disabled={saving}>
-              Cancel
-            </Button>
-          </Stack>
-        </Stack>
-      ) : status?.connected ? (
-        <Stack spacing={1}>
-          {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
-          <Typography variant="body2">
-            Ad account{status.adAccountIds?.length > 1 ? "s" : ""}{" "}
-            <strong>{(status.adAccountIds?.length ? status.adAccountIds : [status.adAccountId]).join(", ")}</strong>
-          </Typography>
-          {status.lastVerifiedAt ? (
-            <Typography variant="caption" color="text.secondary">
-              Last verified {dayjs(status.lastVerifiedAt).format("MMM DD, YYYY HH:mm")}
-              {status.expiresAt
-                ? ` · token expires ${dayjs(status.expiresAt).format("MMM DD, YYYY")}`
-                : status.tokenType === "system_user"
-                  ? " · System User token, no expiry tracked"
-                  : ""}
-            </Typography>
-          ) : null}
-          {status.lastError ? (
-            <Alert severity="warning">
-              Last fetch failed: {status.lastError}. The P&amp;L page is showing an estimate until this is
-              fixed.
-            </Alert>
-          ) : null}
-          <Stack direction="row" spacing={1}>
-            <Button size="small" color="error" onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting ? "Disconnecting…" : "Disconnect"}
-            </Button>
-          </Stack>
-        </Stack>
-      ) : (
-        <Box>
-          <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
-            <Stack direction="row" spacing={1}>
-              <Button
-                size="small"
-                variant={connectMode === "oauth" ? "contained" : "outlined"}
-                onClick={() => {
-                  setConnectMode("oauth");
-                  setConnectError("");
-                }}
-              >
-                Continue with Meta
-              </Button>
-              <Button
-                size="small"
-                variant={connectMode === "system_user" ? "contained" : "outlined"}
-                onClick={() => {
-                  setConnectMode("system_user");
-                  setConnectError("");
-                }}
-              >
-                Paste a token
-              </Button>
-            </Stack>
-
-            {connectError ? <Alert severity="error">{connectError}</Alert> : null}
-            {connectMessage ? <Alert severity="success">{connectMessage}</Alert> : null}
-
             {connectMode === "oauth" ? (
               <>
-                <Typography variant="body2" color="text.secondary">
-                  Opens Meta&apos;s consent dialog. The brand admin logs in, picks which of their ad
-                  account(s) to share, and grants access to just those — Meta returns a non-expiring
-                  System-business token, the same as pasting one manually.
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Until the app has passed App Review for Standard access, this only works for people added
-                  as admins/testers on the app (Limited access tier) — not real brand admins yet.
-                </Typography>
-                <Box>
-                  <Button variant="contained" size="small" onClick={handleConnectWithMeta} disabled={connecting}>
+                <p className="pnl-source-detail">
+                  Opens Meta&apos;s consent dialog. The brand admin logs in, picks which of their ad account(s) to
+                  share, and grants access to just those — Meta returns a non-expiring System-business token, the
+                  same as pasting one manually.
+                </p>
+                <p className="pnl-hint">
+                  Until the app has passed App Review for Standard access, this only works for people added as
+                  admins/testers on the app (Limited access tier) — not real brand admins yet.
+                </p>
+                <div className="pnl-edit-actions">
+                  <button type="button" className="pnl-btn" onClick={handleConnectWithMeta} disabled={connecting}>
                     {connecting ? "Working…" : "Continue with Meta"}
-                  </Button>
-                </Box>
+                  </button>
+                  <button type="button" className="pnl-ctl" onClick={() => setExpanded(false)}>
+                    Cancel
+                  </button>
+                </div>
               </>
             ) : (
               <>
-                <Typography variant="body2" color="text.secondary">
-                  Paste a System User access token from Meta Business Settings (System Users → the system
-                  user → Generate New Token, with this brand&apos;s ad account granted and expiry set to
-                  Never). Stored exactly as pasted — never exchanged or modified.
-                </Typography>
-                <TextField
-                  size="small"
-                  fullWidth
-                  label="System User access token"
-                  value={manualToken}
-                  onChange={(event) => setManualToken(event.target.value)}
-                  disabled={connecting}
-                />
-                <Box>
-                  <Button
-                    variant="contained"
-                    size="small"
+                <p className="pnl-source-detail">
+                  Paste a System User access token from Meta Business Settings (System Users → the system user →
+                  Generate New Token, with this brand&apos;s ad account granted and expiry set to Never). Stored
+                  exactly as pasted — never exchanged or modified.
+                </p>
+                <Field label="System User access token">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={manualToken}
+                    onChange={(event) => setManualToken(event.target.value)}
+                    disabled={connecting}
+                  />
+                </Field>
+                <div className="pnl-edit-actions">
+                  <button
+                    type="button"
+                    className="pnl-btn"
                     onClick={handleUseSystemUserToken}
                     disabled={connecting || !manualToken.trim()}
                   >
                     {connecting ? "Verifying…" : "Verify token"}
-                  </Button>
-                </Box>
+                  </button>
+                  <button type="button" className="pnl-ctl" onClick={() => setExpanded(false)}>
+                    Cancel
+                  </button>
+                </div>
               </>
             )}
-          </Stack>
-        </Box>
-      )}
-    </Card>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <SourceCard
+      id="source-meta"
+      name="Meta Ads"
+      status={loadingStatus ? null : connected ? "Connected" : "Not connected"}
+      tone={connected ? "good" : "warn"}
+    >
+      {body}
+    </SourceCard>
   );
 }
