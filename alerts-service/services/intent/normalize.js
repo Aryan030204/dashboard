@@ -44,6 +44,9 @@ const ClickDataSchema = z.object({
   element_type: z.string().nullable().default(null),
   element_value: z.string().nullable().default(null),
   href: z.string().nullable().default(null),
+  // document-relative coordinates (pageX/pageY) next to the viewport-relative x/y; null from a pixel that omits them
+  page_x: z.number().nullable().default(null),
+  page_y: z.number().nullable().default(null),
 });
 
 const ClickSignalsSchema = z.object({

@@ -39,14 +39,14 @@ function fakeRepo() {
   const live = (r) => r && !r.deleted_at;
   const repo = {
     _reports: reports,
-    async createReport({ brandKey, title, reportingWeek, sourceType, uploadedBy }) {
+    async createReport({ brandKey, title, reportingWeek, description = null, sourceType, uploadedBy }) {
       const taken = (t) => reports.some((r) => r.brand_key === brandKey && live(r) && r.title.toLowerCase() === t.toLowerCase());
       const requested = title;
       title = await uniqueTitle(async (t) => taken(t), requested);
       const same = reports.filter((r) => r.brand_key === brandKey && r.reporting_week === reportingWeek);
       const version = same.reduce((m, r) => Math.max(m, r.version), 0) + 1;
       const row = {
-        id: ++seq, brand_key: brandKey, title, reporting_week: reportingWeek, version, source_type: sourceType,
+        id: ++seq, brand_key: brandKey, title, reporting_week: reportingWeek, description: description || null, version, source_type: sourceType,
         source_storage_key: "", source_size_bytes: null, status: "PROCESSING", stage: null, slide_count: null,
         slides_total: null, slides_done: null, error_code: null,
         error_detail: null, locked_at: new Date(), uploaded_by: uploadedBy, published_by: null,
@@ -114,6 +114,11 @@ function fakeRepo() {
       r.deleted_at = new Date();
       return { purgeNow: r.locked_at === null };
     },
+    async updateDescription(id, brandKey, description) {
+      const r = reports.find((x) => x.id === id && x.brand_key === brandKey && live(x));
+      if (!r) throw httpError(404, "NOT_FOUND", "Report not found.");
+      r.description = description || null;
+    },
     async markPurged(id) {
       reports.find((x) => x.id === id).storage_purged_at = new Date();
     },
@@ -132,10 +137,10 @@ function fakeRepo() {
       return !r || r.deleted_at !== null;
     },
     // test helpers
-    seed({ brand = "BBB", week = "Week 42", status = "READY", slideCount = 3, title = "Weekly Review", version } = {}) {
+    seed({ brand = "BBB", week = "Week 42", status = "READY", slideCount = 3, title = "Weekly Review", version, description = null } = {}) {
       const same = reports.filter((r) => r.brand_key === brand && r.reporting_week === week);
       const row = {
-        id: ++seq, brand_key: brand, title, reporting_week: week, version: version || same.length + 1, source_type: "pptx",
+        id: ++seq, brand_key: brand, title, reporting_week: week, description, version: version || same.length + 1, source_type: "pptx",
         source_storage_key: `${brand}/${seq}/source/presentation.pptx`, source_size_bytes: 1000, status, stage: null,
         slide_count: slideCount, slides_total: slideCount, slides_done: slideCount, error_code: null, error_detail: null, locked_at: null, uploaded_by: "author1", published_by: null,
         uploaded_at: new Date(), published_at: status === "PUBLISHED" ? new Date(Date.now() + seq) : null,

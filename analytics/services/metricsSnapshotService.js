@@ -111,6 +111,14 @@ function buildNormalizedUtmSourceSql(column = "utm_source") {
   `;
 }
 
+// The UTM tables use a case-insensitive collation, so GROUP BY merges "Google" and "google" into one row, but
+// MySQL returns an arbitrary spelling as the label (it can differ from one day to the next). Every JS-side
+// lookup that joins rows by source/campaign (order split, previous-period comparison) must therefore use a
+// case-insensitive key, otherwise the same source is treated as two different ones and its values show as 0.
+function utmMatchKey(value, fallback) {
+  return String(value || fallback).trim().toLowerCase();
+}
+
 function buildNormalizedUtmCampaignSql(column = "utm_campaign") {
   return `
     CASE
@@ -490,18 +498,19 @@ async function queryCheckoutInitiatedRows(
   return Array.isArray(rows) ? rows : [];
 }
 
-async function queryDailyFunnelUtmRows(conn, date, cutoffHour = null) {
+// `date` is the first day; `endDate` (optional) makes it an inclusive range of days.
+async function queryDailyFunnelUtmRows(conn, date, cutoffHour = null, endDate = date) {
   const normalizedSourceSql = buildNormalizedUtmSourceSql();
   const hasCutoff = Number.isInteger(cutoffHour);
   const baseTable = hasCutoff ? "utm_source_hourly" : "utm_source_daily";
   const baseWhere = hasCutoff
-    ? "WHERE metric_date = ? AND metric_hour <= ?"
-    : "WHERE metric_date = ?";
-  const baseReplacements = hasCutoff ? [date, cutoffHour] : [date];
+    ? "WHERE metric_date >= ? AND metric_date <= ? AND metric_hour <= ?"
+    : "WHERE metric_date >= ? AND metric_date <= ?";
+  const baseReplacements = hasCutoff ? [date, endDate, cutoffHour] : [date, endDate];
   const orderWhere = hasCutoff
-    ? "WHERE created_date = ? AND HOUR(created_time) <= ?"
-    : "WHERE created_date = ?";
-  const orderReplacements = hasCutoff ? [date, cutoffHour] : [date];
+    ? "WHERE created_date >= ? AND created_date <= ? AND HOUR(created_time) <= ?"
+    : "WHERE created_date >= ? AND created_date <= ?";
+  const orderReplacements = hasCutoff ? [date, endDate, cutoffHour] : [date, endDate];
 
   const [baseRows, orderRows] = await Promise.all([
     conn.query(
@@ -561,7 +570,7 @@ async function queryDailyFunnelUtmRows(conn, date, cutoffHour = null) {
   const bySource = new Map();
 
   for (const row of Array.isArray(baseRows) ? baseRows : []) {
-    bySource.set(String(row.utm_source || "direct"), {
+    bySource.set(utmMatchKey(row.utm_source, "direct"), {
       utm_source: String(row.utm_source || "direct"),
       sales: Number(row.sales || 0),
       sessions: Number(row.sessions || 0),
@@ -575,7 +584,7 @@ async function queryDailyFunnelUtmRows(conn, date, cutoffHour = null) {
 
   for (const row of Array.isArray(orderRows) ? orderRows : []) {
     const source = String(row.utm_source || "direct");
-    const existing = bySource.get(source) || {
+    const existing = bySource.get(utmMatchKey(source, "direct")) || {
       utm_source: source,
       sales: 0,
       sessions: 0,
@@ -588,7 +597,7 @@ async function queryDailyFunnelUtmRows(conn, date, cutoffHour = null) {
     existing.prepaid_orders = Number(row.prepaid_orders || 0);
     existing.cod_orders = Number(row.cod_orders || 0);
     existing.partially_paid_orders = Number(row.partially_paid_orders || 0);
-    bySource.set(source, existing);
+    bySource.set(utmMatchKey(source, "direct"), existing);
   }
 
   return Array.from(bySource.values()).sort((left, right) =>
@@ -624,27 +633,44 @@ function getPreviousIsoDate(value) {
   return utcDate.toISOString().slice(0, 10);
 }
 
-async function queryDailyFunnelUtmRowsWithDelta(conn, date, compareDate, cutoffCtx = null) {
+// The compared side is cut at the last completed hour only when the current range is the single day "today";
+// longer ranges compare whole days.
+function resolveUtmCompareWindow(date, endDate, compareDate, compareEndDate, cutoffCtx) {
+  const lastDate = endDate || date;
   const previousDate = compareDate || getPreviousIsoDate(date);
+  const previousEndDate = compareDate ? compareEndDate || compareDate : previousDate;
   const today = cutoffCtx?.today;
   const previousCutoffHour =
-    today && date === today && Number.isInteger(cutoffCtx?.cutoffHour)
+    today && date === today && lastDate === today && Number.isInteger(cutoffCtx?.cutoffHour)
       ? cutoffCtx.cutoffHour
       : null;
+  return { lastDate, previousDate, previousEndDate, previousCutoffHour };
+}
+
+async function queryDailyFunnelUtmRowsWithDelta(
+  conn,
+  date,
+  compareDate,
+  cutoffCtx = null,
+  { endDate = null, compareEndDate = null } = {},
+) {
+  const { lastDate, previousDate, previousEndDate, previousCutoffHour } =
+    resolveUtmCompareWindow(date, endDate, compareDate, compareEndDate, cutoffCtx);
   const [currentRows, previousRows] = await Promise.all([
-    queryDailyFunnelUtmRows(conn, date, null),
-    queryDailyFunnelUtmRows(conn, previousDate, previousCutoffHour),
+    queryDailyFunnelUtmRows(conn, date, null, lastDate),
+    queryDailyFunnelUtmRows(conn, previousDate, previousCutoffHour, previousEndDate),
   ]);
 
   const previousMap = new Map(
-    (Array.isArray(previousRows) ? previousRows : []).map((row) => [String(row.utm_source || 'direct'), row]),
+    (Array.isArray(previousRows) ? previousRows : []).map((row) => [utmMatchKey(row.utm_source, 'direct'), row]),
   );
 
   return (Array.isArray(currentRows) ? currentRows : []).map((row) => {
-    const previous = previousMap.get(String(row.utm_source || 'direct')) || {};
+    const previous = previousMap.get(utmMatchKey(row.utm_source, 'direct')) || {};
     return {
       ...row,
       previous_date: previousDate,
+      previous_end_date: previousEndDate,
       previous: {
         sales: Number(previous.sales || 0),
         sessions: Number(previous.sessions || 0),
@@ -667,19 +693,23 @@ async function queryDailyFunnelUtmRowsWithDelta(conn, date, compareDate, cutoffC
   });
 }
 
-async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource, cutoffHour = null) {
+async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource, cutoffHour = null, endDate = date) {
   const normalizedSourceSql = buildNormalizedUtmSourceSql();
   const normalizedCampaignSql = buildNormalizedUtmCampaignSql();
   const hasCutoff = Number.isInteger(cutoffHour);
   const baseTable = hasCutoff ? "utm_source_campaign_hourly" : "utm_source_campaign_daily";
   const baseWhere = hasCutoff
-    ? "WHERE metric_date = ? AND utm_source = ? AND metric_hour <= ?"
-    : "WHERE metric_date = ? AND utm_source = ?";
-  const baseReplacements = hasCutoff ? [date, utmSource, cutoffHour] : [date, utmSource];
+    ? "WHERE metric_date >= ? AND metric_date <= ? AND utm_source = ? AND metric_hour <= ?"
+    : "WHERE metric_date >= ? AND metric_date <= ? AND utm_source = ?";
+  const baseReplacements = hasCutoff
+    ? [date, endDate, utmSource, cutoffHour]
+    : [date, endDate, utmSource];
   const orderWhere = hasCutoff
-    ? "WHERE created_date = ? AND HOUR(created_time) <= ?"
-    : "WHERE created_date = ?";
-  const orderReplacements = hasCutoff ? [date, cutoffHour, utmSource] : [date, utmSource];
+    ? "WHERE created_date >= ? AND created_date <= ? AND HOUR(created_time) <= ?"
+    : "WHERE created_date >= ? AND created_date <= ?";
+  const orderReplacements = hasCutoff
+    ? [date, endDate, cutoffHour, utmSource]
+    : [date, endDate, utmSource];
 
   const [baseRows, orderRows] = await Promise.all([
     conn.query(
@@ -739,7 +769,7 @@ async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource, cutoffHour
   const byCampaign = new Map();
 
   for (const row of Array.isArray(baseRows) ? baseRows : []) {
-    byCampaign.set(String(row.utm_campaign || "(none)"), {
+    byCampaign.set(utmMatchKey(row.utm_campaign, "(none)"), {
       utm_source: String(row.utm_campaign || "(none)"),
       sales: Number(row.sales || 0),
       sessions: Number(row.sessions || 0),
@@ -753,7 +783,7 @@ async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource, cutoffHour
 
   for (const row of Array.isArray(orderRows) ? orderRows : []) {
     const campaign = String(row.utm_campaign || "(none)");
-    const existing = byCampaign.get(campaign) || {
+    const existing = byCampaign.get(utmMatchKey(campaign, "(none)")) || {
       utm_source: campaign,
       sales: 0,
       sessions: 0,
@@ -766,7 +796,7 @@ async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource, cutoffHour
     existing.prepaid_orders = Number(row.prepaid_orders || 0);
     existing.cod_orders = Number(row.cod_orders || 0);
     existing.partially_paid_orders = Number(row.partially_paid_orders || 0);
-    byCampaign.set(campaign, existing);
+    byCampaign.set(utmMatchKey(campaign, "(none)"), existing);
   }
 
   return Array.from(byCampaign.values()).sort((left, right) =>
@@ -780,27 +810,25 @@ async function queryDailyFunnelUtmCampaignRowsWithDelta(
   compareDate,
   utmSource,
   cutoffCtx = null,
+  { endDate = null, compareEndDate = null } = {},
 ) {
-  const previousDate = compareDate || getPreviousIsoDate(date);
-  const today = cutoffCtx?.today;
-  const previousCutoffHour =
-    today && date === today && Number.isInteger(cutoffCtx?.cutoffHour)
-      ? cutoffCtx.cutoffHour
-      : null;
+  const { lastDate, previousDate, previousEndDate, previousCutoffHour } =
+    resolveUtmCompareWindow(date, endDate, compareDate, compareEndDate, cutoffCtx);
   const [currentRows, previousRows] = await Promise.all([
-    queryDailyFunnelUtmCampaignRows(conn, date, utmSource, null),
-    queryDailyFunnelUtmCampaignRows(conn, previousDate, utmSource, previousCutoffHour),
+    queryDailyFunnelUtmCampaignRows(conn, date, utmSource, null, lastDate),
+    queryDailyFunnelUtmCampaignRows(conn, previousDate, utmSource, previousCutoffHour, previousEndDate),
   ]);
 
   const previousMap = new Map(
-    (Array.isArray(previousRows) ? previousRows : []).map((row) => [String(row.utm_source || '(none)'), row]),
+    (Array.isArray(previousRows) ? previousRows : []).map((row) => [utmMatchKey(row.utm_source, '(none)'), row]),
   );
 
   return (Array.isArray(currentRows) ? currentRows : []).map((row) => {
-    const previous = previousMap.get(String(row.utm_source || '(none)')) || {};
+    const previous = previousMap.get(utmMatchKey(row.utm_source, '(none)')) || {};
     return {
       ...row,
       previous_date: previousDate,
+      previous_end_date: previousEndDate,
       previous: {
         sales: Number(previous.sales || 0),
         sessions: Number(previous.sessions || 0),
@@ -2716,10 +2744,11 @@ function buildMetricsSnapshotService(deps = {}) {
     const timezone = normalizeTimezone(spec.timezone);
     const includeDaily = spec.includeDaily !== false;
     const includeUtm = spec.includeUtm === true;
+    const utmEndDateResolved = spec.utmEndDate || spec.utmDate || spec.end;
     const utmCutoffCtx = includeUtm
       ? buildCompletedHourCutoffContext(
           spec.utmDate || spec.end,
-          spec.utmDate || spec.end,
+          utmEndDateResolved,
           now(),
           timezone,
         )
@@ -2772,12 +2801,14 @@ function buildMetricsSnapshotService(deps = {}) {
                 spec.compareUtmDate,
                 spec.utmSource,
                 utmCutoffCtx,
+                { endDate: utmEndDateResolved, compareEndDate: spec.compareUtmEndDate },
               )
             : queryDailyFunnelUtmRowsWithDelta(
                 spec.conn,
                 spec.utmDate || spec.end,
                 spec.compareUtmDate,
                 utmCutoffCtx,
+                { endDate: utmEndDateResolved, compareEndDate: spec.compareUtmEndDate },
               ))
         : Promise.resolve([]),
     ]);
@@ -2820,6 +2851,7 @@ function buildMetricsSnapshotService(deps = {}) {
       includeUtm &&
       !!utmCutoffCtx?.today &&
       utmDateResolved === utmCutoffCtx.today &&
+      utmEndDateResolved === utmCutoffCtx.today &&
       Number.isInteger(utmCutoffCtx?.cutoffHour);
 
     return {
@@ -2827,6 +2859,7 @@ function buildMetricsSnapshotService(deps = {}) {
       range: { start: spec.start, end: spec.end },
       rows,
       utmDate: includeUtm ? utmDateResolved : null,
+      utmEndDate: includeUtm ? utmEndDateResolved : null,
       utmSource: includeUtm ? (spec.utmSource || null) : null,
       utmCutoffHour: utmCutoffApplied ? utmCutoffCtx.cutoffHour : null,
       utmRows: includeUtm ? utmRows : [],

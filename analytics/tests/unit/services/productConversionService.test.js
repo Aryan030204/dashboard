@@ -427,4 +427,192 @@ describe("productConversionService", () => {
     expect(response.rows[0].drr).toBe(20);
     expect(response.rows[0].doh).toBe(50);
   });
+
+  describe("collection/PLP CVR (V1)", () => {
+    const COLLECTION_TABLE = "mv_collection_sessions_by_path_daily";
+
+    function setup(rowsForQuery) {
+      jest.useFakeTimers().setSystemTime(new Date("2026-04-10T06:30:00Z"));
+      const calls = [];
+      const conn = {
+        query: jest.fn().mockImplementation((sql, options = {}) => {
+          calls.push({ sql, replacements: options.replacements || [] });
+          const handler = rowsForQuery || (() => []);
+          return Promise.resolve(handler(sql, calls.length));
+        }),
+      };
+      const service = buildProductConversionService();
+      return { service, conn, calls };
+    }
+
+    const request = (service, extra = {}) =>
+      service.normalizeProductConversionRequest({
+        start: "2026-04-01",
+        end: "2026-04-07",
+        ...extra,
+      }).spec;
+
+    test("sessions-based listing reads the collection aggregate in the same single query", async () => {
+      const { service, conn, calls } = setup();
+      await service.getProductConversion({ ...request(service), conn });
+
+      expect(calls).toHaveLength(1);
+      const sql = calls[0].sql;
+      expect(sql).toContain("collection_cvr_60d AS (");
+      expect(sql).toContain(`FROM ${COLLECTION_TABLE}`);
+      // joined only for rows without a product, on the normalized path key
+      expect(sql).toContain(
+        "LEFT JOIN collection_cvr_60d cc ON s.product_id IS NULL AND cc.collection_path = LOWER(TRIM(TRAILING '/' FROM s.landing_page_path))",
+      );
+      expect(sql).toContain("COALESCE(o.orders, cc.orders, 0) AS orders");
+      expect(calls[0].replacements).toEqual([
+        "2026-04-01", "2026-04-07", // orders_60d
+        "2026-04-01", "2026-04-07", // ci_60d
+        "2026-04-01", "2026-04-07", // sessions_60d
+        "2026-04-01", "2026-04-07", // collection_cvr_60d
+      ]);
+    });
+
+    test("collection CVR comes from the aggregate: orders / sessions * 100, PDP expression kept on the other branch", async () => {
+      const { service, conn, calls } = setup();
+      await service.getProductConversion({ ...request(service), conn });
+
+      const sql = calls[0].sql;
+      expect(sql).toContain("WHEN cc.collection_path IS NOT NULL");
+      expect(sql).toContain("ROUND(cc.orders / cc.sessions * 100, 4)");
+      // the PDP branch is the unchanged product-based formula
+      expect(sql).toContain("WHEN s.sessions > 0 THEN ROUND(COALESCE(o.orders, 0) / s.sessions * 100, 4)");
+      // collection rows never use a product_id join for orders
+      expect(sql).not.toContain("cc.product_id");
+    });
+
+    test("a collection row is returned as-is: 1000 sessions, 50 orders, CVR 5", async () => {
+      const { service, conn } = setup(() => [
+        {
+          product_id: null,
+          landing_page_path: "/collections/shoes",
+          sessions: 1000,
+          atc: 200,
+          atc_rate: 20,
+          ci_events: 0,
+          checkout_rate: 0,
+          orders: 50,
+          sales: 0,
+          cvr: 5,
+          total_count: 1,
+        },
+      ]);
+      const response = await service.getProductConversion({ ...request(service), conn });
+
+      expect(response.rows[0]).toEqual(
+        expect.objectContaining({ product_id: null, landing_page_path: "/collections/shoes", sessions: 1000, orders: 50, cvr: 5 }),
+      );
+    });
+
+    test("compare mode adds previous_collection_cvr and keeps parameters in SQL text order", async () => {
+      const { service, conn, calls } = setup();
+      await service.getProductConversion({
+        ...request(service, { compare_start: "2026-03-01", compare_end: "2026-03-07" }),
+        conn,
+      });
+
+      const sql = calls[0].sql;
+      expect(calls).toHaveLength(1);
+      expect(sql).toContain("previous_collection_cvr AS (");
+      expect(sql).toContain("LEFT JOIN previous_collection_cvr pcc ON s.product_id IS NULL");
+      expect(sql).toContain("COALESCE(po.orders, pcc.orders, 0) AS prev_orders");
+      expect(calls[0].replacements).toEqual([
+        "2026-04-01", "2026-04-07", // orders_60d
+        "2026-04-01", "2026-04-07", // ci_60d
+        "2026-04-01", "2026-04-07", // sessions_60d
+        "2026-04-01", "2026-04-07", // collection_cvr_60d
+        "2026-03-01", "2026-03-07", // previous_orders
+        "2026-03-01", "2026-03-07", // previous_ci
+        "2026-03-01", "2026-03-07", // previous_sessions
+        "2026-03-01", "2026-03-07", // previous_collection_cvr
+      ]);
+    });
+
+    test("product-type (PDP mapping base) path is unchanged: no collection CTE or join", async () => {
+      const { service, conn, calls } = setup();
+      await service.getProductConversion({
+        ...request(service, { product_types: JSON.stringify(["Bundle"]) }),
+        conn,
+      });
+
+      const sql = calls[0].sql;
+      expect(sql).toContain("FROM product_landing_mapping m");
+      expect(sql).not.toContain("collection_cvr_60d");
+      expect(sql).not.toContain(COLLECTION_TABLE);
+      expect(sql).toContain("COALESCE(o.orders, 0) AS orders");
+      expect(calls[0].replacements).toHaveLength(6 + 1); // 3 CTE ranges + product_types filter
+    });
+
+    test("cvr / orders filters use the same collection-aware expression as the select list", async () => {
+      const { service, conn, calls } = setup();
+      await service.getProductConversion({
+        ...request(service, { filters: JSON.stringify([{ field: "cvr", operator: "gt", value: 1 }]) }),
+        conn,
+      });
+
+      const where = calls[0].sql.slice(calls[0].sql.indexOf("WHERE (CASE WHEN cc.collection_path"));
+      expect(where).toContain("cc.collection_path IS NOT NULL");
+      expect(where).toContain("cc.orders / cc.sessions * 100");
+    });
+
+    test("falls back to the legacy SQL when the collection table does not exist yet", async () => {
+      const missing = Object.assign(new Error("wrapped"), {
+        original: {
+          code: "ER_NO_SUCH_TABLE",
+          errno: 1146,
+          message: `Table 'brand.${COLLECTION_TABLE}' doesn't exist`,
+        },
+      });
+      const { service, conn, calls } = setup((sql, callNumber) => {
+        if (callNumber === 1) throw missing;
+        return [{ product_id: "p1", landing_page_path: "/products/a", sessions: 10, atc: 1, atc_rate: 10, ci_events: 0, checkout_rate: 0, orders: 1, sales: 5, cvr: 10, total_count: 1 }];
+      });
+      const response = await service.getProductConversion({ ...request(service), conn });
+
+      expect(calls).toHaveLength(2);
+      expect(calls[0].sql).toContain("collection_cvr_60d");
+      expect(calls[1].sql).not.toContain("collection_cvr_60d");
+      expect(calls[1].sql).not.toContain(COLLECTION_TABLE);
+      expect(calls[1].sql).toContain("COALESCE(o.orders, 0) AS orders");
+      expect(calls[1].replacements).toHaveLength(6); // legacy parameter list
+      expect(response.rows[0]).toEqual(expect.objectContaining({ product_id: "p1", cvr: 10 }));
+    });
+
+    test("other database errors are not swallowed by the fallback", async () => {
+      const boom = Object.assign(new Error("lock wait timeout"), {
+        original: { code: "ER_LOCK_WAIT_TIMEOUT", errno: 1205, message: "lock wait timeout" },
+      });
+      const { service, conn, calls } = setup(() => {
+        throw boom;
+      });
+
+      await expect(service.getProductConversion({ ...request(service), conn })).rejects.toThrow("lock wait timeout");
+      expect(calls).toHaveLength(1);
+    });
+
+    test("a missing table other than the collection aggregate is not retried", async () => {
+      const other = Object.assign(new Error("x"), {
+        original: { code: "ER_NO_SUCH_TABLE", errno: 1146, message: "Table 'brand.hourly_product_sessions' doesn't exist" },
+      });
+      const { service, conn, calls } = setup(() => {
+        throw other;
+      });
+
+      await expect(service.getProductConversion({ ...request(service), conn })).rejects.toThrow("x");
+      expect(calls).toHaveLength(1);
+    });
+
+    test("csv export also carries the collection aggregate", async () => {
+      const { service, conn, calls } = setup();
+      await service.getProductConversionCsv({ ...request(service), conn });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].sql).toContain("collection_cvr_60d AS (");
+    });
+  });
 });

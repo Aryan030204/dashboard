@@ -6,12 +6,14 @@ import {
   deleteWeeklyReport,
   publishWeeklyReport,
   unpublishWeeklyReport,
+  updateWeeklyReportDescription,
   weeklyReportErrorMessage,
 } from "../../lib/api.js";
 import useWeeklyReports from "./hooks/useWeeklyReports.js";
 import UploadCard from "./components/UploadCard.jsx";
 import PresentationsTable from "./components/PresentationsTable.jsx";
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
+import EditDescriptionDialog from "./components/EditDescriptionDialog.jsx";
 import ClientReportView from "./components/ClientReportView.jsx";
 import { SlideViewerDialog } from "./components/SlideViewer.jsx";
 
@@ -57,6 +59,26 @@ function ManagerView({ brandKey, reports, loading, error, refresh, reload }) {
   const [previewReport, setPreviewReport] = useState(null);
   const [pending, setPending] = useState(null); // { type, report }
   const [busyId, setBusyId] = useState(null);
+  const [editingReport, setEditingReport] = useState(null);
+  const [savingDescription, setSavingDescription] = useState(false);
+
+  const saveDescription = async (description) => {
+    if (!editingReport) return;
+    setSavingDescription(true);
+    const res = await updateWeeklyReportDescription({
+      brandKey,
+      id: editingReport.id,
+      description,
+    });
+    setSavingDescription(false);
+    if (res.error) {
+      toast.error(weeklyReportErrorMessage(res, "Couldn't save the description."));
+      return;
+    }
+    toast.success(description ? "Description saved." : "Description removed.");
+    setEditingReport(null);
+    await refresh();
+  };
 
   const runAction = async (type, report) => {
     const action = ACTIONS[type];
@@ -115,6 +137,14 @@ function ManagerView({ brandKey, reports, loading, error, refresh, reload }) {
         onRetry={reload}
         onPreview={setPreviewReport}
         onAction={handleAction}
+        onEditDescription={setEditingReport}
+      />
+
+      <EditDescriptionDialog
+        report={editingReport}
+        saving={savingDescription}
+        onSave={saveDescription}
+        onClose={() => setEditingReport(null)}
       />
 
       <SlideViewerDialog

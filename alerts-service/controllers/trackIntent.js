@@ -1,5 +1,6 @@
 const { normalizeIntentBody, classifyClick } = require("../services/intent/normalize");
 const { toStoreLocalOccurredAt } = require("../services/intent/timezone");
+const { normalizeOccurredAt } = require("../services/intent/timestampPolicy");
 const { resolveProductId } = require("../services/intent/productResolution");
 const {
   buildEventMessage,
@@ -25,9 +26,21 @@ function isIntentEvent(body) {
   return isKafkaEvent(body?.event_name);
 }
 
+// The brand of an intent event: the body's brand_id when the pixel sends one, otherwise the X-Brand header (the
+// Click Signal V2 pixel sends the brand only in that header). A brand_id in the body always wins, and either way the
+// value must be on the brand allow-list, so the header cannot be used to reach an unlisted brand.
+function resolveBrand(req, body) {
+  if (typeof body.brand_id === "string" && body.brand_id.trim() !== "") return body.brand_id;
+  const header = typeof req.get === "function" ? req.get("x-brand") : req.headers?.["x-brand"];
+  return typeof header === "string" && header.trim() !== "" ? header.trim() : null;
+}
+
 // Builds the normalized contract message (schema_version 1). Pure: no I/O.
-function buildIntentMessage(body, brand, brandTimezone) {
+function buildIntentMessage(body, brand, brandTimezone, now = new Date()) {
   const { kind, e, when, actorId } = normalizeIntentBody(body);
+  // when = the client's clock. The time sessions are built with never runs ahead of the time we received the event by
+  // more than the tolerance; the client's own value is kept (client_occurred_at) and the receipt time is stamped.
+  const { effective } = normalizeOccurredAt(when, now);
   const common = {
     brand_id: brand,
     event_id: e.event_id, // preserved exactly as the pixel sent it
@@ -36,7 +49,9 @@ function buildIntentMessage(body, brand, brandTimezone) {
     client_id: e.client_id || null,
     visitor_id: e.visitor_id || null,
     session_id: null,
-    occurred_at: toStoreLocalOccurredAt(when, brandTimezone),
+    occurred_at: toStoreLocalOccurredAt(effective, brandTimezone),
+    received_at: toStoreLocalOccurredAt(now, brandTimezone),
+    client_occurred_at: toStoreLocalOccurredAt(when, brandTimezone),
     url: e.url || null,
     referrer: e.referrer || null,
     user_agent: e.user_agent || null,
@@ -67,7 +82,7 @@ function buildIntentMessage(body, brand, brandTimezone) {
 function createIntentTrack({ publisher, brandAllowlist, logger }) {
   async function handle(req, res) {
     const body = req.body || {};
-    const brand = typeof body.brand_id === "string" ? body.brand_id : null;
+    const brand = resolveBrand(req, body);
     const ctx = { event_id: body.event_id ?? null, brand, event_name: body.event_name };
 
     if (!brandAllowlist) {
@@ -97,6 +112,13 @@ function createIntentTrack({ publisher, brandAllowlist, logger }) {
         return res.status(400).json({ error: "invalid event payload" });
       }
       throw err;
+    }
+
+    if (message.occurred_at !== message.client_occurred_at) {
+      logger.warn(
+        `[track] future client timestamp normalized event_id=${message.event_id} brand=${brand} event_name=${message.event_name} ` +
+          `client=${message.client_occurred_at} received=${message.received_at}`,
+      );
     }
 
     const topic = topicForEvent(message.event_name);

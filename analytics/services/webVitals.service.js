@@ -130,7 +130,40 @@ async function getSnapshot({ conn, date }) {
   };
 }
 
-async function getTrend({ conn, start, end }) {
+const MAX_TREND_URL_LENGTH = 500;
+
+// The spellings one page can be stored under in daily_web_vitals_summary: with or without a trailing slash, and
+// with the host repeated as the first path segment ("https://shop.com/shop.com/products/x"), which the PageSpeed
+// service sometimes writes. The page list on the client comes from PageSpeed, so the match must be forgiving.
+function urlVariants(rawUrl) {
+  const raw = String(rawUrl || "").trim();
+  if (!raw) return [];
+  const out = new Set([raw]);
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.host;
+    const search = `${parsed.search}${parsed.hash}`;
+    let path = parsed.pathname;
+    if (path === `/${host}`) path = "/";
+    else if (path.startsWith(`/${host}/`)) path = path.slice(host.length + 1);
+    const bare = path.length > 1 ? path.replace(/\/+$/, "") : path;
+    const slashed = bare.endsWith("/") ? bare : `${bare}/`;
+    for (const p of [bare, slashed]) {
+      out.add(`${parsed.protocol}//${host}${p === "/" ? "" : p}${search}`);
+      out.add(`${parsed.protocol}//${host}${p}${search}`);
+      out.add(`${parsed.protocol}//${host}/${host}${p === "/" ? "" : p}${search}`);
+      out.add(`${parsed.protocol}//${host}/${host}${p}${search}`);
+    }
+  } catch (_err) {
+    /* not a URL: only the raw text is matched */
+  }
+  return [...out];
+}
+
+// Daily averages for the brand, or (with `url`) for one page of it.
+async function getTrend({ conn, start, end, url = null }) {
+  const variants = url ? urlVariants(String(url).slice(0, MAX_TREND_URL_LENGTH)) : [];
+  const urlFilter = variants.length ? `AND url IN (${variants.map(() => "?").join(", ")})` : "";
   const rows = await conn.query(
     `
       SELECT
@@ -142,21 +175,23 @@ async function getTrend({ conn, start, end }) {
         AVG(avg_inp) AS inp,
         AVG(avg_cls) AS cls
       FROM daily_web_vitals_summary
-      WHERE date >= ? AND date <= ?
+      WHERE date >= ? AND date <= ? ${urlFilter}
       GROUP BY date
       ORDER BY date ASC
     `,
     {
       type: QueryTypes.SELECT,
-      replacements: [start, end],
+      replacements: [start, end, ...variants],
     },
   );
 
   return {
     granularity: "daily",
+    url: variants.length ? String(url) : null,
+    // A day with no value for a metric (AVG over nothing) stays null so the chart shows a gap, not a 0.
     points: rows.map((row) => ({
       label: row.date,
-      ...mapMetricRow(row),
+      ...Object.fromEntries(METRICS.map((metric) => [metric, row[metric] === null || row[metric] === undefined ? null : numberOrNull(row[metric])])),
     })),
   };
 }
@@ -247,6 +282,8 @@ async function getAllBrandsSnapshot({ date, user = {} }) {
 module.exports = {
   getSnapshot,
   getTrend,
+  urlVariants,
+  MAX_TREND_URL_LENGTH,
   getPageBreakdown,
   getAllBrandsSnapshot,
 };

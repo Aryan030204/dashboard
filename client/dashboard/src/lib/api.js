@@ -580,7 +580,7 @@ export async function getDashboardSummary(args) {
 export async function getDataRestrictionConfig() {
   const res = await doGet("/metrics/data-restriction-config");
   if (res.error) {
-    return { enabled: true, periodDays: 30, __error: true };
+    return { enabled: true, periodDays: 31, __error: true };
   }
   return {
     enabled:
@@ -670,6 +670,47 @@ export async function fetchProductTypes(brandKey, start, end) {
   if (start) params.start = start;
   if (end) params.end = end;
   return getJSON("/metrics/product-types", params);
+}
+
+// Out-of-stock history for the Inventory panel's trend chart (inventory_oos_history).
+// Returns { available, buckets, summary, episodes, ... } or { error } / { aborted }.
+export async function getInventoryOosTrend(args, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end,
+      granularity: args.granularity,
+      product_id: args.product_id || args.productId || undefined,
+      variant_id: args.variant_id || args.variantId || undefined,
+    },
+    args,
+  );
+  const res = await doGet("/metrics/product-conversion/oos-trend", params, { signal: options.signal });
+  if (res.aborted) return { error: true, aborted: true };
+  if (res.error) return { error: true };
+  const json = res.data || {};
+  if (json.available === false) return { available: false };
+  return {
+    available: true,
+    range: json.range || null,
+    granularity: json.granularity || args.granularity,
+    timezone: json.timezone || "Asia/Kolkata",
+    truncated: !!json.truncated,
+    buckets: Array.isArray(json.buckets) ? json.buckets : [],
+    summary: json.summary || null,
+    episodes: Array.isArray(json.episodes) ? json.episodes : [],
+  };
+}
+
+// Products and variants that went out of stock in a date range (the chart's filter list).
+export async function getInventoryOosOptions(args, options = {}) {
+  const params = appendBrandKey({ start: args.start, end: args.end }, args);
+  const res = await doGet("/metrics/product-conversion/oos-trend/options", params, { signal: options.signal });
+  if (res.aborted) return { error: true, aborted: true };
+  if (res.error) return { error: true };
+  const json = res.data || {};
+  if (json.available === false) return { available: false, products: [] };
+  return { available: true, truncated: !!json.truncated, products: Array.isArray(json.products) ? json.products : [] };
 }
 
 export async function getProductConversion(args, options = {}) {
@@ -1345,7 +1386,9 @@ export async function getDailyFunnel(args = {}) {
       start: args.start,
       end: args.end,
       utm_date: args.utmDate,
+      utm_end_date: args.utmEndDate || undefined,
       compare_utm_date: args.compareUtmDate,
+      compare_utm_end_date: args.compareUtmEndDate || undefined,
       utm_source: args.utmSource || undefined,
       include_utm:
         typeof args.includeUtm === "boolean" ? String(args.includeUtm) : undefined,
@@ -1361,6 +1404,7 @@ export async function getDailyFunnel(args = {}) {
     rows: Array.isArray(json?.rows) ? json.rows : [],
     utmRows: Array.isArray(json?.utmRows) ? json.utmRows : [],
     utmDate: json?.utmDate || null,
+    utmEndDate: json?.utmEndDate || null,
     utmSource: json?.utmSource || null,
     utmCutoffHour: Number.isInteger(json?.utmCutoffHour) ? json.utmCutoffHour : null,
     range: json?.range || null,
@@ -1380,10 +1424,111 @@ export async function getIntentFunnel(args = {}, options = {}) {
       intent: args.intent,
       path_start: args.pathStart,
       path_top: args.pathTop,
+      path_steps: args.pathSteps,
+      skip_paths: args.skipPaths ? "1" : undefined,
     },
     args,
   );
   return doGet("/metrics/intent-funnel", params, options);
+}
+
+// Intent Funnel "Funnel Exploration" for a product and/or an intent level (the unfiltered view comes with
+// getIntentFunnel). `productId` starts every journey at that product's PDP view; `intent` is "all" or one
+// level (high / medium / low) on `basis` ("behavior" or "score"); `steps` is the path length.
+export async function getIntentFunnelPaths(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      intent: args.intent,
+      basis: args.basis,
+      path_start: args.pathStart,
+      steps: args.steps,
+      product_id: args.productId || undefined,
+    },
+    args,
+  );
+  return doGet("/metrics/intent-funnel/paths", params, options);
+}
+
+// The store's top products (from the Redis cache) for the Funnel Exploration product dropdown.
+export async function getIntentFunnelPathProducts(args = {}, options = {}) {
+  const params = appendBrandKey({ start: args.start, end: args.end || args.start }, args);
+  return doGet("/metrics/intent-funnel/path-products", params, options);
+}
+
+// Intent Funnel "User Overlap by UTM Source" card. Its own request so the card can refetch alone.
+// `intent` is "all" or one level (high / medium / low); `basis` is "behavior" or "score".
+// Top products of one intent level (all / high / medium / low) on a basis (behavior / score).
+export async function getIntentTopProducts(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      intent: args.intent,
+      basis: args.basis,
+    },
+    args,
+  );
+  return doGet("/metrics/intent-funnel/top-products", params, options);
+}
+
+export async function getIntentSourceOverlap(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      intent: args.intent,
+      basis: args.basis,
+    },
+    args,
+  );
+  return doGet("/metrics/intent-funnel/source-overlap", params, options);
+}
+
+// Intent Funnel "Intent Report" table: the page's KPIs per day and for the whole range, with its own date
+// range. `basis` is "behavior" or "score" (the page's Behaviour / Score switch).
+export async function getIntentReport(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      basis: args.basis,
+    },
+    args,
+  );
+  return doGet("/metrics/intent-funnel/report", params, options);
+}
+
+// Heatmaps section of the Intent page. Popular pages: page views per page path for the range
+// (`device` is all / desktop / mobile / tablet).
+export async function getHeatmapPages(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      device: args.device && args.device !== "all" ? args.device : undefined,
+      search: args.search,
+      limit: args.limit,
+    },
+    args,
+  );
+  return doGet("/metrics/heatmap/pages", params, options);
+}
+
+// Ranked clicked elements of one page (`path` is the page path, e.g. "/collections/all").
+export async function getHeatmapElements(args = {}, options = {}) {
+  const params = appendBrandKey(
+    {
+      start: args.start,
+      end: args.end || args.start,
+      // not `path`: the Vercel proxy uses the query parameter `path` for the API route and would lose this one
+      page_path: args.path,
+      limit: args.limit,
+    },
+    args,
+  );
+  return doGet("/metrics/heatmap/elements", params, options);
 }
 
 export async function getWebVitalsSnapshot(args = {}) {
@@ -1415,12 +1560,14 @@ export async function getWebVitalsTrend(args = {}) {
       start: args.start,
       end: args.end,
       granularity: args.granularity || "daily",
+      url: args.url || undefined,
     },
     args,
   );
   const json = await getJSON("/web-vitals/trend", params);
   return {
     granularity: json?.granularity || "daily",
+    url: json?.url || null,
     points: Array.isArray(json?.points) ? json.points : [],
     error: json?.__error,
   };
@@ -1952,6 +2099,13 @@ export async function unpublishWeeklyReport({ brandKey, id }) {
   return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/unpublish`, brandKey), {});
 }
 
+// Author-only. An empty string clears the description.
+export async function updateWeeklyReportDescription({ brandKey, id, description }) {
+  return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/description`, brandKey), {
+    description: description ?? "",
+  });
+}
+
 export async function cancelWeeklyReport({ brandKey, id }) {
   return doPost(weeklyReportsPath(`/${encodeURIComponent(id)}/cancel`, brandKey), {});
 }
@@ -2033,13 +2187,14 @@ function weeklyReportsUploadTransport(brandKey) {
 
 // Uploads a deck in small chunks (see lib/chunkedUpload.js for why). Returns { promise, abort }.
 // The promise resolves to { error, status, data, aborted }, as the single-request upload did.
-export function uploadWeeklyReport({ brandKey, file, title, reportingWeek, onProgress }) {
+export function uploadWeeklyReport({ brandKey, file, title, reportingWeek, description, onProgress }) {
   const controller = new AbortController();
 
   const promise = chunkedUpload({
     file,
     title,
     reportingWeek,
+    description,
     onProgress,
     signal: controller.signal,
     send: weeklyReportsUploadTransport(brandKey),

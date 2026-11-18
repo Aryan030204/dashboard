@@ -15,6 +15,26 @@ export const UNSUPPORTED_FORMAT_MESSAGE =
 export const MAX_TITLE_LENGTH = 200;
 export const MIN_WEEK = 1;
 export const MAX_WEEK = 53;
+export const MAX_DESCRIPTION_WORDS = 250;
+
+export function countWords(text) {
+  return ((text ?? "").toString().match(/\S+/g) || []).length;
+}
+
+// Cuts text to at most `max` words, keeping the original spacing and line breaks of what is kept.
+// Used while typing/pasting so the box can never hold more than the limit.
+export function limitWords(text, max = MAX_DESCRIPTION_WORDS) {
+  const value = (text ?? "").toString();
+  const regex = /\S+/g;
+  let count = 0;
+  let match = regex.exec(value);
+  while (match) {
+    count += 1;
+    if (count > max) return value.slice(0, match.index).replace(/\s+$/, "");
+    match = regex.exec(value);
+  }
+  return value;
+}
 
 function getFileExtension(name) {
   const value = (name || "").toString();

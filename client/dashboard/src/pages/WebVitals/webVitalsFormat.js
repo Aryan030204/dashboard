@@ -105,3 +105,85 @@ export function getStatusMeta(status, metricId) {
   if (metricId === "performance") return PERFORMANCE_STATUS_META[status] || null;
   return STATUS_META[status] || null;
 }
+
+// Same 4-tier Performance scale the backend uses (analytics/services/webVitals.service.js getPerformanceStatus).
+export function getPerformanceStatus(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  if (value > 59) return "good";
+  if (value >= 47) return "needs_attention";
+  if (value >= 40) return "poor";
+  return "critical";
+}
+
+const PAGE_METRICS = ["performance", "fcp", "lcp", "ttfb", "inp", "cls"];
+
+// The Page Level Breakdown rows from the PageSpeed results of one date: one row per URL, each metric
+// averaged over that URL's results, exactly how the dashboard's Top 5 Pages card groups them. Worst
+// performance first, like the table always was.
+export function buildPageRowsFromPagespeed(results) {
+  const byUrl = new Map();
+  (Array.isArray(results) ? results : []).forEach((item) => {
+    const url = item?.url;
+    if (!url) return;
+    if (!byUrl.has(url)) byUrl.set(url, { url, page_name: "", sums: {}, counts: {} });
+    const entry = byUrl.get(url);
+    if (!entry.page_name && item.page_name) entry.page_name = String(item.page_name);
+    PAGE_METRICS.forEach((metric) => {
+      const value = item[metric];
+      if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) return;
+      entry.sums[metric] = (entry.sums[metric] || 0) + Number(value);
+      entry.counts[metric] = (entry.counts[metric] || 0) + 1;
+    });
+  });
+
+  const rows = [...byUrl.values()].map((entry) => {
+    const row = { page_name: entry.page_name, url: entry.url };
+    PAGE_METRICS.forEach((metric) => {
+      row[metric] = entry.counts[metric] ? entry.sums[metric] / entry.counts[metric] : null;
+    });
+    row.performance_status = getPerformanceStatus(row.performance);
+    return row;
+  });
+  return rows.sort((a, b) => (a.performance ?? Infinity) - (b.performance ?? Infinity));
+}
+
+// ---- Daily Trend: which metric, which page ---------------------------------------------------------------------
+
+// The pages offered in the Daily Trend's page select, one per URL of the table rows, in the table's order. The id
+// is the row's URL (what the trend endpoint is asked for); the label is the page name, else the URL's path.
+export function pageOptionsFromRows(rows) {
+  const seen = new Set();
+  const options = [];
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const url = row?.url;
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    let label = row.page_name ? String(row.page_name) : "";
+    if (!label) {
+      try {
+        label = new URL(normalizeWebVitalsUrl(url)).pathname || url;
+      } catch {
+        label = String(url);
+      }
+    }
+    options.push({ url, label });
+  });
+  return options;
+}
+
+// Y axis for a metric's daily trend: the 0-100 score is fixed; the others start at 0 and end a little above the
+// largest value shown (never a flat axis for an all-zero series).
+export function trendAxis(metricId, values) {
+  if (metricId === "performance") return { domain: [0, 100] };
+  const numbers = (Array.isArray(values) ? values : []).filter((v) => v !== null && v !== undefined && Number.isFinite(Number(v))).map(Number);
+  const max = numbers.length ? Math.max(...numbers) : 0;
+  if (max <= 0) return { domain: [0, metricId === "cls" ? 0.1 : 1] };
+  return { domain: [0, Number((max * 1.15).toPrecision(2))] };
+}
+
+// "Daily Trend (LCP)" for the brand, "Daily Trend (LCP) - perfume" for one page.
+export function trendTitle(metricId, pageLabel) {
+  const def = METRIC_DEFS[metricId] || METRIC_DEFS.performance;
+  const metric = metricId === "performance" ? def.label : def.shortLabel;
+  return pageLabel ? `Daily Trend (${metric}) - ${pageLabel}` : `Daily Trend (${metric})`;
+}

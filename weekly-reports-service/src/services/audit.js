@@ -1,3 +1,5 @@
+const { ensureLogger } = require("../logger");
+
 // Audit events (PRD section 24). Datum has no platform audit log, so this stays local to the
 // service. A failed audit write is logged but never blocks the request.
 const ACTIONS = Object.freeze({
@@ -9,10 +11,12 @@ const ACTIONS = Object.freeze({
   UNPUBLISHED: "REPORT_UNPUBLISHED",
   DELETED: "REPORT_DELETED",
   CANCELLED: "REPORT_CANCELLED",
+  DESCRIPTION_UPDATED: "REPORT_DESCRIPTION_UPDATED",
   ACCESS_DENIED: "ACCESS_DENIED",
 });
 
-function buildAudit(pool, logger = console) {
+function buildAudit(pool, logger) {
+  const log = ensureLogger(logger, "audit");
   return {
     ACTIONS,
     async record({ brandKey, reportId = null, userId = null, action, metadata = null }) {
@@ -21,8 +25,11 @@ function buildAudit(pool, logger = console) {
           "INSERT INTO weekly_report_events (brand_key, report_id, user_id, action, metadata) VALUES (?, ?, ?, ?, ?)",
           [brandKey, reportId, userId, action, metadata ? JSON.stringify(metadata) : null],
         );
+        // Access denials are security events: they are worth a warning, the rest is routine.
+        const write = action === ACTIONS.ACCESS_DENIED ? log.warn : log.info;
+        write(`recorded ${action}`, { brand: brandKey, report: reportId, user: userId, metadata });
       } catch (err) {
-        logger.error("[weekly-reports] audit write failed", action, err && err.message);
+        log.error("audit write failed (the request continues)", { action, brand: brandKey, report: reportId, error: err });
       }
     },
   };

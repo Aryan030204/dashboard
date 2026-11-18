@@ -25,8 +25,12 @@ const webVitalsController = {
       }
       const end = req.query.end ? String(req.query.end) : todayIsoDate();
       const start = req.query.start ? String(req.query.start) : end;
+      const url = typeof req.query.url === "string" && req.query.url.trim() ? req.query.url.trim() : null;
+      if (url && url.length > webVitalsService.MAX_TREND_URL_LENGTH) {
+        return res.status(400).json({ error: "url is too long" });
+      }
       return res.json(
-        await webVitalsService.getTrend({ conn: req.brandDb.sequelize, start, end }),
+        await webVitalsService.getTrend({ conn: req.brandDb.sequelize, start, end, url }),
       );
     } catch (error) {
       return handleControllerError(res, error, "web-vitals-trend failed");

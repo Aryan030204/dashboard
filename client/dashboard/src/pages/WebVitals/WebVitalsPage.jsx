@@ -3,11 +3,12 @@ import { Alert, Stack, Typography } from "@mui/material";
 import dayjs from "dayjs";
 import {
   getWebVitalsAllBrandsSnapshot,
-  getWebVitalsPages,
   getWebVitalsSnapshot,
   getWebVitalsTrend,
 } from "../../lib/api.js";
+import { fetchPagespeedResults, pagespeedBrandName } from "../../lib/pagespeed.js";
 import { FunnelSingleDatePicker } from "../../components/DailyFunnelPanel.jsx";
+import { buildPageRowsFromPagespeed, pageOptionsFromRows } from "./webVitalsFormat.js";
 import WebVitalsKpiRow from "./components/WebVitalsKpiRow.jsx";
 import WebVitalsAllBrandsSnapshot from "./components/WebVitalsAllBrandsSnapshot.jsx";
 import WebVitalsTrendChart from "./components/WebVitalsTrendChart.jsx";
@@ -32,6 +33,13 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
   useEffect(() => {
     setSelectedBrandKey(brandKey);
   }, [brandKey]);
+
+  // What the Daily Trend shows: the metric picked with the KPI cards, for the whole brand or one page.
+  const [selectedMetric, setSelectedMetric] = useState("performance");
+  const [selectedPageUrl, setSelectedPageUrl] = useState(null);
+  useEffect(() => {
+    setSelectedPageUrl(null); // another brand has other pages
+  }, [selectedBrandKey]);
 
   const [snapshot, setSnapshot] = useState(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
@@ -106,6 +114,7 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
       brand_key: selectedBrandKey,
       start: trendStart,
       end: trendEnd,
+      url: selectedPageUrl,
     })
       .then((result) => {
         if (cancelled) return;
@@ -121,16 +130,18 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
     return () => {
       cancelled = true;
     };
-  }, [selectedBrandKey, trendStart, trendEnd]);
+  }, [selectedBrandKey, trendStart, trendEnd, selectedPageUrl]);
 
   useEffect(() => {
     if (!selectedBrandKey) return;
     let cancelled = false;
     setPagesLoading(true);
-    getWebVitalsPages({ brand_key: selectedBrandKey, date: snapshotDate })
-      .then((result) => {
+    // The same PageSpeed results, brand name and date the dashboard's Top 5 Pages card uses, so the table
+    // lists the same pages with the same numbers.
+    fetchPagespeedResults(pagespeedBrandName(selectedBrandKey), snapshotDate, snapshotDate)
+      .then((results) => {
         if (cancelled) return;
-        setPageRows(result?.error ? [] : result.rows);
+        setPageRows(buildPageRowsFromPagespeed(results));
       })
       .catch(() => {
         if (cancelled) return;
@@ -143,6 +154,8 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
       cancelled = true;
     };
   }, [selectedBrandKey, snapshotDate]);
+
+  const pageOptions = useMemo(() => pageOptionsFromRows(pageRows), [pageRows]);
 
   const handleTrendRangeChange = useCallback((nextStart, nextEnd) => {
     setTrendStart(nextStart);
@@ -191,7 +204,12 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
         <Typography variant="subtitle2" color="text.secondary">
           Summary
         </Typography>
-        <WebVitalsKpiRow snapshot={snapshot} loading={snapshotLoading} />
+        <WebVitalsKpiRow
+          snapshot={snapshot}
+          loading={snapshotLoading}
+          selectedMetric={selectedMetric}
+          onSelectMetric={setSelectedMetric}
+        />
       </Stack>
 
       <WebVitalsTrendChart
@@ -200,6 +218,10 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
         rangeStart={trendStart}
         rangeEnd={trendEnd}
         onRangeChange={handleTrendRangeChange}
+        metricId={selectedMetric}
+        pageOptions={pageOptions}
+        selectedPageUrl={selectedPageUrl}
+        onSelectPage={setSelectedPageUrl}
       />
 
       <WebVitalsPageTable
@@ -207,6 +229,8 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
         loading={pagesLoading}
         brandKey={selectedBrandKey}
         date={snapshotDate}
+        selectedPageUrl={selectedPageUrl}
+        onSelectPage={setSelectedPageUrl}
       />
     </Stack>
   );

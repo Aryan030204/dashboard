@@ -23,6 +23,8 @@ RUN apt-get update \
       fonts-dejavu-core fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-noto-core \
  && rm -rf /var/lib/apt/lists/*
 COPY fonts/ /usr/local/share/fonts/datum/
+# Names the decks use ("Bebas Neue Cyrillic", "Poppins Bold", ...) -> the installed families; see fontconfig/60-deck-fonts.conf
+COPY fontconfig/ /etc/fonts/conf.d/
 RUN fc-cache -f
 
 # --- Final images -------------------------------------------------------------------------------

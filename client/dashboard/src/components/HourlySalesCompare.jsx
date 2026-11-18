@@ -589,10 +589,41 @@ function SeriesLegend({
   );
 }
 
+// Share of one payment mode in its group (prepaid / COD / partially paid) at a chart point.
+// Hidden series still count in the total, so the shares of a point add up to 100%.
+export function getPaymentShareLabel(def, metricValues = {}, selectedDefs = []) {
+  if (!def?.parentId || !String(def.parentId).startsWith("payment_")) return "";
+  const siblings = selectedDefs.filter((item) => item.parentId === def.parentId);
+  const total = siblings.reduce((sum, item) => sum + Number(metricValues[item.id] || 0), 0);
+  if (!(total > 0)) return "";
+  return nfPercent1.format(Number(metricValues[def.id] || 0) / total);
+}
+
+// Change of `current` relative to the baseline (the comparison range). Null when there is nothing to compare
+// against; a zero baseline has no percentage, so it is reported as "new" instead of Infinity.
+function computeDelta(current, baseline) {
+  if (current == null || baseline == null) return null;
+  const cur = Number(current);
+  const base = Number(baseline);
+  if (!Number.isFinite(cur) || !Number.isFinite(base)) return null;
+  if (base === 0) return cur === 0 ? { pct: 0, direction: 0 } : { pct: null, direction: cur > 0 ? 1 : -1 };
+  const pct = ((cur - base) / Math.abs(base)) * 100;
+  return { pct, direction: Math.sign(pct) };
+}
+
+function formatDeltaPct(delta) {
+  if (!delta) return "";
+  if (delta.pct === null) return "new";
+  const rounded = Math.round(Math.abs(delta.pct) * 10) / 10;
+  if (rounded === 0) return "0.0%";
+  return `${delta.direction > 0 ? "+" : "-"}${rounded.toFixed(1)}%`;
+}
+
 function CustomTooltip({
   active,
   label,
   compareMode = false,
+  compareUnitKind = null,
   selectedDefs = [],
   rangeLabels,
   compareFormatter,
@@ -663,6 +694,51 @@ function CustomTooltip({
                 </Typography>
               </Box>
             )}
+          {/* Change for this point relative to the comparison range (the baseline). Needs both lines visible. */}
+          {visibleRangeLines.includes("primary") &&
+            visibleRangeLines.includes("comparison") &&
+            (() => {
+              const delta = computeDelta(currentValue, compareValue);
+              if (!delta) return null;
+              const color =
+                delta.direction > 0
+                  ? "#10b981"
+                  : delta.direction < 0
+                    ? "#ef4444"
+                    : "text.secondary";
+              // Percent metrics (e.g. conversion rate) also get the absolute gap in percentage points.
+              const points =
+                compareUnitKind === "percent" && delta.pct !== null
+                  ? (Number(currentValue) - Number(compareValue)) * 100
+                  : null;
+              return (
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    mt: 0.75,
+                    pt: 0.75,
+                    borderTop: "1px solid",
+                    borderColor: "divider",
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                    vs {rangeLabels.previous}
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, ml: "auto", color }}>
+                    {delta.direction > 0 ? "▲ " : delta.direction < 0 ? "▼ " : ""}
+                    {formatDeltaPct(delta)}
+                    {points !== null && Math.abs(points) >= 0.005 && (
+                      <Box component="span" sx={{ ml: 0.75, fontWeight: 500, color: "text.secondary" }}>
+                        ({points > 0 ? "+" : "-"}
+                        {Math.abs(points).toFixed(2)} pp)
+                      </Box>
+                    )}
+                  </Typography>
+                </Box>
+              );
+            })()}
         </>
       ) : (
         selectedDefs
@@ -685,6 +761,11 @@ function CustomTooltip({
               </Typography>
               <Typography variant="body2" sx={{ fontWeight: 600, ml: "auto" }}>
                 {def.formatter(metricValues[def.id])}
+                {getPaymentShareLabel(def, metricValues, selectedDefs) && (
+                  <Box component="span" sx={{ ml: 0.75, fontWeight: 500, color: "text.secondary" }}>
+                    ({getPaymentShareLabel(def, metricValues, selectedDefs)})
+                  </Box>
+                )}
               </Typography>
             </Box>
           ))
@@ -1282,8 +1363,20 @@ export default memo(function HourlySalesCompare({
                 : previousPerformanceMap.get(point.date);
           }
 
+          let comparisonLabel = null;
+          if (viewMode !== "hourly" && point.date) {
+            const dt = new Date(`${point.date}T00:00:00Z`);
+            if (!Number.isNaN(dt.getTime())) {
+              comparisonLabel =
+                viewMode === "monthly"
+                  ? MONTH_NAMES[dt.getUTCMonth()]
+                  : `${MONTH_NAMES[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
+            }
+          }
+
           return {
             date: point.date || null,
+            label: comparisonLabel,
             metrics: hasPerformanceSelected || hasPaymentCompositeSelected
               ? {
                   ...(point.metrics || {}),
@@ -1300,6 +1393,7 @@ export default memo(function HourlySalesCompare({
           ? buildWeeklyBuckets(normalizedPoints, normalizedComparisonPoints)
           : normalizedPoints.map((point, index) => ({
               ...point,
+              comparisonLabel: normalizedComparisonPoints[index]?.label || null,
               comparisonMetrics:
                 normalizedComparisonPoints[index]?.metrics || null,
             }));
@@ -1353,12 +1447,19 @@ export default memo(function HourlySalesCompare({
     hasPaymentCompositeSelected,
   ]);
 
+  const showComparisonDates =
+    shouldShowCompare &&
+    visibleRangeLines.includes("comparison") &&
+    !visibleRangeLines.includes("primary");
+
   const processedChartData = useMemo(() => {
     if (selectedDefs.length === 0) return [];
 
     const mapped = chartData.map((point) => {
       const nextPoint = {
         label: point.label,
+        // X-axis text: when only the comparison range is toggled on, show its dates instead of the current range's.
+        axisLabel: showComparisonDates && point.comparisonLabel ? point.comparisonLabel : point.label,
         hour: point.hour,
         isInProgressHour: point.isInProgressHour,
       };
@@ -1426,7 +1527,7 @@ export default memo(function HourlySalesCompare({
     });
 
     return enriched;
-  }, [activeDef, chartData, selectedDefs, shouldShowCompare, viewMode]);
+  }, [activeDef, chartData, selectedDefs, shouldShowCompare, showComparisonDates, viewMode]);
 
   const showHourlyTail = useMemo(() => {
     if (viewMode !== "hourly" || processedChartData.length < 2) return false;
@@ -1801,7 +1902,7 @@ export default memo(function HourlySalesCompare({
                     stroke={alpha(theme.palette.divider, 0.5)}
                   />
                   <XAxis
-                    dataKey="label"
+                    dataKey="axisLabel"
                     tickLine={false}
                     axisLine={false}
                     tickMargin={12}
@@ -1866,6 +1967,7 @@ export default memo(function HourlySalesCompare({
                           active={active}
                           label={label}
                           compareMode={shouldShowCompare}
+                          compareUnitKind={activeDef?.unitKind}
                           selectedDefs={selectedDefs}
                           rangeLabels={rangeLabels}
                           compareFormatter={
@@ -1941,7 +2043,7 @@ export default memo(function HourlySalesCompare({
                   stroke={alpha(theme.palette.divider, 0.5)}
                 />
                 <XAxis
-                  dataKey="label"
+                  dataKey="axisLabel"
                   tickLine={false}
                   axisLine={false}
                   tickMargin={12}
@@ -2016,6 +2118,7 @@ export default memo(function HourlySalesCompare({
                         active={active}
                         label={label}
                         compareMode={shouldShowCompare}
+                        compareUnitKind={activeDef?.unitKind}
                         selectedDefs={selectedDefs}
                         rangeLabels={rangeLabels}
                         compareFormatter={

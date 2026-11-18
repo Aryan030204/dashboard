@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Box,
   FormControl,
@@ -13,16 +13,17 @@ import { ResponsiveContainer, Sankey, Tooltip as ChartTooltip } from "recharts";
 import { SectionCard } from "./shared.jsx";
 import {
   INTENT_COLORS,
-  INTENT_FILTER_OPTIONS,
+  PATH_INTENT_OPTIONS,
   PATH_START_OPTIONS,
-  PATH_TOP_OPTIONS,
+  PATH_STEP_OPTIONS,
   formatCount,
   formatPct,
 } from "./intentFunnelUtils.js";
+import { highlightJourney, linkShare } from "./pathJourneyUtils.js";
 
 // Bold, clearly different colours per action, reused from the other panels
 // (blue / green / purple intent colours, amber warning, red error).
-// Keys are the recorded event names.
+// Keys are the recorded event names. Exit is always red.
 const STATE_COLORS = {
   page_viewed: "#f59e0b",
   product_viewed: "#2563eb",
@@ -32,14 +33,35 @@ const STATE_COLORS = {
   exit: "#ef4444",
 };
 
+// How many of the most common paths the chart shows per step.
+const PATH_STEP_SELECT_OPTIONS = PATH_STEP_OPTIONS.map((n) => ({ value: n, label: `${n} steps` }));
+// With a product chosen every journey starts at that product's PDP view.
+const PDP_START_OPTIONS = [{ value: "product_viewed", label: "Product View (PDP)" }];
+const MIN_SANKEY_WIDTH = 980;
+const STEP_WIDTH = 196;
+
+const DIMMED_OPACITY = 0.18;
+
 // On phones every control takes a full row (label left, select filling the rest).
-function ControlSelect({ label, value, onChange, options, hint }) {
+function ControlSelect({ label, value, onChange, options, hint, disabled = false, placeholder }) {
   const select = (
-    <FormControl size="small" sx={{ flex: { xs: 1, sm: "none" }, minWidth: 0 }}>
+    <FormControl size="small" sx={{ flex: { xs: 1, sm: "none" }, minWidth: 0 }} disabled={disabled}>
       <Select
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        sx={{ fontSize: 13, minWidth: { xs: 0, sm: 120 } }}
+        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+        displayEmpty={Boolean(placeholder)}
+        renderValue={
+          placeholder
+            ? (current) =>
+                options.find((option) => option.value === current)?.label ?? (
+                  <Box component="span" sx={{ color: "text.secondary" }}>
+                    {placeholder}
+                  </Box>
+                )
+            : undefined
+        }
+        inputProps={{ "aria-label": label }}
+        sx={{ fontSize: 13, minWidth: { xs: 0, sm: 130 }, maxWidth: { sm: 240 } }}
       >
         {options.map((option) => (
           <MenuItem key={option.value} value={option.value} disabled={option.disabled}>
@@ -139,22 +161,73 @@ function PathStepList({ paths, textColor }) {
   );
 }
 
-const MARGIN = { top: 64, right: 170, bottom: 8, left: 8 };
+// Details live in the tooltip so the chart itself stays readable. Percentages always say what they are a
+// share of.
+function PathTooltip({ active, payload }) {
+  const theme = useTheme();
+  const item = payload?.[0]?.payload;
+  if (!active || !item) return null;
+
+  const isLink = Boolean(item.source && item.target);
+  const share = isLink ? linkShare(item) : null;
+  const box = {
+    background: theme.palette.background.paper,
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: 8,
+    padding: "8px 12px",
+    fontSize: 12,
+    maxWidth: 260,
+  };
+
+  if (isLink) {
+    return (
+      <div style={box}>
+        <div style={{ fontWeight: 700 }}>{`${item.source.name} → ${item.target.name}`}</div>
+        <div>{`${formatCount(item.value)} sessions`}</div>
+        {share != null ? (
+          <div style={{ color: theme.palette.text.secondary }}>
+            {`${formatPct(share)} of the ${formatCount(item.source.value)} sessions at ${item.source.name} (step ${
+              item.source.step + 1
+            })`}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div style={box}>
+      <div style={{ fontWeight: 700 }}>{item.name}</div>
+      <div>{`${formatCount(item.value)} sessions`}</div>
+      <div style={{ color: theme.palette.text.secondary }}>
+        {`${formatPct(item.pct)} of the ${formatCount(item.stepSessions)} sessions at step ${item.step + 1}`}
+      </div>
+    </div>
+  );
+}
+
+const MARGIN = { top: 64, right: 200, bottom: 8, left: 8 };
 
 export default function PathExplorationSankey({
   paths,
   pathStart,
   onPathStartChange,
-  topN,
-  onTopNChange,
-  intentFilter,
-  onIntentFilterChange,
+  steps,
+  onStepsChange,
+  intent = "all",
+  onIntentChange,
+  productId = "",
+  onProductChange,
+  products = [],
+  // "ready" | "loading" | "error" | "unavailable": the live (product / intent) view loads on its own
+  status = "ready",
 }) {
   const theme = useTheme();
   const phone = useMediaQuery(theme.breakpoints.down("md"));
   const isDark = theme.palette.mode === "dark";
   const textColor = theme.palette.text.primary;
   const mutedColor = theme.palette.text.secondary;
+  const [hover, setHover] = useState(null);
 
   const data = useMemo(() => {
     if (!paths?.nodes?.length) return null;
@@ -174,11 +247,15 @@ export default function PathExplorationSankey({
     return { nodes, links: paths.links.map((link) => ({ ...link })) };
   }, [paths]);
 
+  // The whole journey under the pointer stays bright; everything else fades back.
+  const journey = useMemo(() => highlightJourney(data?.links, hover), [data, hover]);
+
   const renderNode = (props) => {
-    const { x, y, width, height, payload } = props;
+    const { x, y, width, height, index, payload } = props;
     if (!payload) return null;
+    const dimmed = journey && !journey.nodes.has(index);
     return (
-      <g>
+      <g opacity={dimmed ? DIMMED_OPACITY : 1} style={{ transition: "opacity 0.15s ease" }}>
         {payload.firstInStep && (
           <g>
             <text x={x} y={14} fontSize={11} fill={mutedColor}>
@@ -199,6 +276,9 @@ export default function PathExplorationSankey({
           height={Math.max(height, 2)}
           fill={payload.color}
           rx={2}
+          style={{ cursor: "pointer" }}
+          onMouseEnter={() => setHover({ type: "node", index })}
+          onMouseLeave={() => setHover(null)}
         />
         <text
           x={x + width + 8}
@@ -206,6 +286,7 @@ export default function PathExplorationSankey({
           fontSize={12}
           fontWeight={600}
           fill={textColor}
+          pointerEvents="none"
         >
           {payload.name}
         </text>
@@ -214,6 +295,7 @@ export default function PathExplorationSankey({
           y={y + Math.max(height, 2) / 2 + 13}
           fontSize={11}
           fill={mutedColor}
+          pointerEvents="none"
         >
           {`${formatCount(payload.value)} (${formatPct(payload.pct)})`}
         </text>
@@ -230,25 +312,31 @@ export default function PathExplorationSankey({
       sourceControlX,
       targetControlX,
       linkWidth,
+      index,
       payload,
     } = props;
     // Coloured by destination so each action reads the same everywhere.
     const color = payload?.target?.color || "#94a3b8";
+    const base = isDark ? 0.6 : 0.5;
+    const opacity = journey ? (journey.links.has(index) ? 0.85 : 0.06) : base;
     return (
       <path
         d={`M${sourceX},${sourceY} C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}`}
         fill="none"
         stroke={color}
         strokeWidth={Math.max(linkWidth, 1)}
-        strokeOpacity={isDark ? 0.6 : 0.5}
+        strokeOpacity={opacity}
+        style={{ transition: "stroke-opacity 0.15s ease", cursor: "pointer" }}
+        onMouseEnter={() => setHover({ type: "link", index })}
+        onMouseLeave={() => setHover(null)}
       />
     );
   };
 
   return (
     <SectionCard
-      title="Path Exploration (Left to Right Funnel)"
-      info="Where sessions go next after each step, from recorded event sequences. Choose the starting event and how many paths to show per step. Splitting paths by intent is not available yet."
+      title="Funnel Exploration"
+      info="Where sessions go next after each step, from recorded event sequences. Choose the starting event and how many steps to follow. Pick a product to start every journey at that product's page, or an intent level to look at only those sessions. Hover a step or a flow to follow its whole journey. Percentages are the share of the sessions at that step."
       action={
         <Box
           sx={{
@@ -256,72 +344,97 @@ export default function PathExplorationSankey({
             flexDirection: { xs: "column", sm: "row" },
             flexWrap: "wrap",
             alignItems: { xs: "stretch", sm: "center" },
-            gap: { xs: 1, md: 2 },
+            gap: { xs: 1, md: 1.5 },
             width: { xs: "100%", sm: "auto" },
           }}
         >
           <ControlSelect
             label="Start with"
-            value={pathStart}
+            value={productId ? "product_viewed" : pathStart}
             onChange={onPathStartChange}
-            options={PATH_START_OPTIONS}
+            options={productId ? PDP_START_OPTIONS : PATH_START_OPTIONS}
+            disabled={Boolean(productId)}
+            hint={productId ? "Journeys start at the chosen product's page" : undefined}
           />
           <ControlSelect
-            label="Show top"
-            value={topN}
-            onChange={onTopNChange}
-            options={PATH_TOP_OPTIONS.map((n) => ({
-              value: n,
-              label: `${n} paths`,
-            }))}
+            label="Paths"
+            value={steps}
+            onChange={onStepsChange}
+            options={PATH_STEP_SELECT_OPTIONS}
           />
           <ControlSelect
-            label="Intent Filter"
-            value={intentFilter}
-            onChange={onIntentFilterChange}
-            options={INTENT_FILTER_OPTIONS}
-            hint="Splitting paths by intent is not available yet"
+            label="Intent"
+            value={intent}
+            onChange={onIntentChange}
+            options={PATH_INTENT_OPTIONS}
+            disabled={!onIntentChange}
+          />
+          <ControlSelect
+            label="Products"
+            value={productId}
+            onChange={onProductChange}
+            placeholder="All products"
+            options={[{ value: "", label: "All products" }, ...products.map((p) => ({ value: p.id, label: p.name }))]}
+            disabled={!onProductChange}
+            hint={products.length === 0 ? "No top products found for this store yet" : undefined}
           />
         </Box>
       }
     >
-      {data && paths?.coverage && paths.coverage.pct < 99.5 ? (
+      {data && paths?.capped ? (
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+          Based on the first {formatCount(paths.coverage?.sessions)} matching sessions of the range; pick a
+          shorter date range to cover them all. Percentages are the share of the sessions at each step.
+        </Typography>
+      ) : data && paths?.coverage && paths.coverage.pct != null && paths.coverage.pct < 99.5 ? (
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
           Showing the most common paths, covering {formatPct(paths.coverage.pct, 0)} of{" "}
-          {formatCount(paths.coverage.totalSessions)} sessions that started here.
+          {formatCount(paths.coverage.totalSessions)} sessions that started here. Percentages are the share
+          of the sessions at each step.
+        </Typography>
+      ) : data ? (
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+          Percentages are the share of the sessions at each step.
         </Typography>
       ) : null}
       {data && phone ? (
         <PathStepList paths={paths} textColor={textColor} />
       ) : data ? (
         <Box sx={{ overflowX: "auto" }}>
-          <Box sx={{ minWidth: 820, height: 420 }}>
+          <Box
+            sx={{
+              minWidth: Math.max(MIN_SANKEY_WIDTH, (paths?.steps?.length || steps || 5) * STEP_WIDTH),
+              height: 460,
+              opacity: status === "loading" ? 0.5 : 1,
+              transition: "opacity 0.2s ease",
+            }}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <Sankey
                 data={data}
                 node={renderNode}
                 link={renderLink}
-                nodePadding={22}
+                nodePadding={32}
                 nodeWidth={18}
                 iterations={32}
                 margin={MARGIN}
               >
-                <ChartTooltip
-                  formatter={(value) => formatCount(value)}
-                  contentStyle={{
-                    background: theme.palette.background.paper,
-                    border: `1px solid ${theme.palette.divider}`,
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
+                <ChartTooltip content={<PathTooltip />} />
               </Sankey>
             </ResponsiveContainer>
           </Box>
         </Box>
       ) : (
         <Typography variant="body2" color="text.secondary">
-          No path data for this selection.
+          {status === "loading"
+            ? "Loading paths..."
+            : status === "error"
+              ? "Couldn't load paths for this selection. Please try again."
+              : status === "unavailable"
+                ? "Path exploration for this selection isn't available for this brand yet."
+                : productId
+                  ? "No sessions viewed this product in the selected date range."
+                  : "No path data for this selection."}
         </Typography>
       )}
     </SectionCard>

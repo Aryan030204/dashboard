@@ -54,7 +54,7 @@ function formatCellValue(columnId, row) {
   return def ? def.format(row[columnId]) : row[columnId] ?? "—";
 }
 
-export default function WebVitalsPageTable({ rows, loading, brandKey, date }) {
+export default function WebVitalsPageTable({ rows, loading, brandKey, date, selectedPageUrl = null, onSelectPage = null }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
@@ -193,7 +193,13 @@ export default function WebVitalsPageTable({ rows, loading, brandKey, date }) {
                   </TableRow>
                 ) : (
                   pagedRows.map((row, index) => (
-                    <TableRow key={`${row.page_name}-${row.url}-${index}`} hover>
+                    <TableRow
+                      key={`${row.page_name}-${row.url}-${index}`}
+                      hover
+                      selected={Boolean(onSelectPage) && row.url === selectedPageUrl}
+                      onClick={onSelectPage ? () => onSelectPage(row.url === selectedPageUrl ? null : row.url) : undefined}
+                      sx={onSelectPage ? { cursor: "pointer" } : undefined}
+                    >
                       <TableCell>{page * rowsPerPage + index + 1}</TableCell>
                       {visibleColumns.map((column) => {
                         const isPerformance = column.id === "performance";

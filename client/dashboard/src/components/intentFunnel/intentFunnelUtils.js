@@ -20,10 +20,12 @@ export const INTENT_LABELS = {
   low: "Low Intent",
 };
 
-export const TOP_PRODUCT_TABS = [
-  { value: "views", label: "By Views" },
-  { value: "addToCart", label: "By Add to Cart" },
-  { value: "checkouts", label: "By Checkouts" },
+// The intent filter of Top Products by Intent. "all" is the page's own list; the levels are fetched.
+export const TOP_PRODUCT_INTENTS = [
+  { value: "all", label: "All" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
 ];
 
 // Start events that exist in the recorded path sequences (behavioral_path_daily).
@@ -35,6 +37,21 @@ export const PATH_START_OPTIONS = [
 ];
 
 export const PATH_TOP_OPTIONS = [3, 4, 5, 6, 8];
+
+// Funnel Exploration path length (number of steps). Matches PATH_STEPS_MIN / MAX in the analytics service.
+export const PATH_STEPS_DEFAULT = 5;
+export const PATH_STEP_OPTIONS = [3, 4, 5, 6, 7, 8];
+
+// Funnel Exploration intent filter: every session, or one level on the page's current basis.
+export const PATH_INTENT_OPTIONS = [
+  { value: "all", label: "All Intents" },
+  { value: "high", label: "High Intent" },
+  { value: "medium", label: "Medium Intent" },
+  { value: "low", label: "Low Intent" },
+];
+
+// The product filter value when no product is chosen.
+export const ALL_PATH_PRODUCTS = "";
 
 // Path data cannot be split by intent bucket yet, so only "all" is selectable.
 export const INTENT_FILTER_OPTIONS = [
