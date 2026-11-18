@@ -17,6 +17,7 @@ function buildPnlRouter() {
   router.use(requirePermission("pnl_panel"));
 
   router.get("/summary", brandContext, pnlController.summary);
+  router.get("/series", brandContext, pnlController.series);
 
   router.get("/meta-ads/status", brandContext, metaAdsCredentialsController.status);
   router.post("/meta-ads/connect", brandContext, metaAdsCredentialsController.connect);

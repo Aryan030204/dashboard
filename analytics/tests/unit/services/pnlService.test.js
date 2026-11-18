@@ -257,3 +257,88 @@ describe("pnl.service getSummary", () => {
     ]);
   });
 });
+
+describe("pnl.service computePreviousRange (multi-month)", () => {
+  test("a multi-month monthly range compares against as many months before it", () => {
+    expect(pnlService.computePreviousRange("2026-05-01", "2026-10-31", "monthly")).toEqual([
+      "2025-11-01",
+      "2026-04-30",
+    ]);
+  });
+});
+
+describe("pnl.service getSummary compare override", () => {
+  test("uses compareStart / compareEnd as the previous range when both are given", async () => {
+    const conn = connReturning(dbRow({ day_count: 1 }), dbRow({ day_count: 1 }));
+    const summary = await pnlService.getSummary({
+      brandKey: "BBB",
+      start: "2026-09-10",
+      end: "2026-09-10",
+      compareStart: "2026-09-03",
+      compareEnd: "2026-09-03",
+      conn,
+    });
+    expect(summary.previousStart).toBe("2026-09-03");
+    expect(summary.previousEnd).toBe("2026-09-03");
+    expect(sqlCalls(conn, "overall_pnl")[1][1].replacements).toEqual(["BBB", "2026-09-03", "2026-09-03"]);
+  });
+});
+
+describe("pnl.service getSeries", () => {
+  function seriesConn({ pnl = {}, meta = {}, google = {} }) {
+    // Each answer is keyed by the range's start date so current / previous
+    // calls can be told apart regardless of order.
+    const query = jest.fn(async (sql, { replacements }) => {
+      const start = sql.includes("`brand_key`") ? replacements[1] : replacements[0];
+      if (sql.includes(`\`${META_SPEND_TABLE}\``)) return meta[start] || [];
+      if (sql.includes(`\`${GOOGLE_SPEND_TABLE}\``)) return google[start] || [];
+      return pnl[start] || [];
+    });
+    return { query };
+  }
+
+  test("enumerates daily buckets for both ranges, index-aligned, with '-' for days the worker hasn't built", async () => {
+    const conn = seriesConn({
+      pnl: {
+        "2026-09-08": [
+          { bucket: "2026-09-08", ...dbRow({ day_count: 1 }) },
+          { bucket: "2026-09-10", ...dbRow({ day_count: 1, net_sales: "900.00" }) },
+        ],
+        "2026-09-05": [{ bucket: "2026-09-06", ...dbRow({ day_count: 1 }) }],
+      },
+    });
+    const series = await pnlService.getSeries({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-10", conn });
+
+    expect(series.previousStart).toBe("2026-09-05");
+    expect(series.current.map((p) => p.key)).toEqual(["2026-09-08", "2026-09-09", "2026-09-10"]);
+    expect(series.previous.map((p) => p.key)).toEqual(["2026-09-05", "2026-09-06", "2026-09-07"]);
+    expect(series.current[0].netSales).toBe(720.34);
+    expect(series.current[1].netSales).toBe(MISSING);
+    expect(series.current[2].netSales).toBe(900);
+    expect(series.previous[1].ebitda).toBe(480.34);
+    expect(sqlCalls(conn, "overall_pnl")[0][0]).toMatch(/GROUP BY bucket/);
+  });
+
+  test("applies rollup ad spend per bucket and shifts CM2 onwards like the summary does", async () => {
+    const conn = seriesConn({
+      pnl: {
+        "2026-09-08": [
+          { bucket: "2026-09-08", ...dbRow({ day_count: 1, meta: "80.00", cm2: "400.34", cm3: "400.34", ebitda: "400.34" }) },
+        ],
+      },
+      meta: { "2026-09-08": [{ bucket: "2026-09-08", day_count: 1, spend: "90.00" }] },
+    });
+    const series = await pnlService.getSeries({ brandKey: "BBB", start: "2026-09-08", end: "2026-09-08", conn });
+    expect(series.current[0].cm1).toBe(480.34);
+    expect(series.current[0].cm2).toBe(390.34);
+    expect(series.current[0].ebitda).toBe(390.34);
+  });
+
+  test("monthly buckets are clipped to the range edges", () => {
+    expect(pnlService.enumerateBuckets("2026-08-15", "2026-10-03", "monthly")).toEqual([
+      { key: "2026-08", start: "2026-08-15", end: "2026-08-31" },
+      { key: "2026-09", start: "2026-09-01", end: "2026-09-30" },
+      { key: "2026-10", start: "2026-10-01", end: "2026-10-03" },
+    ]);
+  });
+});
