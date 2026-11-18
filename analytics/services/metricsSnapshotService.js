@@ -111,6 +111,14 @@ function buildNormalizedUtmSourceSql(column = "utm_source") {
   `;
 }
 
+// The UTM tables use a case-insensitive collation, so GROUP BY merges "Google" and "google" into one row, but
+// MySQL returns an arbitrary spelling as the label (it can differ from one day to the next). Every JS-side
+// lookup that joins rows by source/campaign (order split, previous-period comparison) must therefore use a
+// case-insensitive key, otherwise the same source is treated as two different ones and its values show as 0.
+function utmMatchKey(value, fallback) {
+  return String(value || fallback).trim().toLowerCase();
+}
+
 function buildNormalizedUtmCampaignSql(column = "utm_campaign") {
   return `
     CASE
@@ -562,7 +570,7 @@ async function queryDailyFunnelUtmRows(conn, date, cutoffHour = null, endDate = 
   const bySource = new Map();
 
   for (const row of Array.isArray(baseRows) ? baseRows : []) {
-    bySource.set(String(row.utm_source || "direct"), {
+    bySource.set(utmMatchKey(row.utm_source, "direct"), {
       utm_source: String(row.utm_source || "direct"),
       sales: Number(row.sales || 0),
       sessions: Number(row.sessions || 0),
@@ -576,7 +584,7 @@ async function queryDailyFunnelUtmRows(conn, date, cutoffHour = null, endDate = 
 
   for (const row of Array.isArray(orderRows) ? orderRows : []) {
     const source = String(row.utm_source || "direct");
-    const existing = bySource.get(source) || {
+    const existing = bySource.get(utmMatchKey(source, "direct")) || {
       utm_source: source,
       sales: 0,
       sessions: 0,
@@ -589,7 +597,7 @@ async function queryDailyFunnelUtmRows(conn, date, cutoffHour = null, endDate = 
     existing.prepaid_orders = Number(row.prepaid_orders || 0);
     existing.cod_orders = Number(row.cod_orders || 0);
     existing.partially_paid_orders = Number(row.partially_paid_orders || 0);
-    bySource.set(source, existing);
+    bySource.set(utmMatchKey(source, "direct"), existing);
   }
 
   return Array.from(bySource.values()).sort((left, right) =>
@@ -654,11 +662,11 @@ async function queryDailyFunnelUtmRowsWithDelta(
   ]);
 
   const previousMap = new Map(
-    (Array.isArray(previousRows) ? previousRows : []).map((row) => [String(row.utm_source || 'direct'), row]),
+    (Array.isArray(previousRows) ? previousRows : []).map((row) => [utmMatchKey(row.utm_source, 'direct'), row]),
   );
 
   return (Array.isArray(currentRows) ? currentRows : []).map((row) => {
-    const previous = previousMap.get(String(row.utm_source || 'direct')) || {};
+    const previous = previousMap.get(utmMatchKey(row.utm_source, 'direct')) || {};
     return {
       ...row,
       previous_date: previousDate,
@@ -761,7 +769,7 @@ async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource, cutoffHour
   const byCampaign = new Map();
 
   for (const row of Array.isArray(baseRows) ? baseRows : []) {
-    byCampaign.set(String(row.utm_campaign || "(none)"), {
+    byCampaign.set(utmMatchKey(row.utm_campaign, "(none)"), {
       utm_source: String(row.utm_campaign || "(none)"),
       sales: Number(row.sales || 0),
       sessions: Number(row.sessions || 0),
@@ -775,7 +783,7 @@ async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource, cutoffHour
 
   for (const row of Array.isArray(orderRows) ? orderRows : []) {
     const campaign = String(row.utm_campaign || "(none)");
-    const existing = byCampaign.get(campaign) || {
+    const existing = byCampaign.get(utmMatchKey(campaign, "(none)")) || {
       utm_source: campaign,
       sales: 0,
       sessions: 0,
@@ -788,7 +796,7 @@ async function queryDailyFunnelUtmCampaignRows(conn, date, utmSource, cutoffHour
     existing.prepaid_orders = Number(row.prepaid_orders || 0);
     existing.cod_orders = Number(row.cod_orders || 0);
     existing.partially_paid_orders = Number(row.partially_paid_orders || 0);
-    byCampaign.set(campaign, existing);
+    byCampaign.set(utmMatchKey(campaign, "(none)"), existing);
   }
 
   return Array.from(byCampaign.values()).sort((left, right) =>
@@ -812,11 +820,11 @@ async function queryDailyFunnelUtmCampaignRowsWithDelta(
   ]);
 
   const previousMap = new Map(
-    (Array.isArray(previousRows) ? previousRows : []).map((row) => [String(row.utm_source || '(none)'), row]),
+    (Array.isArray(previousRows) ? previousRows : []).map((row) => [utmMatchKey(row.utm_source, '(none)'), row]),
   );
 
   return (Array.isArray(currentRows) ? currentRows : []).map((row) => {
-    const previous = previousMap.get(String(row.utm_source || '(none)')) || {};
+    const previous = previousMap.get(utmMatchKey(row.utm_source, '(none)')) || {};
     return {
       ...row,
       previous_date: previousDate,
