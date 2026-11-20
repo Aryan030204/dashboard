@@ -196,6 +196,53 @@ services:
       weekly-reports-service:
         condition: service_healthy
 
+  # NDD / SLA Reports: HTTP API. Read-only over the persisted snapshots (MySQL), plus CSV export. Optional like Weekly
+  # Reports: the gateway does not depend on it, and ./ndd-sla-service/.env may be absent until the feature is set up.
+  ndd-sla-service:
+    container_name: ndd-sla-service-main
+    build:
+      context: ./ndd-sla-service
+      dockerfile: Dockerfile
+      target: api
+    env_file:
+      - .env
+      - path: ./ndd-sla-service/.env
+        required: false
+    environment:
+      PORT: 4050
+      NODE_ENV: production
+    mem_limit: ${NDD_SLA_API_MEM_LIMIT:-256m}
+    restart: unless-stopped
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const http = require('http'); const req = http.get('http://127.0.0.1:4050/health', res => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # NDD / SLA Reports: ingestion worker (Gmail -> streamed CSV -> EasyCom -> MySQL). Its own container and memory cap so
+  # report processing can never take memory from the API or from analytics. It refuses to start until every required
+  # NDD_SLA_* / NDD_EASYCOM_* / NDD_GMAIL_* value is set (see ndd-sla-service/.env.example) and logs which ones are missing.
+  ndd-sla-worker:
+    container_name: ndd-sla-worker-main
+    build:
+      context: ./ndd-sla-service
+      dockerfile: Dockerfile
+      target: worker
+    env_file:
+      - .env
+      - path: ./ndd-sla-service/.env
+        required: false
+    environment:
+      NODE_ENV: production
+    mem_limit: ${NDD_SLA_WORKER_MEM_LIMIT:-768m}
+    stop_grace_period: 60s
+    restart: unless-stopped
+    networks:
+      - saas-net
+
   analytics-service:
     container_name: analytics-service-main
     build:

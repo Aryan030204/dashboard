@@ -1,0 +1,779 @@
+Reference Code,Client Location,Order Status,Courier Name,Order Date,Customer Name,City,Pincode,Payment Mode,Order Value (INR),AWB,Remarks
+AJM-10201,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-19 08:36:09,Saanvi Mehta,Pune,185309,COD,4422.00,AWB70001052,"Fragile, handle with care"
+AJM-10370,AJMAL & SONS,Delivered,Ecom Express,2026-11-18 21:50:33,Saanvi Mehta,Pune,152727,COD,8007.50,AWB70001978,Call before delivery
+EMZ-X30030,Emiza Gurgaon,RETURNED,Delhivery,2026-11-18 19:15:27,Arjun Gupta,Hyderabad,648224,Prepaid,2105.50,AWB70003610,Excluded status
+AJM-10309,AJMAL & SONS,Shipped,dunzo ndd,2026-11-19 03:15:59,Saanvi Mehta,Kolkata,329024,Prepaid,14498.00,AWB70001636,Call before delivery
+AJM-10412,AJMAL & SONS,In Transit,Delhivery,2026-11-19 11:07:42,Anaya Mehta,Chennai,142349,Partial COD,13533.50,AWB70002182,"Fragile, handle with care"
+AJM-10010,AJMAL & SONS,In Transit,BlitzNDD,2026-11-19 08:31:47,Vivaan Iyer,Chennai,212414,Prepaid,10181.99,AWB70000062,
+OTH-20018,Kapoor Textiles,Delivered,Shiprocket Surface,2026-11-19 05:09:10,Riya Joshi,Mumbai,202498,COD,12671.50,AWB70003336,Other client
+EMZ-EDGE5,Emiza Gurgaon,Shipped,ElasticrunDirectNDD,2026-11-19 11:59:59,Aditya Nair,Chennai,577521,Prepaid,1456.00,AWB70003255,Window boundary (included)
+AJM-10352,AJMAL & SONS,Delivered,Delhivery,2026-11-19 02:56:30,Diya Sharma,Noida,469045,Prepaid,9713.99,AWB70001888,"Says ""urgent"" on invoice"
+AJM-10620,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 23:46:22,Rohan Iyer,Pune,682337,Prepaid,9932.99,AWB70003135,Customer asked to deliver after 6 PM
+AJM-10514,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 05:23:43,Aarav Joshi,Pune,356708,Prepaid,9753.99,AWB70002666,"Fragile, handle with care"
+AJM-X30014,AJMAL & SONS,Cancelled,Shiprocket Surface,2026-11-19 10:34:02,Vivaan Kapoor,Hyderabad,232862,Prepaid,4884.50,AWB70003519,Excluded status
+AJM-10137,AJMAL & SONS,In Transit,ElasticrunDirectNDD,2026-11-19 00:54:30,Isha Bose,New Delhi,569706,Prepaid,3533.99,AWB70000705,Gift wrap
+EMZ-10339,Emiza Gurgaon,Shipped,BlitzNDD,2026-11-18 14:38:28,Tara Nair,Mumbai,256971,COD,13698.99,AWB70001795,"Says ""urgent"" on invoice"
+AJM-O40011,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 14:00:00,Saanvi Iyer,Jaipur,411183,Prepaid,7294.50,AWB70003722,Outside its window
+EMZ-X30018,Emiza Gurgaon,Cancelled,DTDC,2026-11-18 22:22:33,Vivaan Reddy,Hyderabad,285374,COD,10731.50,AWB70003541,Excluded status
+AJM-10369,AJMAL & SONS,Shipped,BlueDart,2026-11-18 18:47:37,Kabir Gupta,Hyderabad,359577,Prepaid,5861.50,AWB70001972,"Fragile, handle with care"
+AJM-10255,AJMAL & SONS,In Transit,ElasticrunDirectNDD,2026-11-19 01:41:21,Aarav Mehta,Kolkata,161817,Prepaid,11124.99,AWB70001351,
+AJM-10357,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-19 04:43:11,Vihaan Gupta,Chandigarh,486900,Prepaid,14385.50,AWB70001910,"Leave with security, gate 2"
+AJM-10541,AJMAL & SONS,Delivered,BlueDart,2026-11-19 08:23:36,Vihaan Khanna,Hyderabad,286699,Prepaid,13577.50,AWB70002764,"Fragile, handle with care"
+EMZ-10637,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-19 04:45:26,Rohan Sharma,Kolkata,367273,COD,10768.00,AWB70003214,Call before delivery
+AJM-10384,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-19 10:31:11,Saanvi Mehta,Kolkata,507484,Prepaid,5377.99,AWB70002061,"Says ""urgent"" on invoice"
+EMZ-10081,Emiza Gurgaon,Delivered,DTDC,2026-11-19 00:34:16,Aditya Bose,Chennai,574250,COD,13285.50,AWB70000438,
+AJM-10338,AJMAL & SONS,Delivered,Ecom Express,2026-11-18 23:42:49,Meera Bose,Pune,145064,Prepaid,3816.99,AWB70001792,
+AJM-10448,AJMAL & SONS,Out For Delivery,BlueDart,2026-11-19 08:09:13,Aditya Verma,Chennai,618376,Prepaid,5787.99,AWB70002369,Gift wrap
+AJM-10207,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 16:06:22,Vihaan Iyer,Kolkata,463589,Prepaid,10902.00,AWB70001083,"Says ""urgent"" on invoice"
+AJM-10019,AJMAL & SONS,Delivered,DTDC,2026-11-19 02:58:06,Vivaan Nair,Gurgaon,138008,Prepaid,4094.50,AWB70000117,
+AJM-10328,AJMAL & SONS,Out For Delivery,Amazon Shipping,2026-11-18 23:02:44,Neel Verma,Hyderabad,635709,COD,11971.99,AWB70001731,
+EMZ-10104,Emiza Gurgaon,Shipped,Ecom Express,2026-11-18 16:06:20,Vivaan Reddy,Jaipur,661289,Prepaid,4069.00,AWB70000551,
+EMZ-10181,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-19 06:37:39,Aarav Bose,Kolkata,526325,Prepaid,13876.99,AWB70000953,
+AJM-O40007,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-19 12:00:00,Saanvi Nair,Bengaluru,466616,Prepaid,565.50,AWB70003702,Outside its window
+AJM-10054,AJMAL & SONS,In Transit,XpressBees,2026-11-19 05:42:02,Anaya Joshi,Pune,355971,Prepaid,334.00,AWB70000291,"Leave with security, gate 2"
+AJM-10225,AJMAL & SONS,Shipped,Delhivery,2026-11-19 03:11:17,Meera Singh,Gurgaon,630127,COD,2343.00,AWB70001196,
+EMZ-10174,Emiza Gurgaon,Delivered,dunzo ndd,2026-11-19 08:34:21,Vihaan Singh,Mumbai,246204,Prepaid,4325.00,AWB70000904,
+AJM-10192,AJMAL & SONS,In Transit,XpressBees,2026-11-18 17:52:01,Vihaan Kapoor,Jaipur,448596,COD,8194.99,AWB70001012,Customer asked to deliver after 6 PM
+AJM-10167,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-19 06:15:17,Vivaan Joshi,Kolkata,384831,Prepaid,6982.99,AWB70000865,
+OTH-20022,ajmal and sons,Delivered,Shiprocket Surface,2026-11-19 11:08:35,Anaya Iyer,Kolkata,632543,Prepaid,4816.99,AWB70003356,Other client
+AJM-10332,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 22:18:45,Saanvi Gupta,Jaipur,142226,Prepaid,1892.99,AWB70001759,Gift wrap
+AJM-10221,AJMAL & SONS,Shipped,Ecom Express,2026-11-18 15:08:39,Kabir Gupta,Chandigarh,438120,COD,13616.99,AWB70001175,
+EMZ-10639,Emiza Gurgaon,In Transit,DTDC,2026-11-19 13:31:53,Kabir Iyer,Chennai,615146,Prepaid,14081.00,AWB70003218,
+AJM-10209,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 10:23:20,Diya Joshi,New Delhi,306804,COD,1552.00,AWB70001092,"Fragile, handle with care"
+AJM-10568,AJMAL & SONS,Out For Delivery,Delhivery,2026-11-18 22:42:33,Vihaan Reddy,Chennai,318194,COD,2627.00,AWB70002899,Gift wrap
+AJM-10587,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 02:51:19,Isha Joshi,Gurgaon,481838,Prepaid,9819.50,AWB70002987,"Says ""urgent"" on invoice"
+AJM-10523,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 10:11:56,Rohan Sharma,Gurgaon,673710,Prepaid,8005.50,AWB70002690,Call before delivery
+AJM-10498,AJMAL & SONS,Shipped,XpressBees,2026-11-18 16:58:20,Isha Sharma,Pune,239703,COD,6608.50,AWB70002602,
+AJM-10305,AJMAL & SONS,In Transit,Shadowfax NDD,2026-11-19 02:20:57,Aarav Mehta,Chandigarh,672923,Prepaid,1640.00,AWB70001623,
+EMZ-10437,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-19 01:48:36,Vihaan Verma,Hyderabad,399077,Partial COD,939.00,AWB70002310,
+AJM-10024,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 18:42:22,Kabir Sharma,Hyderabad,117117,COD,14730.00,AWB70000143,"Says ""urgent"" on invoice"
+EMZ-10424,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-18 18:53:10,Isha Verma,Bengaluru,551041,Prepaid,13837.99,AWB70002242,
+AJM-10470,AJMAL & SONS,Out For Delivery,Delhivery,2026-11-19 12:58:27,Anaya Singh,Gurgaon,190846,COD,5316.00,AWB70002478,
+EMZ-10597,Emiza Gurgaon,Delivered,BlueDart,2026-11-19 04:34:40,Tara Gupta,Lucknow,445690,Prepaid,12397.99,AWB70003043,
+AJM-10214,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 02:47:57,Kabir Nair,Pune,254176,Partial COD,3706.50,AWB70001124,
+AJM-10595,AJMAL & SONS,In Transit,BlueDart,2026-11-18 16:18:18,Meera Verma,Jaipur,246197,Prepaid,10889.50,AWB70003036,"Says ""urgent"" on invoice"
+AJM-10388,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 02:21:32,Meera Sharma,Jaipur,271854,COD,12620.50,AWB70002077,Gift wrap
+EMZ-10276,Emiza Gurgaon,Shipped,Amazon Shipping,2026-11-19 14:04:42,Tara Singh,Pune,662084,COD,10734.50,AWB70001459,
+AJM-10048,AJMAL & SONS,Shipped,XpressBees,2026-11-19 10:51:34,Rohan Bose,Bengaluru,357759,Prepaid,14636.99,AWB70000257,Call before delivery
+EMZ-10406,Emiza Gurgaon,Delivered,dunzo ndd,2026-11-18 17:00:39,Anaya Khanna,Chennai,289653,Prepaid,11138.00,AWB70002151,"Says ""urgent"" on invoice"
+EMZ-10360,Emiza Gurgaon,Shipped,Ecom Express,2026-11-18 22:06:47,Kabir Sharma,New Delhi,375552,COD,13325.00,AWB70001924,
+EMZ-10021,Emiza Gurgaon,In Transit,Shiprocket Surface,2026-11-19 06:26:58,Kiara Singh,Kolkata,577427,COD,3052.00,AWB70000126,
+AJM-10114,AJMAL & SONS,Delivered,BlueDart,2026-11-19 07:01:04,Rohan Gupta,Noida,365614,Partial COD,749.50,AWB70000606,"Fragile, handle with care"
+AJM-10115,AJMAL & SONS,Packed,DTDC,2026-11-19 01:12:11,Anaya Singh,Noida,456669,Prepaid,11684.99,AWB70000614,"Fragile, handle with care"
+AJM-10573,AJMAL & SONS,Delivered,BlueDart,2026-11-19 05:31:54,Isha Joshi,Mumbai,667265,Prepaid,10548.00,AWB70002926,"Says ""urgent"" on invoice"
+AJM-10128,AJMAL & SONS,In Transit,XpressBees,2026-11-19 07:28:40,Riya Nair,Mumbai,238725,COD,6121.99,AWB70000676,Gift wrap
+AJM-10212,AJMAL & SONS,Shipped,XpressBees,2026-11-19 02:09:25,Isha Mehta,Mumbai,425180,COD,10153.00,AWB70001115,"Leave with security, gate 2"
+AJM-10162,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 21:51:52,Kabir Iyer,Bengaluru,671796,Prepaid,2935.99,AWB70000840,"Fragile, handle with care"
+AJM-10251,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 00:18:42,Kiara Singh,Chennai,650358,COD,12205.99,AWB70001328,
+EMZ-10603,Emiza Gurgaon,Shipped,DTDC,2026-11-19 12:01:09,Aarav Gupta,Bengaluru,328796,COD,8892.99,AWB70003063,"Leave with security, gate 2"
+EMZ-10004,Emiza Gurgaon,Shipped,Delhivery,2026-11-18 22:24:13,Neel Kapoor,Hyderabad,415287,Prepaid,10947.50,AWB70000017,"Fragile, handle with care"
+AJM-10088,AJMAL & SONS,Delivered,XpressBees,2026-11-19 01:57:07,Isha Nair,Chandigarh,163234,Prepaid,835.50,AWB70000476,"Says ""urgent"" on invoice"
+AJM-10399,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-18 22:17:16,Saanvi Reddy,Pune,593986,COD,10961.00,AWB70002122,
+AJM-10626,AJMAL & SONS,In Transit,Delhivery,2026-11-18 22:25:48,Kiara Gupta,Lucknow,341159,COD,11138.99,AWB70003163,Customer asked to deliver after 6 PM
+AJM-10105,AJMAL & SONS,Packed,BlueDart,2026-11-18 16:40:24,Rohan Iyer,Noida,610867,Prepaid,7810.99,AWB70000557,
+AJM-10133,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-19 13:03:09,Arjun Nair,Noida,624554,COD,5972.99,AWB70000700,
+AJM-10550,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-19 01:22:55,Isha Kapoor,Kolkata,177119,Partial COD,10174.50,AWB70002808,"Says ""urgent"" on invoice"
+EMZ-10073,Emiza Gurgaon,Packed,Delhivery,2026-11-19 12:38:29,Arjun Nair,Jaipur,320913,Prepaid,2038.00,AWB70000384,"Leave with security, gate 2"
+AJM-10415,AJMAL & SONS,Packed,Shadowfax NDD,2026-11-19 04:15:07,Diya Khanna,Jaipur,464228,COD,11605.99,AWB70002189,Customer asked to deliver after 6 PM
+EMZ-10264,Emiza Gurgaon,Shipped,Amazon Shipping,2026-11-18 22:02:29,Aditya Khanna,Hyderabad,661075,COD,7654.99,AWB70001408,
+OTH-20007,Emiza Mumbai,Delivered,Amazon Shipping,2026-11-18 16:52:25,Anaya Bose,Gurgaon,435068,COD,2109.00,AWB70003285,Other client
+AJM-10041,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-18 16:24:27,Isha Sharma,Chandigarh,591965,Prepaid,10482.50,AWB70000227,"Says ""urgent"" on invoice"
+EMZ-10215,Emiza Gurgaon,In Transit,Ecom Express,2026-11-18 20:44:56,Kabir Nair,Pune,532981,Prepaid,5935.50,AWB70001133,
+EMZ-10160,Emiza Gurgaon,In Transit,ElasticrunDirectNDD,2026-11-19 04:30:20,Vivaan Singh,Mumbai,378531,Prepaid,10585.50,AWB70000828,
+AJM-10476,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-19 09:31:54,Vihaan Joshi,New Delhi,166484,Prepaid,13778.50,AWB70002508,"Leave with security, gate 2"
+AJM-10026,AJMAL & SONS,Delivered,Delhivery,2026-11-18 20:57:39,Diya Gupta,Mumbai,478823,Prepaid,11021.50,AWB70000154,Call before delivery
+EMZ-10629,Emiza Gurgaon,Shipped,BlueDart,2026-11-19 01:01:02,Meera Bose,Mumbai,477388,Prepaid,6785.50,AWB70003172,
+EMZ-10564,Emiza Gurgaon,In Transit,XpressBees,2026-11-19 05:08:48,Kiara Gupta,Mumbai,252469,COD,14891.50,AWB70002876,"Fragile, handle with care"
+EMZ-10076,Emiza Gurgaon,In Transit,Delhivery,2026-11-19 04:25:15,Vihaan Kapoor,Chandigarh,516461,COD,4800.99,AWB70000402,"Leave with security, gate 2"
+EMZ-10015,Emiza Gurgaon,Delivered,dunzo ndd,2026-11-19 07:54:15,Neel Joshi,Hyderabad,658334,COD,13001.50,AWB70000092,"Says ""urgent"" on invoice"
+EMZ-10586,Emiza Gurgaon,In Transit,Amazon Shipping,2026-11-18 20:24:26,Aarav Iyer,Mumbai,177693,COD,9633.00,AWB70002983,"Fragile, handle with care"
+EMZ-10421,Emiza Gurgaon,Delivered,BlueDart,2026-11-19 03:52:08,Neel Singh,Mumbai,240832,Prepaid,8724.50,AWB70002223,"Fragile, handle with care"
+EMZ-10404,Emiza Gurgaon,In Transit,dunzo ndd,2026-11-18 12:56:04,Riya Bose,New Delhi,556814,COD,2832.99,AWB70002144,"Says ""urgent"" on invoice"
+OTH-20034,ajmal and sons,Delivered,Delhivery,2026-11-18 15:24:34,Vivaan Bose,Chandigarh,415536,Prepaid,4220.99,AWB70003429,Other client
+AJM-10136,AJMAL & SONS,In Transit,dunzo ndd,2026-11-19 11:38:26,Aarav Joshi,Gurgaon,343084,COD,14630.99,AWB70000703,
+AJM-10312,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 23:14:13,Anaya Kapoor,Bengaluru,168666,Partial COD,12010.50,AWB70001649,Call before delivery
+AJM-10532,AJMAL & SONS,In Transit,BlueDart,2026-11-19 01:51:31,Neel Mehta,Noida,321474,COD,8080.50,AWB70002718,Call before delivery
+EMZ-10506,Emiza Gurgaon,Shipped,Delhivery,2026-11-19 04:34:16,Neel Khanna,Pune,535544,Partial COD,13868.00,AWB70002636,
+EMZ-10040,Emiza Gurgaon,Out For Delivery,BlueDart,2026-11-19 13:21:23,Kabir Sharma,Jaipur,569861,COD,11851.00,AWB70000221,Call before delivery
+AJM-10428,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-18 19:29:53,Riya Reddy,Pune,663347,COD,7818.00,AWB70002266,Customer asked to deliver after 6 PM
+AJM-10250,AJMAL & SONS,Delivered,Ecom Express,2026-11-18 19:26:13,Meera Joshi,Chennai,642793,Prepaid,13426.00,AWB70001327,"Fragile, handle with care"
+AJM-10272,AJMAL & SONS,Packed,dunzo ndd,2026-11-18 22:06:18,Diya Mehta,Mumbai,477300,COD,5308.00,AWB70001438,"Leave with security, gate 2"
+AJM-10284,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 01:07:36,Isha Reddy,Hyderabad,473619,COD,5886.99,AWB70001514,Customer asked to deliver after 6 PM
+AJM-B50000,AJMAL & SONS,Delivered,Delhivery,,Diya Sharma,Bengaluru,490874,Prepaid,721.50,AWB70003798,Unreadable order date
+AJM-10377,AJMAL & SONS,Shipped,BlueDart,2026-11-18 22:00:54,Kabir Iyer,Bengaluru,419249,COD,14716.99,AWB70002020,Customer asked to deliver after 6 PM
+AJM-10522,AJMAL & SONS,Shipped,Ecom Express,2026-11-19 06:54:50,Aditya Iyer,Jaipur,500531,Prepaid,5181.99,AWB70002686,"Fragile, handle with care"
+EMZ-10121,Emiza Gurgaon,Shipped,Shadowfax NDD,2026-11-19 04:37:41,Meera Bose,Chandigarh,527453,Prepaid,2947.00,AWB70000642,
+EMZ-10243,Emiza Gurgaon,Shipped,BlitzNDD,2026-11-18 20:57:34,Aarav Gupta,Kolkata,557604,COD,5918.99,AWB70001282,"Fragile, handle with care"
+AJM-10230,AJMAL & SONS,Out For Delivery,Delhivery,2026-11-19 00:35:47,Riya Gupta,Chandigarh,131360,Prepaid,14994.99,AWB70001222,
+AJM-10342,AJMAL & SONS,Shipped,BlitzNDD,2026-11-18 22:38:52,Anaya Nair,New Delhi,157170,Prepaid,12370.00,AWB70001816,Call before delivery
+AJM-10304,AJMAL & SONS,In Transit,Delhivery,2026-11-19 00:47:17,Kabir Sharma,Lucknow,351158,COD,2783.00,AWB70001622,"Fragile, handle with care"
+AJM-10482,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 09:02:15,Diya Joshi,Lucknow,264868,Prepaid,577.99,AWB70002535,Gift wrap
+AJM-10427,AJMAL & SONS,Packed,Amazon Shipping,2026-11-19 03:53:22,Isha Sharma,Kolkata,137190,COD,1689.99,AWB70002259,"Fragile, handle with care"
+AJM-10295,AJMAL & SONS,Shipped,Ecom Express,2026-11-19 14:08:06,Rohan Nair,Jaipur,634563,COD,7240.99,AWB70001578,Gift wrap
+AJM-10094,AJMAL & SONS,Delivered,BlueDart,2026-11-18 15:17:57,Aditya Iyer,Gurgaon,655100,COD,12887.00,AWB70000505,Call before delivery
+AJM-10354,AJMAL & SONS,In Transit,BlitzNDD,2026-11-19 00:25:10,Rohan Singh,Noida,245658,Prepaid,12050.00,AWB70001898,Customer asked to deliver after 6 PM
+AJM-10576,AJMAL & SONS,In Transit,dunzo ndd,2026-11-19 02:09:32,Neel Joshi,Jaipur,135564,Prepaid,437.99,AWB70002935,
+AJM-10376,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-18 16:06:27,Vihaan Gupta,Chennai,453132,Prepaid,6395.00,AWB70002015,Call before delivery
+AJM-10180,AJMAL & SONS,Delivered,XpressBees,2026-11-19 13:44:45,Diya Joshi,Mumbai,573969,Prepaid,9495.00,AWB70000945,
+AJM-O40003,AJMAL & SONS,Delivered,BlueDart,2026-11-18 14:59:59,Aarav Bose,Bengaluru,508993,Partial COD,4413.99,AWB70003683,Outside its window
+AJM-10387,AJMAL & SONS,Delivered,Ecom Express,2026-11-18 23:07:31,Neel Nair,Lucknow,224093,Prepaid,12113.50,AWB70002074,"Fragile, handle with care"
+AJM-10341,AJMAL & SONS,Delivered,DTDC,2026-11-18 17:55:24,Vivaan Sharma,Noida,635515,Prepaid,9883.99,AWB70001813,
+EMZ-10143,Emiza Gurgaon,Out For Delivery,BlueDart,2026-11-19 09:39:41,Vihaan Mehta,Noida,517780,COD,7885.99,AWB70000739,
+AJM-10477,AJMAL & SONS,Shipped,XpressBees,2026-11-19 01:39:31,Vivaan Singh,Kolkata,261446,COD,1150.99,AWB70002512,"Leave with security, gate 2"
+AJM-10256,AJMAL & SONS,In Transit,BlueDart,2026-11-19 02:16:57,Aditya Verma,Jaipur,377648,Prepaid,5787.00,AWB70001358,Customer asked to deliver after 6 PM
+AJM-10238,AJMAL & SONS,Shipped,BlueDart,2026-11-19 01:38:04,Vivaan Singh,New Delhi,292662,COD,5264.50,AWB70001260,
+AJM-10308,AJMAL & SONS,Shipped,ElasticrunDirectNDD,2026-11-19 08:53:18,Isha Khanna,Chennai,666305,COD,13782.50,AWB70001634,"Fragile, handle with care"
+AJM-10263,AJMAL & SONS,Packed,Delhivery,2026-11-19 09:23:44,Aditya Nair,Jaipur,220579,Partial COD,4204.00,AWB70001405,"Leave with security, gate 2"
+EMZ-10270,Emiza Gurgaon,Shipped,Ecom Express,2026-11-18 23:42:59,Saanvi Kapoor,Mumbai,361513,Partial COD,7664.50,AWB70001428,
+OTH-20021,Kapoor Textiles,Delivered,Amazon Shipping,2026-11-18 23:18:38,Kabir Gupta,Gurgaon,177976,COD,12825.50,AWB70003349,Other client
+AJM-X30029,AJMAL & SONS,Cancelled,DTDC,2026-11-19 14:16:42,Anaya Singh,Chennai,143517,COD,2292.50,AWB70003601,Excluded status
+AJM-10483,AJMAL & SONS,Shipped,DTDC,2026-11-19 01:28:53,Tara Reddy,Pune,369824,Prepaid,992.50,AWB70002537,
+AJM-EDGE3,AJMAL & SONS,Shipped,Delhivery,2026-11-18 15:00:00,Arjun Iyer,Jaipur,195527,Partial COD,4397.50,AWB70003244,Window boundary (included)
+AJM-10185,AJMAL & SONS,In Transit,DTDC,2026-11-19 02:11:50,Meera Verma,Bengaluru,283877,COD,8834.99,AWB70000974,"Leave with security, gate 2"
+AJM-10606,AJMAL & SONS,Out For Delivery,ElasticrunDirectNDD,2026-11-18 22:07:53,Saanvi Gupta,Pune,305089,Prepaid,468.50,AWB70003077,
+EMZ-B50001,Emiza Gurgaon,Delivered,XpressBees,yesterday,Tara Khanna,Pune,639955,COD,4197.99,AWB70003802,Unreadable order date
+AJM-10064,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-18 22:23:33,Arjun Gupta,Lucknow,170468,Prepaid,4479.50,AWB70000349,"Fragile, handle with care"
+EMZ-O40001,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-18 11:59:59,Saanvi Gupta,Chandigarh,488837,Prepaid,8034.99,AWB70003673,Outside its window
+AJM-10578,AJMAL & SONS,Shipped,XpressBees,2026-11-18 18:06:39,Arjun Khanna,Mumbai,647561,COD,6915.99,AWB70002942,"Says ""urgent"" on invoice"
+OTH-20004,Kapoor Textiles,Delivered,Delhivery,2026-11-19 05:20:41,Neel Singh,Chandigarh,365249,Prepaid,1882.50,AWB70003270,Other client
+EMZ-O40008,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-18 11:59:59,Vivaan Singh,Jaipur,368729,COD,12499.50,AWB70003704,Outside its window
+AJM-10232,AJMAL & SONS,Shipped,Delhivery,2026-11-18 15:46:22,Tara Sharma,Chandigarh,335339,Prepaid,10180.00,AWB70001235,Gift wrap
+AJM-10009,AJMAL & SONS,Delivered,Delhivery,2026-11-19 00:18:53,Neel Kapoor,Gurgaon,647854,COD,2343.99,AWB70000053,Call before delivery
+AJM-10623,AJMAL & SONS,Shipped,Ecom Express,2026-11-19 13:31:32,Aarav Kapoor,Gurgaon,575276,COD,13291.00,AWB70003150,"Leave with security, gate 2"
+EMZ-10465,Emiza Gurgaon,Delivered,Ecom Express,2026-11-19 04:24:59,Neel Singh,Chennai,349042,COD,10873.00,AWB70002448,
+AJM-10157,AJMAL & SONS,Shipped,dunzo ndd,2026-11-18 23:22:51,Saanvi Kapoor,Chandigarh,239532,COD,5427.50,AWB70000812,
+EMZ-10526,Emiza Gurgaon,Shipped,ElasticrunDirectNDD,2026-11-19 08:30:50,Tara Khanna,New Delhi,331616,Prepaid,1551.50,AWB70002695,
+EMZ-10135,Emiza Gurgaon,Shipped,DTDC,2026-11-19 12:48:25,Rohan Joshi,Hyderabad,287855,COD,2551.50,AWB70000702,"Says ""urgent"" on invoice"
+AJM-10095,AJMAL & SONS,Delivered,Delhivery,2026-11-18 16:36:48,Aditya Reddy,Lucknow,538021,Partial COD,8853.99,AWB70000512,Customer asked to deliver after 6 PM
+EMZ-10287,Emiza Gurgaon,Out For Delivery,Amazon Shipping,2026-11-19 04:15:08,Vihaan Verma,Lucknow,277582,Prepaid,1979.99,AWB70001529,
+EMZ-10275,Emiza Gurgaon,Delivered,dunzo ndd,2026-11-18 20:13:36,Neel Singh,Chandigarh,289927,Prepaid,5183.50,AWB70001458,Gift wrap
+AJM-10471,AJMAL & SONS,Delivered,BlueDart,2026-11-18 17:59:29,Riya Bose,Chennai,420431,COD,14692.00,AWB70002481,"Fragile, handle with care"
+EMZ-10257,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-19 02:15:38,Tara Bose,Noida,588020,Prepaid,5501.99,AWB70001365,Call before delivery
+AJM-10050,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 04:35:28,Kiara Joshi,Gurgaon,123260,Prepaid,4055.99,AWB70000272,Gift wrap
+EMZ-10138,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-18 22:03:55,Kabir Joshi,Pune,680819,COD,1619.99,AWB70000706,Gift wrap
+AJM-10447,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-19 07:24:47,Aarav Singh,Chandigarh,454226,Prepaid,1598.99,AWB70002362,
+AJM-10375,AJMAL & SONS,Delivered,dunzo ndd,2026-11-19 01:56:10,Kiara Nair,Gurgaon,477536,Prepaid,4429.00,AWB70002006,Customer asked to deliver after 6 PM
+AJM-10503,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-18 15:20:05,Kabir Joshi,Gurgaon,362047,Prepaid,9933.99,AWB70002631,Customer asked to deliver after 6 PM
+EMZ-10598,Emiza Gurgaon,Shipped,ElasticrunDirectNDD,2026-11-18 23:04:04,Kiara Sharma,Jaipur,464348,COD,5829.00,AWB70003044,Call before delivery
+EMZ-10292,Emiza Gurgaon,Packed,BlueDart,2026-11-19 04:27:55,Isha Sharma,Hyderabad,300475,COD,9110.99,AWB70001559,
+AJM-10124,AJMAL & SONS,Shipped,Ecom Express,2026-11-18 15:34:28,Neel Joshi,Lucknow,312175,Prepaid,11873.00,AWB70000662,
+AJM-10417,AJMAL & SONS,Delivered,BlueDart,2026-11-19 11:14:46,Meera Nair,Jaipur,616242,COD,673.99,AWB70002200,"Fragile, handle with care"
+EMZ-10154,Emiza Gurgaon,Packed,Ecom Express,2026-11-19 07:49:24,Meera Singh,Kolkata,326552,Prepaid,13176.50,AWB70000801,Customer asked to deliver after 6 PM
+AJM-10619,AJMAL & SONS,Delivered,DTDC,2026-11-19 01:21:49,Rohan Singh,Gurgaon,311041,Prepaid,12438.99,AWB70003129,Gift wrap
+EMZ-10539,Emiza Gurgaon,Packed,Ecom Express,2026-11-19 01:40:07,Neel Bose,New Delhi,214251,Prepaid,3423.00,AWB70002755,"Leave with security, gate 2"
+AJM-10581,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-19 05:03:31,Vihaan Nair,Bengaluru,681979,Prepaid,7158.99,AWB70002961,
+AJM-10507,AJMAL & SONS,Out For Delivery,Shadowfax NDD,2026-11-18 20:14:12,Rohan Joshi,New Delhi,121907,Prepaid,9325.00,AWB70002638,Customer asked to deliver after 6 PM
+AJM-10087,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 07:17:28,Aarav Iyer,Mumbai,586164,Prepaid,3115.00,AWB70000470,"Fragile, handle with care"
+AJM-10166,AJMAL & SONS,Delivered,Ecom Express,2026-11-18 23:55:55,Aarav Sharma,New Delhi,384522,COD,2999.00,AWB70000859,
+AJM-10113,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 21:28:08,Kabir Sharma,Mumbai,519909,Partial COD,880.99,AWB70000605,Customer asked to deliver after 6 PM
+AJM-10210,AJMAL & SONS,In Transit,Delhivery,2026-11-19 06:11:23,Tara Mehta,Mumbai,170191,Prepaid,1054.00,AWB70001101,
+AJM-10262,AJMAL & SONS,Delivered,XpressBees,2026-11-19 01:32:59,Rohan Sharma,Kolkata,238794,Prepaid,293.99,AWB70001397,"Fragile, handle with care"
+AJM-10324,AJMAL & SONS,In Transit,XpressBees,2026-11-19 05:56:31,Rohan Mehta,Noida,295604,Prepaid,13953.50,AWB70001709,"Says ""urgent"" on invoice"
+AJM-10575,AJMAL & SONS,Shipped,BlueDart,2026-11-19 04:20:32,Anaya Iyer,Pune,274292,Prepaid,464.00,AWB70002933,
+AJM-10374,AJMAL & SONS,In Transit,BlueDart,2026-11-19 12:01:02,Saanvi Gupta,Jaipur,631870,Prepaid,4010.00,AWB70002002,
+AJM-10106,AJMAL & SONS,Out For Delivery,Delhivery,2026-11-19 00:42:26,Saanvi Reddy,Pune,233121,Partial COD,7129.99,AWB70000563,"Leave with security, gate 2"
+AJM-10074,AJMAL & SONS,In Transit,XpressBees,2026-11-19 06:54:25,Vihaan Bose,Kolkata,418411,COD,13553.99,AWB70000391,"Fragile, handle with care"
+AJM-10530,AJMAL & SONS,In Transit,dunzo ndd,2026-11-18 14:22:48,Isha Sharma,Lucknow,678142,COD,4017.00,AWB70002710,
+EMZ-10023,Emiza Gurgaon,Delivered,DTDC,2026-11-18 15:12:04,Rohan Singh,New Delhi,299364,Prepaid,11963.00,AWB70000137,"Fragile, handle with care"
+EMZ-10159,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-19 09:49:52,Meera Nair,Chennai,453871,COD,708.99,AWB70000826,
+AJM-10426,AJMAL & SONS,Shipped,BlueDart,2026-11-19 14:43:46,Meera Nair,New Delhi,567205,COD,4444.99,AWB70002250,
+EMZ-10355,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-19 03:45:48,Isha Verma,Mumbai,312830,Prepaid,3560.99,AWB70001901,
+AJM-10405,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-19 00:15:51,Meera Kapoor,Hyderabad,261236,Prepaid,9092.50,AWB70002150,"Says ""urgent"" on invoice"
+EMZ-10429,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-19 02:59:24,Isha Reddy,Jaipur,183307,COD,9819.00,AWB70002270,Customer asked to deliver after 6 PM
+EMZ-10461,Emiza Gurgaon,In Transit,dunzo ndd,2026-11-18 13:12:14,Isha Nair,Chandigarh,293785,Partial COD,8019.50,AWB70002428,
+EMZ-X30010,Emiza Gurgaon,On Hold,Amazon Shipping,2026-11-19 00:39:34,Isha Singh,Kolkata,613013,Prepaid,11921.00,AWB70003501,Excluded status
+EMZ-O40020,Emiza Gurgaon,Delivered,DTDC,2026-11-20 01:00:00,Kiara Mehta,Bengaluru,183960,Prepaid,3745.00,AWB70003762,Outside its window
+AJM-10392,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-19 09:13:43,Diya Iyer,Pune,633025,Prepaid,2110.99,AWB70002096,"Fragile, handle with care"
+AJM-10557,AJMAL & SONS,Shipped,BlitzNDD,2026-11-19 07:46:14,Aditya Sharma,Pune,656064,Prepaid,7039.99,AWB70002848,Gift wrap
+AJM-10303,AJMAL & SONS,Delivered,XpressBees,2026-11-18 21:55:27,Neel Nair,Gurgaon,367018,Prepaid,10973.00,AWB70001620,"Says ""urgent"" on invoice"
+AJM-10096,AJMAL & SONS,Shipped,DTDC,2026-11-18 20:54:47,Kiara Verma,Lucknow,690983,Prepaid,343.99,AWB70000513,
+AJM-10491,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 13:10:25,Kiara Iyer,Noida,394940,Prepaid,4245.00,AWB70002566,Gift wrap
+AJM-10633,AJMAL & SONS,Packed,XpressBees,2026-11-19 14:22:15,Riya Bose,Noida,481658,Prepaid,9058.99,AWB70003198,Call before delivery
+EMZ-X30007,Emiza Gurgaon,Cancelled,Shiprocket Surface,2026-11-19 09:22:49,Meera Verma,Kolkata,682046,Prepaid,10069.99,AWB70003480,Excluded status
+EMZ-10231,Emiza Gurgaon,Delivered,dunzo ndd,2026-11-19 07:42:20,Neel Singh,Hyderabad,580993,COD,10479.50,AWB70001228,
+EMZ-X30002,Emiza Gurgaon,Returned,Amazon Shipping,2026-11-18 23:47:33,Tara Singh,Noida,565037,Prepaid,11083.99,AWB70003446,Excluded status
+EMZ-10552,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-18 20:36:50,Kabir Sharma,New Delhi,540231,COD,2208.00,AWB70002817,
+AJM-X30004,AJMAL & SONS,Cancelled,Amazon Shipping,2026-11-18 17:40:53,Saanvi Mehta,New Delhi,243198,COD,11888.50,AWB70003457,Excluded status
+EMZ-10224,Emiza Gurgaon,Shipped,Shiprocket Surface,2026-11-19 09:20:57,Meera Sharma,New Delhi,554284,COD,6345.50,AWB70001190,
+AJM-10621,AJMAL & SONS,Packed,BlitzNDD,2026-11-18 14:05:21,Anaya Gupta,Gurgaon,559294,COD,2914.99,AWB70003142,Customer asked to deliver after 6 PM
+AJM-10246,AJMAL & SONS,Out For Delivery,Amazon Shipping,2026-11-19 01:59:25,Isha Kapoor,New Delhi,253738,COD,5692.00,AWB70001305,
+EMZ-10011,Emiza Gurgaon,Shipped,BlitzNDD,2026-11-18 20:00:05,Kabir Sharma,New Delhi,300102,Prepaid,7000.00,AWB70000069,
+AJM-10084,AJMAL & SONS,In Transit,XpressBees,2026-11-18 17:41:30,Aditya Nair,Lucknow,431087,COD,13760.50,AWB70000453,
+AJM-10300,AJMAL & SONS,In Transit,XpressBees,2026-11-18 23:20:53,Vivaan Bose,Gurgaon,593232,Prepaid,7163.99,AWB70001604,"Says ""urgent"" on invoice"
+AJM-10528,AJMAL & SONS,In Transit,Shiprocket Surface,2026-11-18 21:11:28,Arjun Joshi,Mumbai,332169,COD,9551.50,AWB70002705,
+AJM-10286,AJMAL & SONS,Packed,DTDC,2026-11-19 00:38:35,Neel Mehta,Jaipur,653272,Prepaid,11997.50,AWB70001520,Customer asked to deliver after 6 PM
+AJM-10472,AJMAL & SONS,Delivered,BlueDart,2026-11-19 01:39:11,Diya Joshi,Noida,684081,COD,13681.00,AWB70002483,
+EMZ-10033,Emiza Gurgaon,Shipped,DTDC,2026-11-19 11:32:12,Aarav Khanna,Bengaluru,232610,COD,4227.50,AWB70000176,Gift wrap
+OTH-20014,ajmal and sons,Delivered,BlueDart,2026-11-18 17:48:58,Vihaan Reddy,Noida,352555,COD,2754.99,AWB70003323,Other client
+AJM-10439,AJMAL & SONS,In Transit,Amazon Shipping,2026-11-19 05:09:28,Anaya Kapoor,Noida,638393,Partial COD,2940.00,AWB70002320,Call before delivery
+AJM-10169,AJMAL & SONS,Packed,Ecom Express,2026-11-19 04:39:45,Kiara Gupta,Chennai,117782,COD,3361.50,AWB70000881,Call before delivery
+EMZ-10445,Emiza Gurgaon,Shipped,Ecom Express,2026-11-18 17:54:39,Saanvi Kapoor,Chennai,615885,COD,2273.50,AWB70002353,
+OTH-20000,Emiza Mumbai,Delivered,BlueDart,2026-11-19 10:52:52,Aarav Kapoor,Noida,597334,Prepaid,12812.99,AWB70003262,Other client
+EMZ-10334,Emiza Gurgaon,Shipped,ElasticrunDirectNDD,2026-11-19 08:51:02,Tara Mehta,New Delhi,676137,Prepaid,8740.50,AWB70001771,Customer asked to deliver after 6 PM
+AJM-10382,AJMAL & SONS,Shipped,dunzo ndd,2026-11-18 23:01:04,Riya Bose,Mumbai,215072,Prepaid,12408.50,AWB70002053,Call before delivery
+EMZ-10079,Emiza Gurgaon,Packed,Delhivery,2026-11-18 19:07:23,Diya Sharma,Hyderabad,110853,COD,4152.50,AWB70000421,Customer asked to deliver after 6 PM
+AJM-10265,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-19 09:54:54,Diya Kapoor,Bengaluru,670016,Partial COD,701.50,AWB70001410,
+AJM-10205,AJMAL & SONS,Delivered,XpressBees,2026-11-18 21:08:13,Meera Singh,New Delhi,531079,Prepaid,7548.00,AWB70001074,Customer asked to deliver after 6 PM
+AJM-10164,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 02:01:56,Meera Sharma,Kolkata,595073,Prepaid,7785.00,AWB70000850,Gift wrap
+AJM-10056,AJMAL & SONS,Delivered,BlueDart,2026-11-19 04:40:02,Aditya Gupta,Kolkata,428282,COD,9761.00,AWB70000300,"Fragile, handle with care"
+AJM-10389,AJMAL & SONS,In Transit,Amazon Shipping,2026-11-19 01:49:08,Tara Singh,Bengaluru,184873,Prepaid,3539.99,AWB70002084,Gift wrap
+OTH-20025,Kapoor Textiles,Delivered,DTDC,2026-11-19 02:45:41,Meera Joshi,New Delhi,395101,Prepaid,3116.00,AWB70003373,Other client
+AJM-10097,AJMAL & SONS,Shipped,dunzo ndd,2026-11-18 22:57:11,Kiara Bose,Kolkata,550528,Prepaid,4937.00,AWB70000515,
+AJM-10423,AJMAL & SONS,Packed,BlueDart,2026-11-19 08:57:00,Meera Sharma,Lucknow,692392,Partial COD,3294.99,AWB70002236,"Fragile, handle with care"
+AJM-10363,AJMAL & SONS,Shipped,ElasticrunDirectNDD,2026-11-19 09:17:20,Anaya Iyer,Kolkata,513021,Prepaid,10526.99,AWB70001941,"Fragile, handle with care"
+AJM-10410,AJMAL & SONS,In Transit,ElasticrunDirectNDD,2026-11-18 22:44:32,Vihaan Iyer,Chandigarh,412446,Prepaid,4374.99,AWB70002172,
+AJM-10102,AJMAL & SONS,Delivered,BlueDart,2026-11-19 13:11:38,Meera Gupta,Kolkata,112732,Prepaid,9850.99,AWB70000537,Customer asked to deliver after 6 PM
+AJM-10047,AJMAL & SONS,Delivered,Delhivery,2026-11-19 06:21:08,Kabir Mehta,Jaipur,276608,Partial COD,7182.00,AWB70000251,Gift wrap
+AJM-10543,AJMAL & SONS,Packed,Delhivery,2026-11-19 08:28:45,Vihaan Iyer,Lucknow,587692,COD,1903.50,AWB70002777,
+AJM-10533,AJMAL & SONS,Packed,dunzo ndd,2026-11-19 11:31:31,Rohan Nair,Hyderabad,363641,COD,4934.50,AWB70002721,
+EMZ-X30008,Emiza Gurgaon,RETURNED,XpressBees,2026-11-19 09:23:04,Aarav Verma,Hyderabad,146414,COD,10667.50,AWB70003486,Excluded status
+OTH-20005,ajmal and sons,Delivered,DTDC,2026-11-19 07:52:25,Arjun Singh,Chennai,120068,Prepaid,8781.50,AWB70003274,Other client
+AJM-10591,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 15:31:43,Vihaan Gupta,Jaipur,655759,Prepaid,6320.50,AWB70003014,Customer asked to deliver after 6 PM
+AJM-10580,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-18 20:32:02,Vivaan Bose,Chennai,272574,Prepaid,11481.99,AWB70002952,Gift wrap
+AJM-10178,AJMAL & SONS,Shipped,Ecom Express,2026-11-18 15:14:00,Aditya Kapoor,Chennai,661937,COD,6575.50,AWB70000929,"Says ""urgent"" on invoice"
+AJM-X30032,AJMAL & SONS,RETURNED,Shiprocket Surface,2026-11-18 21:40:31,Riya Iyer,Chennai,188807,COD,11931.99,AWB70003622,Excluded status
+EMZ-10150,Emiza Gurgaon,Out For Delivery,Ecom Express,2026-11-19 06:08:16,Anaya Khanna,Pune,578355,COD,12907.00,AWB70000771,
+,AJMAL & SONS,Delivered,Delhivery,2026-11-18 20:11:50,Rohan Bose,Gurgaon,368657,COD,5734.00,AWB70003867,Missing Reference Code
+EMZ-10060,Emiza Gurgaon,Delivered,Ecom Express,2026-11-19 01:27:24,Tara Reddy,Kolkata,156782,Prepaid,6427.00,AWB70000324,"Says ""urgent"" on invoice"
+AJM-10316,AJMAL & SONS,Packed,BlitzNDD,2026-11-19 03:53:44,Arjun Mehta,Lucknow,658984,COD,13958.99,AWB70001669,
+AJM-10455,AJMAL & SONS,In Transit,Shadowfax NDD,2026-11-18 22:47:03,Vivaan Mehta,Chennai,382565,Prepaid,1560.50,AWB70002398,"Fragile, handle with care"
+EMZ-10065,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-19 02:13:10,Saanvi Joshi,Jaipur,422626,COD,4009.99,AWB70000353,"Fragile, handle with care"
+EMZ-10017,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-19 01:58:22,Neel Joshi,Jaipur,145905,Prepaid,14402.00,AWB70000103,"Leave with security, gate 2"
+EMZ-10589,Emiza Gurgaon,Delivered,XpressBees,2026-11-19 09:23:23,Saanvi Singh,Hyderabad,367550,Prepaid,6248.99,AWB70003001,"Fragile, handle with care"
+AJM-10291,AJMAL & SONS,Out For Delivery,Shiprocket Surface,2026-11-19 05:02:21,Arjun Joshi,Jaipur,597674,Prepaid,14814.00,AWB70001557,"Says ""urgent"" on invoice"
+EMZ-O40013,Emiza Gurgaon,Delivered,DTDC,2026-11-20 01:00:00,Isha Reddy,Chennai,542695,COD,9230.99,AWB70003726,Outside its window
+AJM-10032,AJMAL & SONS,In Transit,BlitzNDD,2026-11-18 20:26:53,Meera Kapoor,Pune,445434,Prepaid,10186.50,AWB70000175,
+AJM-10546,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 06:39:25,Kiara Bose,Chennai,224987,Prepaid,6883.50,AWB70002786,"Leave with security, gate 2"
+AJM-10601,AJMAL & SONS,In Transit,Shiprocket Surface,2026-11-19 02:00:42,Meera Sharma,Pune,315872,Prepaid,12620.50,AWB70003059,"Fragile, handle with care"
+EMZ-10274,Emiza Gurgaon,Delivered,Shadowfax NDD,2026-11-19 03:22:53,Rohan Khanna,Chennai,503252,Prepaid,4407.00,AWB70001449,
+AJM-10145,AJMAL & SONS,Shipped,ElasticrunDirectNDD,2026-11-19 03:36:26,Tara Nair,New Delhi,560424,Prepaid,7938.99,AWB70000747,"Leave with security, gate 2"
+AJM-10484,AJMAL & SONS,Delivered,DTDC,2026-11-19 11:01:00,Saanvi Joshi,New Delhi,161219,COD,7170.99,AWB70002541,
+EMZ-10144,Emiza Gurgaon,Delivered,BlueDart,2026-11-18 20:19:10,Kiara Gupta,Lucknow,541209,Prepaid,2392.99,AWB70000744,Call before delivery
+EMZ-10197,Emiza Gurgaon,Packed,dunzo ndd,2026-11-18 17:25:48,Riya Kapoor,Hyderabad,484613,COD,8055.99,AWB70001033,"Leave with security, gate 2"
+AJM-10517,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-18 23:02:32,Aarav Joshi,Chennai,585111,COD,11302.00,AWB70002671,Gift wrap
+EMZ-10521,Emiza Gurgaon,Shipped,ElasticrunDirectNDD,2026-11-18 21:10:54,Tara Verma,Chennai,430702,COD,14335.50,AWB70002677,
+AJM-10362,AJMAL & SONS,In Transit,Ecom Express,2026-11-18 18:59:17,Isha Sharma,Jaipur,448924,Prepaid,12248.99,AWB70001932,"Leave with security, gate 2"
+EMZ-O40027,Emiza Gurgaon,Delivered,DTDC,2026-11-20 01:00:00,Riya Reddy,Noida,346549,Prepaid,12923.00,AWB70003791,Outside its window
+EMZ-10344,Emiza Gurgaon,Packed,Ecom Express,2026-11-18 18:24:23,Vivaan Reddy,Lucknow,403983,Prepaid,3836.00,AWB70001831,
+AJM-10583,AJMAL & SONS,Out For Delivery,XpressBees,2026-11-19 13:23:56,Vihaan Singh,Pune,624564,Prepaid,8664.50,AWB70002970,"Says ""urgent"" on invoice"
+EMZ-10420,Emiza Gurgaon,Delivered,Ecom Express,2026-11-18 16:52:22,Isha Verma,Pune,614863,COD,10971.00,AWB70002219,Gift wrap
+OTH-20023,ajmal and sons,Delivered,Shiprocket Surface,2026-11-19 01:59:54,Anaya Singh,Kolkata,135941,Prepaid,12181.99,AWB70003363,Other client
+EMZ-10066,Emiza Gurgaon,Shipped,BlueDart,2026-11-19 03:10:37,Neel Sharma,Jaipur,182112,COD,13526.00,AWB70000354,
+EMZ-B50002,Emiza Gurgaon,Delivered,BlueDart,2026-02-31 10:00:00,Tara Nair,New Delhi,439263,Prepaid,12679.99,AWB70003808,Unreadable order date
+EMZ-10107,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-19 10:25:18,Meera Iyer,New Delhi,400443,Prepaid,8804.99,AWB70000570,
+AJM-10403,AJMAL & SONS,Delivered,DTDC,2026-11-19 01:05:17,Riya Gupta,Hyderabad,396673,Prepaid,4818.99,AWB70002138,Gift wrap
+EMZ-X30013,Emiza Gurgaon,Returned,Amazon Shipping,2026-11-19 13:59:09,Kiara Bose,Chandigarh,605502,COD,11379.00,AWB70003518,Excluded status
+AJM-10125,AJMAL & SONS,In Transit,Shiprocket Surface,2026-11-19 02:04:47,Vivaan Khanna,Mumbai,266654,Prepaid,4790.50,AWB70000668,"Says ""urgent"" on invoice"
+AJM-10549,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 03:30:10,Vivaan Joshi,Jaipur,641110,COD,12511.00,AWB70002799,"Says ""urgent"" on invoice"
+AJM-10336,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-18 17:55:59,Diya Gupta,Lucknow,422011,Prepaid,3933.99,AWB70001783,"Fragile, handle with care"
+EMZ-O40005,Emiza Gurgaon,Delivered,Delhivery,2026-11-17 18:00:00,Arjun Joshi,Kolkata,435426,Prepaid,4715.50,AWB70003694,Outside its window
+EMZ-10229,Emiza Gurgaon,In Transit,Amazon Shipping,2026-11-18 17:53:41,Anaya Reddy,Noida,323857,Prepaid,3548.00,AWB70001220,
+AJM-10151,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 12:20:33,Anaya Kapoor,Noida,440971,COD,310.00,AWB70000778,Gift wrap
+AJM-10459,AJMAL & SONS,In Transit,XpressBees,2026-11-19 03:18:51,Neel Verma,Noida,313484,Prepaid,3803.99,AWB70002423,"Fragile, handle with care"
+AJM-10518,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-18 20:13:11,Aarav Iyer,Lucknow,602205,Prepaid,9898.99,AWB70002672,"Leave with security, gate 2"
+AJM-10242,AJMAL & SONS,Shipped,Ecom Express,2026-11-18 17:24:29,Riya Mehta,New Delhi,204099,Prepaid,1650.00,AWB70001281,"Fragile, handle with care"
+AJM-O40016,AJMAL & SONS,Delivered,Delhivery,2026-11-19 15:00:00,Isha Nair,Chennai,391740,Prepaid,8440.00,AWB70003741,Outside its window
+OTH-20008,Kapoor Textiles,Delivered,Delhivery,2026-11-18 15:28:59,Kiara Gupta,Chennai,160074,Prepaid,9203.00,AWB70003291,Other client
+AJM-10085,AJMAL & SONS,Shipped,BlitzNDD,2026-11-18 20:46:40,Tara Mehta,Mumbai,194884,COD,4888.00,AWB70000458,
+AJM-10237,AJMAL & SONS,In Transit,Delhivery,2026-11-18 18:20:53,Neel Verma,Lucknow,532807,COD,6656.99,AWB70001256,
+AJM-10226,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-18 18:55:41,Vivaan Nair,Chennai,280068,Prepaid,9960.50,AWB70001201,Customer asked to deliver after 6 PM
+AJM-10407,AJMAL & SONS,In Transit,Amazon Shipping,2026-11-19 04:21:04,Riya Khanna,Gurgaon,323466,Prepaid,8468.50,AWB70002153,
+AJM-10492,AJMAL & SONS,In Transit,dunzo ndd,2026-11-18 16:12:33,Diya Kapoor,Jaipur,413036,Prepaid,4846.99,AWB70002570,
+EMZ-10602,Emiza Gurgaon,Delivered,Shadowfax NDD,2026-11-18 15:20:56,Aditya Sharma,Pune,399506,Prepaid,6183.99,AWB70003061,Gift wrap
+OTH-20028,Emiza Mumbai,Delivered,Ecom Express,2026-11-19 09:55:01,Neel Reddy,Chennai,690221,Prepaid,2865.50,AWB70003389,Other client
+AJM-10099,AJMAL & SONS,In Transit,BlueDart,2026-11-19 08:21:45,Aditya Bose,Chandigarh,604748,Partial COD,10450.50,AWB70000522,
+AJM-X30017,AJMAL & SONS,on_hold,Shiprocket Surface,2026-11-19 04:09:35,Riya Nair,Gurgaon,328244,COD,11799.00,AWB70003533,Excluded status
+EMZ-10191,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-18 19:21:42,Neel Kapoor,Bengaluru,569254,Prepaid,13019.50,AWB70001003,Customer asked to deliver after 6 PM
+EMZ-10220,Emiza Gurgaon,In Transit,DTDC,2026-11-19 07:39:08,Isha Iyer,Jaipur,129076,COD,1241.00,AWB70001169,
+AJM-10454,AJMAL & SONS,Packed,BlitzNDD,2026-11-18 22:04:17,Vihaan Singh,Mumbai,337618,COD,1573.99,AWB70002390,
+EMZ-10042,Emiza Gurgaon,In Transit,Delhivery,2026-11-19 04:46:22,Rohan Sharma,Chennai,193696,COD,14344.99,AWB70000231,"Leave with security, gate 2"
+AJM-10319,AJMAL & SONS,Shipped,Delhivery,2026-11-19 00:07:37,Isha Singh,Mumbai,649679,Prepaid,5229.50,AWB70001686,Gift wrap
+AJM-10401,AJMAL & SONS,In Transit,Shiprocket Surface,2026-11-19 04:57:19,Aarav Singh,Hyderabad,336809,Prepaid,5281.50,AWB70002131,Customer asked to deliver after 6 PM
+EMZ-10349,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-19 04:48:00,Vihaan Mehta,Kolkata,397829,Prepaid,6779.00,AWB70001868,
+AJM-10611,AJMAL & SONS,In Transit,Shiprocket Surface,2026-11-19 03:23:28,Aditya Gupta,Chandigarh,297468,Prepaid,13337.00,AWB70003104,
+AJM-10561,AJMAL & SONS,Delivered,dunzo ndd,2026-11-18 12:31:13,Aditya Kapoor,Hyderabad,305752,COD,4980.00,AWB70002869,"Fragile, handle with care"
+EMZ-10495,Emiza Gurgaon,In Transit,XpressBees,2026-11-19 14:26:53,Meera Gupta,Jaipur,279791,Prepaid,10242.00,AWB70002591,
+AJM-10083,AJMAL & SONS,Shipped,ElasticrunDirectNDD,2026-11-18 21:37:49,Aditya Mehta,Lucknow,214921,Prepaid,8944.99,AWB70000448,
+AJM-10614,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 00:08:08,Tara Iyer,Lucknow,227280,COD,5528.50,AWB70003114,"Says ""urgent"" on invoice"
+AJM-10016,AJMAL & SONS,In Transit,BlueDart,2026-11-19 00:31:58,Meera Nair,Lucknow,368652,COD,3064.50,AWB70000100,Gift wrap
+AJM-10323,AJMAL & SONS,Shipped,BlueDart,2026-11-19 07:36:05,Neel Nair,Pune,389840,Partial COD,14050.99,AWB70001707,Gift wrap
+AJM-X30001,AJMAL & SONS,CANCELLED,Delhivery,2026-11-19 05:02:00,Arjun Gupta,Lucknow,549172,COD,13067.00,AWB70003441,Excluded status
+EMZ-10315,Emiza Gurgaon,Delivered,Ecom Express,2026-11-19 02:04:34,Vihaan Gupta,Lucknow,193257,COD,7890.00,AWB70001660,Gift wrap
+AJM-10551,AJMAL & SONS,In Transit,DTDC,2026-11-18 16:26:13,Aarav Bose,Pune,449855,Prepaid,12269.00,AWB70002813,Customer asked to deliver after 6 PM
+AJM-10163,AJMAL & SONS,Delivered,XpressBees,2026-11-19 04:16:47,Aditya Singh,Chennai,453323,Prepaid,10510.99,AWB70000841,"Says ""urgent"" on invoice"
+OTH-20032,ajmal and sons,Delivered,XpressBees,2026-11-19 02:20:55,Meera Reddy,Gurgaon,467074,Partial COD,7497.00,AWB70003413,Other client
+AJM-10171,AJMAL & SONS,In Transit,Delhivery,2026-11-19 07:43:22,Anaya Nair,Jaipur,510942,Prepaid,10484.50,AWB70000887,
+AJM-10612,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-18 23:07:33,Vivaan Mehta,Bengaluru,367446,COD,11125.00,AWB70003106,Call before delivery
+AJM-10152,AJMAL & SONS,Packed,XpressBees,2026-11-19 04:50:05,Neel Bose,Kolkata,507306,COD,3741.99,AWB70000784,"Fragile, handle with care"
+AJM-10030,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-18 15:07:32,Anaya Verma,Kolkata,549584,Prepaid,13627.50,AWB70000162,
+AJM-10343,AJMAL & SONS,Delivered,DTDC,2026-11-19 02:37:14,Diya Nair,Bengaluru,597865,Prepaid,11615.99,AWB70001823,"Leave with security, gate 2"
+AJM-10524,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 04:03:54,Riya Reddy,New Delhi,616197,Prepaid,8770.50,AWB70002691,
+AJM-10120,AJMAL & SONS,In Transit,Delhivery,2026-11-19 08:27:34,Isha Gupta,Pune,192033,Prepaid,5909.00,AWB70000641,"Fragile, handle with care"
+AJM-10141,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 00:10:01,Anaya Bose,Jaipur,488648,Prepaid,3383.99,AWB70000722,Call before delivery
+EMZ-O40021,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-19 12:00:00,Anaya Kapoor,Bengaluru,580861,Prepaid,12496.50,AWB70003764,Outside its window
+EMZ-10196,Emiza Gurgaon,Shipped,Shadowfax NDD,2026-11-19 05:05:55,Kabir Mehta,Chandigarh,584296,Prepaid,5000.99,AWB70001025,
+AJM-10182,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 04:17:31,Arjun Verma,New Delhi,472492,COD,12906.00,AWB70000959,Gift wrap
+AJM-10504,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-19 03:39:28,Isha Reddy,Bengaluru,637196,Prepaid,10262.00,AWB70002633,
+AJM-10248,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-18 22:28:20,Meera Joshi,Gurgaon,435843,COD,6954.99,AWB70001312,Gift wrap
+EMZ-10394,Emiza Gurgaon,In Transit,BlueDart,2026-11-19 13:48:10,Aditya Joshi,Chennai,673459,Prepaid,11406.99,AWB70002099,"Leave with security, gate 2"
+AJM-10307,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-18 17:17:25,Rohan Khanna,Mumbai,377151,COD,216.00,AWB70001626,"Says ""urgent"" on invoice"
+AJM-10588,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 17:41:24,Diya Sharma,Chandigarh,433280,Prepaid,1748.99,AWB70002996,
+EMZ-10031,Emiza Gurgaon,In Transit,BlitzNDD,2026-11-18 17:50:55,Saanvi Kapoor,Chennai,123697,Prepaid,12835.00,AWB70000169,Gift wrap
+EMZ-10579,Emiza Gurgaon,In Transit,XpressBees,2026-11-19 14:25:39,Vihaan Mehta,Gurgaon,447623,Prepaid,8284.99,AWB70002947,
+EMZ-10279,Emiza Gurgaon,Packed,Shadowfax NDD,2026-11-19 05:57:31,Riya Kapoor,Hyderabad,421449,COD,10969.50,AWB70001477,"Says ""urgent"" on invoice"
+EMZ-10411,Emiza Gurgaon,Shipped,DTDC,2026-11-19 01:54:59,Saanvi Nair,Hyderabad,618420,COD,3538.50,AWB70002173,
+AJM-10510,AJMAL & SONS,Shipped,BlueDart,2026-11-19 08:52:49,Saanvi Joshi,Kolkata,113410,Partial COD,8469.99,AWB70002655,
+AJM-10132,AJMAL & SONS,Shipped,dunzo ndd,2026-11-19 03:09:30,Kiara Gupta,Chennai,682765,Prepaid,8504.50,AWB70000697,"Leave with security, gate 2"
+AJM-10269,AJMAL & SONS,Out For Delivery,dunzo ndd,2026-11-19 06:01:19,Vivaan Mehta,Chandigarh,616565,Prepaid,6902.50,AWB70001427,
+AJM-10161,AJMAL & SONS,Shipped,BlueDart,2026-11-19 07:29:28,Aarav Iyer,Chennai,350275,Partial COD,10695.99,AWB70000835,
+AJM-10045,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-19 14:57:53,Vivaan Nair,Chandigarh,404638,COD,7373.99,AWB70000245,Gift wrap
+EMZ-X30026,Emiza Gurgaon,RETURNED,BlueDart,2026-11-18 18:32:31,Isha Singh,Hyderabad,672895,COD,7625.00,AWB70003588,Excluded status
+AJM-10592,AJMAL & SONS,Shipped,BlitzNDD,2026-11-19 09:25:46,Meera Gupta,Hyderabad,611439,COD,2896.50,AWB70003023,
+AJM-10367,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 17:11:51,Anaya Gupta,Noida,175911,Prepaid,12494.99,AWB70001961,Customer asked to deliver after 6 PM
+EMZ-10202,Emiza Gurgaon,Packed,DTDC,2026-11-19 02:18:41,Isha Reddy,Noida,660062,Prepaid,10260.00,AWB70001058,Gift wrap
+AJM-10109,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 21:06:38,Diya Mehta,Bengaluru,249664,COD,14815.99,AWB70000579,Gift wrap
+AJM-10258,AJMAL & SONS,Shipped,BlueDart,2026-11-19 09:59:53,Aarav Nair,Chennai,500411,Prepaid,1791.00,AWB70001373,Gift wrap
+AJM-10108,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 11:48:42,Arjun Mehta,Kolkata,127950,COD,1614.00,AWB70000576,"Says ""urgent"" on invoice"
+EMZ-10538,Emiza Gurgaon,In Transit,Delhivery,2026-11-19 07:51:43,Aditya Reddy,Mumbai,335159,Prepaid,9437.50,AWB70002754,Customer asked to deliver after 6 PM
+EMZ-O40017,Emiza Gurgaon,Delivered,BlueDart,2026-11-18 14:59:59,Tara Iyer,Kolkata,638124,COD,11198.00,AWB70003746,Outside its window
+EMZ-10418,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-19 02:02:33,Aarav Mehta,Pune,550380,Prepaid,14681.50,AWB70002204,Call before delivery
+AJM-10499,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 08:39:59,Aarav Iyer,Jaipur,166978,Prepaid,5927.50,AWB70002609,
+OTH-20001,ajmal and sons,Delivered,XpressBees,2026-11-19 07:27:08,Kiara Reddy,Lucknow,657238,Prepaid,12480.99,AWB70003266,Other client
+EMZ-10433,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-18 15:13:57,Tara Khanna,Bengaluru,180657,COD,3065.99,AWB70002290,Gift wrap
+AJM-10039,AJMAL & SONS,In Transit,Ecom Express,2026-11-18 17:08:05,Anaya Joshi,Lucknow,584014,Partial COD,245.00,AWB70000220,
+AJM-10140,AJMAL & SONS,Out For Delivery,Shiprocket Surface,2026-11-19 05:14:22,Vihaan Bose,Pune,358159,Prepaid,10561.00,AWB70000714,
+AJM-EDGE1,AJMAL & SONS,Shipped,BlitzNDD,2026-11-18 12:00:00,Aarav Reddy,Bengaluru,393555,COD,10391.00,AWB70003228,Window boundary (included)
+AJM-10227,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-18 17:58:00,Neel Gupta,Lucknow,583963,COD,7600.99,AWB70001207,
+AJM-10487,AJMAL & SONS,Shipped,Ecom Express,2026-11-18 20:27:22,Kiara Verma,Hyderabad,233883,Prepaid,9518.00,AWB70002555,"Fragile, handle with care"
+AJM-10147,AJMAL & SONS,Shipped,Delhivery,2026-11-19 12:14:15,Rohan Reddy,Lucknow,413305,COD,3387.00,AWB70000760,"Says ""urgent"" on invoice"
+AJM-10129,AJMAL & SONS,In Transit,BlueDart,2026-11-18 23:27:26,Neel Gupta,Noida,378936,Prepaid,13485.00,AWB70000685,"Leave with security, gate 2"
+AJM-10057,AJMAL & SONS,Delivered,BlueDart,2026-11-19 00:41:38,Kiara Gupta,Mumbai,126674,Prepaid,358.99,AWB70000307,
+AJM-10253,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-18 17:35:46,Diya Joshi,Hyderabad,516645,Prepaid,11279.50,AWB70001343,
+OTH-20031,ajmal and sons,Delivered,BlueDart,2026-11-19 11:32:53,Anaya Gupta,New Delhi,242247,Prepaid,7705.99,AWB70003405,Other client
+EMZ-X30020,Emiza Gurgaon,CANCELLED,DTDC,2026-11-19 02:18:28,Riya Iyer,Lucknow,650175,COD,12295.99,AWB70003552,Excluded status
+AJM-10006,AJMAL & SONS,Shipped,Delhivery,2026-11-19 05:16:41,Vivaan Reddy,Kolkata,498318,COD,481.00,AWB70000033,"Says ""urgent"" on invoice"
+AJM-O40024,AJMAL & SONS,Delivered,BlueDart,2026-11-18 14:59:59,Diya Kapoor,Hyderabad,400830,Prepaid,10651.50,AWB70003776,Outside its window
+EMZ-10624,Emiza Gurgaon,In Transit,Shiprocket Surface,2026-11-19 04:33:37,Vivaan Singh,Chennai,170379,COD,6186.99,AWB70003155,Customer asked to deliver after 6 PM
+AJM-10569,AJMAL & SONS,Packed,dunzo ndd,2026-11-19 11:57:25,Meera Reddy,Bengaluru,352566,Prepaid,1790.00,AWB70002905,
+AJM-10007,AJMAL & SONS,Packed,Delhivery,2026-11-18 21:48:25,Rohan Verma,Gurgaon,164682,Prepaid,14927.99,AWB70000037,
+EMZ-10358,Emiza Gurgaon,In Transit,Delhivery,2026-11-18 17:43:18,Aarav Bose,Chandigarh,586578,COD,13033.00,AWB70001914,Customer asked to deliver after 6 PM
+EMZ-X30031,Emiza Gurgaon,Returned,XpressBees,2026-11-18 17:17:07,Kabir Sharma,Kolkata,202658,COD,14732.99,AWB70003613,Excluded status
+AJM-10593,AJMAL & SONS,Delivered,XpressBees,2026-11-18 21:58:48,Arjun Verma,Jaipur,501475,Partial COD,13055.99,AWB70003027,"Says ""urgent"" on invoice"
+AJM-10020,AJMAL & SONS,In Transit,Delhivery,2026-11-18 22:17:03,Aarav Reddy,Lucknow,389098,Prepaid,3062.50,AWB70000123,
+EMZ-X30000,Emiza Gurgaon,RETURNED,Delhivery,2026-11-19 12:33:47,Saanvi Mehta,Bengaluru,619293,Prepaid,10282.00,AWB70003434,Excluded status
+OTH-20020,Kapoor Textiles,Delivered,Amazon Shipping,2026-11-19 06:43:31,Neel Sharma,Pune,248651,Partial COD,401.00,AWB70003344,Other client
+EMZ-10013,Emiza Gurgaon,In Transit,BlitzNDD,2026-11-19 06:36:28,Kabir Sharma,Jaipur,516617,COD,14343.00,AWB70000082,"Leave with security, gate 2"
+AJM-10351,AJMAL & SONS,Shipped,DTDC,2026-11-19 10:52:44,Diya Gupta,New Delhi,426844,Prepaid,9175.99,AWB70001883,
+EMZ-X30009,Emiza Gurgaon,on_hold,Amazon Shipping,2026-11-18 16:08:50,Arjun Singh,Chennai,443248,COD,12281.00,AWB70003495,Excluded status
+AJM-10285,AJMAL & SONS,In Transit,Shiprocket Surface,2026-11-19 03:57:45,Aarav Verma,Bengaluru,383819,Prepaid,12130.00,AWB70001516,"Leave with security, gate 2"
+AJM-10515,AJMAL & SONS,Out For Delivery,dunzo ndd,2026-11-19 07:32:59,Vihaan Sharma,Bengaluru,185220,Prepaid,10165.99,AWB70002669,
+AJM-10385,AJMAL & SONS,Shipped,Ecom Express,2026-11-19 04:21:38,Tara Nair,Gurgaon,170815,Prepaid,11797.50,AWB70002062,Customer asked to deliver after 6 PM
+AJM-10631,AJMAL & SONS,Delivered,Ecom Express,2026-11-18 23:45:10,Kiara Iyer,Jaipur,372089,COD,1708.99,AWB70003182,Call before delivery
+EMZ-10002,Emiza Gurgaon,Shipped,XpressBees,2026-11-19 11:53:44,Meera Sharma,Gurgaon,257941,Prepaid,7574.50,AWB70000009,"Fragile, handle with care"
+AJM-10434,AJMAL & SONS,In Transit,Amazon Shipping,2026-11-19 02:15:03,Saanvi Singh,Mumbai,302386,COD,7637.99,AWB70002291,Call before delivery
+AJM-X30037,AJMAL & SONS,On-Hold,Amazon Shipping,2026-11-19 12:12:56,Aditya Iyer,Pune,209114,Prepaid,13625.00,AWB70003649,Excluded status
+EMZ-10516,Emiza Gurgaon,Packed,ElasticrunDirectNDD,2026-11-18 20:46:33,Rohan Kapoor,Gurgaon,586784,Prepaid,13625.00,AWB70002670,Customer asked to deliver after 6 PM
+EMZ-10297,Emiza Gurgaon,In Transit,Ecom Express,2026-11-19 12:07:25,Anaya Iyer,Bengaluru,212824,Prepaid,4342.50,AWB70001587,Gift wrap
+AJM-10005,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-19 02:37:40,Vivaan Nair,Lucknow,272379,COD,13030.50,AWB70000026,
+EMZ-O40022,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-18 11:59:59,Anaya Iyer,Kolkata,126579,COD,14269.00,AWB70003767,Outside its window
+OTH-20024,Some Other Brand,Delivered,Delhivery,2026-11-19 11:00:00,Kiara Sharma,Hyderabad,460214,COD,2090.99,AWB70003369,Other client
+AJM-10036,AJMAL & SONS,Shipped,Delhivery,2026-11-19 02:15:18,Vivaan Reddy,Gurgaon,170726,Prepaid,6692.50,AWB70000201,
+EMZ-10155,Emiza Gurgaon,Shipped,Delhivery,2026-11-19 08:40:01,Aarav Kapoor,Jaipur,137321,COD,11845.00,AWB70000803,"Says ""urgent"" on invoice"
+EMZ-10513,Emiza Gurgaon,In Transit,DTDC,2026-11-18 23:18:27,Anaya Khanna,Chandigarh,462388,COD,364.50,AWB70002663,Customer asked to deliver after 6 PM
+EMZ-10194,Emiza Gurgaon,Shipped,BlueDart,2026-11-18 16:18:21,Anaya Verma,New Delhi,338659,Prepaid,2429.00,AWB70001019,
+AJM-10636,AJMAL & SONS,Delivered,Delhivery,2026-11-19 01:37:08,Kabir Iyer,Chennai,465295,Prepaid,5896.50,AWB70003211,"Leave with security, gate 2"
+EMZ-10063,Emiza Gurgaon,Delivered,Shadowfax NDD,2026-11-19 04:00:30,Kiara Gupta,Mumbai,218473,Prepaid,1242.00,AWB70000348,
+AJM-10089,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-19 07:39:59,Kabir Mehta,Chennai,469064,COD,12892.00,AWB70000479,"Says ""urgent"" on invoice"
+EMZ-10200,Emiza Gurgaon,In Transit,Amazon Shipping,2026-11-18 21:37:53,Vihaan Joshi,Kolkata,679213,Prepaid,7222.50,AWB70001050,
+AJM-10469,AJMAL & SONS,Delivered,dunzo ndd,2026-11-18 15:09:15,Aditya Joshi,Lucknow,324341,Prepaid,8071.50,AWB70002469,"Fragile, handle with care"
+EMZ-10100,Emiza Gurgaon,Out For Delivery,Delhivery,2026-11-19 06:48:21,Riya Iyer,Mumbai,264212,Prepaid,12902.99,AWB70000531,
+AJM-10353,AJMAL & SONS,Delivered,XpressBees,2026-11-19 11:19:04,Arjun Khanna,Hyderabad,631310,COD,1342.00,AWB70001893,"Leave with security, gate 2"
+AJM-10613,AJMAL & SONS,In Transit,XpressBees,2026-11-19 04:24:59,Kabir Verma,Mumbai,616313,Prepaid,11457.99,AWB70003112,Gift wrap
+AJM-10252,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-19 04:06:13,Aditya Gupta,Noida,548158,COD,4406.50,AWB70001335,Customer asked to deliver after 6 PM
+EMZ-10337,Emiza Gurgaon,Packed,Amazon Shipping,2026-11-19 03:51:05,Anaya Bose,New Delhi,279825,COD,1208.00,AWB70001789,
+EMZ-10520,Emiza Gurgaon,Shipped,XpressBees,2026-11-18 22:32:53,Kabir Nair,Gurgaon,557951,Prepaid,1437.50,AWB70002675,
+AJM-10570,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-19 04:34:40,Meera Kapoor,Bengaluru,361610,COD,6830.50,AWB70002907,Call before delivery
+EMZ-10322,Emiza Gurgaon,Packed,BlueDart,2026-11-18 18:16:02,Diya Bose,Chandigarh,622542,Prepaid,12783.50,AWB70001700,"Leave with security, gate 2"
+EMZ-10069,Emiza Gurgaon,Shipped,Amazon Shipping,2026-11-19 14:53:04,Vihaan Joshi,Mumbai,121590,Partial COD,398.50,AWB70000367,Call before delivery
+AJM-10481,AJMAL & SONS,Shipped,dunzo ndd,2026-11-18 17:57:25,Meera Verma,Noida,336428,COD,5560.00,AWB70002530,
+AJM-10512,AJMAL & SONS,Packed,dunzo ndd,2026-11-19 06:09:33,Meera Mehta,Pune,189827,COD,12235.00,AWB70002661,Call before delivery
+AJM-10086,AJMAL & SONS,Delivered,BlueDart,2026-11-19 13:27:54,Tara Singh,Lucknow,182044,COD,13737.50,AWB70000464,
+OTH-20010,Some Other Brand,Delivered,BlueDart,2026-11-19 13:38:12,Anaya Bose,Noida,339518,Partial COD,2225.99,AWB70003301,Other client
+AJM-10567,AJMAL & SONS,In Transit,Shadowfax NDD,2026-11-18 23:13:45,Aarav Mehta,New Delhi,488762,COD,7400.99,AWB70002894,
+AJM-EDGE4,AJMAL & SONS,Shipped,Delhivery,2026-11-19 14:59:59,Kabir Gupta,Kolkata,173942,COD,8034.99,AWB70003253,Window boundary (included)
+AJM-10219,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 07:16:47,Isha Joshi,Chandigarh,400041,COD,7203.99,AWB70001162,Call before delivery
+OTH-20012,Some Other Brand,Delivered,BlueDart,2026-11-18 16:02:38,Rohan Singh,Bengaluru,699974,Prepaid,6366.50,AWB70003311,Other client
+AJM-10116,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-18 13:26:51,Diya Nair,New Delhi,650095,Prepaid,4078.99,AWB70000623,"Leave with security, gate 2"
+AJM-10430,AJMAL & SONS,Out For Delivery,ElasticrunDirectNDD,2026-11-18 14:34:22,Kabir Mehta,New Delhi,156588,Prepaid,10511.00,AWB70002276,
+AJM-EDGE2,AJMAL & SONS,Shipped,BlitzNDD,2026-11-19 11:59:59,Neel Bose,Kolkata,272128,Prepaid,3453.00,AWB70003236,Window boundary (included)
+EMZ-10254,Emiza Gurgaon,In Transit,DTDC,2026-11-18 18:45:57,Rohan Joshi,Mumbai,278271,Prepaid,9442.99,AWB70001347,"Says ""urgent"" on invoice"
+AJM-10003,AJMAL & SONS,Shipped,Delhivery,2026-11-19 03:45:10,Aditya Sharma,New Delhi,649445,COD,5336.99,AWB70000013,
+EMZ-10260,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-19 07:35:54,Neel Bose,Kolkata,143320,Prepaid,7300.50,AWB70001383,
+AJM-10460,AJMAL & SONS,Delivered,XpressBees,2026-11-18 19:03:52,Arjun Khanna,Pune,388292,Prepaid,12060.50,AWB70002424,
+OTH-20029,Emiza Mumbai,Delivered,DTDC,2026-11-18 22:19:44,Aarav Singh,New Delhi,294722,COD,6841.50,AWB70003390,Other client
+AJM-10165,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-18 18:07:22,Kiara Kapoor,Noida,371314,COD,11656.50,AWB70000856,Customer asked to deliver after 6 PM
+AJM-X30036,AJMAL & SONS,on_hold,Amazon Shipping,2026-11-18 18:13:57,Rohan Joshi,Kolkata,352820,Partial COD,2960.50,AWB70003644,Excluded status
+AJM-10340,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 00:20:32,Saanvi Iyer,Kolkata,395349,COD,1963.99,AWB70001804,
+AJM-10249,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 04:34:40,Saanvi Khanna,Jaipur,170033,Prepaid,8277.99,AWB70001318,
+OTH-20015,ajmal and sons,Delivered,Amazon Shipping,2026-11-19 03:53:09,Isha Iyer,Bengaluru,412363,COD,14251.00,AWB70003326,Other client
+AJM-10271,AJMAL & SONS,Delivered,DTDC,2026-11-19 00:18:36,Vihaan Mehta,Hyderabad,649202,Prepaid,8381.00,AWB70001437,Gift wrap
+EMZ-10206,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-18 23:51:19,Anaya Reddy,Lucknow,675515,COD,2840.50,AWB70001075,
+AJM-10502,AJMAL & SONS,Out For Delivery,Shadowfax NDD,2026-11-18 21:33:35,Meera Singh,Hyderabad,355054,Prepaid,1708.00,AWB70002623,
+EMZ-10635,Emiza Gurgaon,Shipped,BlitzNDD,2026-11-18 12:41:37,Saanvi Gupta,Kolkata,543963,COD,13189.99,AWB70003205,Customer asked to deliver after 6 PM
+AJM-10373,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-18 15:42:17,Meera Kapoor,Hyderabad,612512,COD,2205.99,AWB70001995,Gift wrap
+EMZ-10537,Emiza Gurgaon,Delivered,XpressBees,2026-11-19 04:13:46,Meera Iyer,Chandigarh,189419,Prepaid,1909.00,AWB70002747,Gift wrap
+AJM-10365,AJMAL & SONS,Out For Delivery,XpressBees,2026-11-19 14:09:02,Kiara Kapoor,Jaipur,619749,Prepaid,1914.00,AWB70001952,"Says ""urgent"" on invoice"
+AJM-10280,AJMAL & SONS,Delivered,BlueDart,2026-11-18 22:09:29,Neel Gupta,Mumbai,461696,COD,7044.99,AWB70001486,
+EMZ-10299,Emiza Gurgaon,Delivered,XpressBees,2026-11-19 07:33:34,Kiara Sharma,Gurgaon,610506,COD,13095.99,AWB70001598,"Leave with security, gate 2"
+AJM-B50007,AJMAL & SONS,Delivered,BlueDart,,Rohan Reddy,New Delhi,165832,COD,11477.99,AWB70003837,Unreadable order date
+EMZ-10419,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-19 03:54:10,Tara Nair,Pune,142233,Prepaid,7022.50,AWB70002210,Customer asked to deliver after 6 PM
+AJM-O40010,AJMAL & SONS,Delivered,BlueDart,2026-11-18 14:59:59,Vivaan Bose,Gurgaon,619906,Prepaid,4513.99,AWB70003717,Outside its window
+AJM-10425,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-18 20:04:27,Aditya Reddy,Kolkata,298542,COD,13855.00,AWB70002246,Customer asked to deliver after 6 PM
+AJM-10451,AJMAL & SONS,Shipped,Delhivery,2026-11-18 15:34:31,Aditya Reddy,New Delhi,355520,Prepaid,9378.99,AWB70002380,Customer asked to deliver after 6 PM
+AJM-10198,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-19 00:47:36,Meera Khanna,Hyderabad,431665,COD,6321.99,AWB70001034,Gift wrap
+EMZ-10068,Emiza Gurgaon,In Transit,Shiprocket Surface,2026-11-18 19:28:20,Kabir Sharma,Noida,509983,Prepaid,14083.50,AWB70000363,"Leave with security, gate 2"
+AJM-10028,AJMAL & SONS,In Transit,XpressBees,2026-11-18 23:20:50,Isha Khanna,New Delhi,195827,COD,1753.00,AWB70000156,
+EMZ-10325,Emiza Gurgaon,In Transit,Amazon Shipping,2026-11-19 09:23:56,Aarav Iyer,Lucknow,424993,COD,550.50,AWB70001714,
+AJM-10327,AJMAL & SONS,Shipped,XpressBees,2026-11-18 16:14:05,Saanvi Singh,Hyderabad,227910,Prepaid,12325.50,AWB70001726,Customer asked to deliver after 6 PM
+AJM-10118,AJMAL & SONS,In Transit,Shadowfax NDD,2026-11-18 23:38:35,Vivaan Nair,Chennai,366939,Prepaid,4915.00,AWB70000628,
+OTH-20017,Some Other Brand,Delivered,Delhivery,2026-11-18 17:13:59,Arjun Iyer,Bengaluru,547569,COD,8239.99,AWB70003332,Other client
+EMZ-10288,Emiza Gurgaon,Out For Delivery,XpressBees,2026-11-19 13:12:54,Riya Bose,Chennai,321615,COD,14692.00,AWB70001537,
+AJM-10268,AJMAL & SONS,Delivered,XpressBees,2026-11-18 18:19:27,Vihaan Singh,Bengaluru,519311,COD,3475.50,AWB70001423,Call before delivery
+AJM-10361,AJMAL & SONS,In Transit,XpressBees,2026-11-19 01:25:16,Vihaan Singh,Chandigarh,219417,COD,7551.99,AWB70001929,"Fragile, handle with care"
+AJM-10347,AJMAL & SONS,Packed,BlueDart,2026-11-18 18:21:24,Riya Reddy,New Delhi,641994,Prepaid,4365.00,AWB70001853,
+AJM-10061,AJMAL & SONS,Delivered,dunzo ndd,2026-11-19 06:28:52,Tara Bose,New Delhi,472891,Partial COD,7245.99,AWB70000332,"Fragile, handle with care"
+AJM-10289,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-18 23:44:26,Neel Iyer,Bengaluru,228488,Prepaid,10116.00,AWB70001544,
+EMZ-10244,Emiza Gurgaon,Shipped,Shadowfax NDD,2026-11-19 10:09:31,Diya Sharma,Hyderabad,682186,Partial COD,3487.00,AWB70001291,Customer asked to deliver after 6 PM
+AJM-10364,AJMAL & SONS,Packed,Delhivery,2026-11-19 05:51:05,Neel Verma,Bengaluru,621899,Prepaid,4708.50,AWB70001948,
+,Emiza Gurgaon,Delivered,Delhivery,2026-11-19 02:17:24,Diya Bose,Jaipur,151893,COD,2458.00,AWB70003855,Missing Reference Code
+AJM-10111,AJMAL & SONS,Delivered,Delhivery,2026-11-18 23:01:46,Aarav Joshi,Hyderabad,298010,COD,383.50,AWB70000593,
+AJM-10062,AJMAL & SONS,In Transit,Delhivery,2026-11-19 09:09:55,Rohan Bose,Bengaluru,126411,Prepaid,7350.99,AWB70000341,
+EMZ-10233,Emiza Gurgaon,Delivered,dunzo ndd,2026-11-19 06:34:05,Meera Verma,Chandigarh,251190,Prepaid,5159.00,AWB70001236,"Says ""urgent"" on invoice"
+EMZ-10149,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-18 21:23:36,Aarav Sharma,Kolkata,420922,Prepaid,7322.50,AWB70000770,
+AJM-10409,AJMAL & SONS,In Transit,dunzo ndd,2026-11-18 15:39:41,Diya Iyer,Kolkata,259107,Prepaid,11231.00,AWB70002165,
+EMZ-10329,Emiza Gurgaon,Delivered,Shadowfax NDD,2026-11-18 16:01:15,Tara Nair,New Delhi,213716,COD,11376.00,AWB70001739,Gift wrap
+EMZ-10531,Emiza Gurgaon,In Transit,Delhivery,2026-11-19 05:45:58,Vihaan Bose,Hyderabad,410798,COD,7526.50,AWB70002716,
+AJM-10559,AJMAL & SONS,In Transit,BlueDart,2026-11-19 11:22:57,Aditya Iyer,New Delhi,508587,Prepaid,5770.00,AWB70002858,
+AJM-10146,AJMAL & SONS,Out For Delivery,DTDC,2026-11-19 02:16:39,Riya Khanna,Kolkata,342383,COD,6586.99,AWB70000754,Call before delivery
+EMZ-10540,Emiza Gurgaon,Delivered,XpressBees,2026-11-19 00:13:18,Rohan Kapoor,New Delhi,301737,Prepaid,6887.00,AWB70002760,Gift wrap
+AJM-10379,AJMAL & SONS,Shipped,Delhivery,2026-11-19 10:37:56,Saanvi Kapoor,Gurgaon,225577,Prepaid,7600.99,AWB70002035,
+EMZ-10545,Emiza Gurgaon,In Transit,BlitzNDD,2026-11-19 06:30:02,Isha Bose,Pune,157557,COD,3289.50,AWB70002781,Call before delivery
+EMZ-10139,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-18 16:13:19,Rohan Reddy,Chandigarh,274766,Prepaid,1317.00,AWB70000713,"Leave with security, gate 2"
+AJM-O40004,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 14:00:00,Neel Verma,Gurgaon,142929,Prepaid,6615.50,AWB70003688,Outside its window
+AJM-10544,AJMAL & SONS,Shipped,XpressBees,2026-11-18 23:18:52,Vivaan Singh,New Delhi,219231,Prepaid,2451.50,AWB70002779,Call before delivery
+AJM-10313,AJMAL & SONS,Packed,BlitzNDD,2026-11-18 17:42:10,Isha Gupta,Chandigarh,613845,COD,1589.00,AWB70001651,
+AJM-10371,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 20:00:49,Meera Mehta,Mumbai,411438,Prepaid,7745.50,AWB70001983,
+AJM-O40025,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 14:00:00,Rohan Khanna,Gurgaon,180218,COD,4124.50,AWB70003781,Outside its window
+AJM-10509,AJMAL & SONS,In Transit,dunzo ndd,2026-11-18 22:03:08,Neel Mehta,Hyderabad,374810,COD,601.00,AWB70002647,
+,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-19 05:16:40,Isha Kapoor,Chennai,410724,Prepaid,9531.50,AWB70003861,Missing Reference Code
+AJM-10548,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-18 23:28:17,Aditya Verma,Lucknow,518560,COD,8785.00,AWB70002790,"Fragile, handle with care"
+AJM-10211,AJMAL & SONS,Delivered,XpressBees,2026-11-19 11:23:08,Aditya Nair,Chennai,456486,Prepaid,14034.50,AWB70001108,Customer asked to deliver after 6 PM
+OTH-20030,ajmal and sons,Delivered,Amazon Shipping,2026-11-19 03:55:48,Vihaan Singh,Jaipur,669801,COD,8487.50,AWB70003398,Other client
+AJM-10615,AJMAL & SONS,Shipped,BlueDart,2026-11-19 14:20:56,Diya Joshi,Chandigarh,696515,Prepaid,2850.00,AWB70003116,
+EMZ-10395,Emiza Gurgaon,In Transit,Shiprocket Surface,2026-11-18 18:31:33,Tara Nair,Hyderabad,402028,Prepaid,2791.99,AWB70002108,
+AJM-10186,AJMAL & SONS,Shipped,Ecom Express,2026-11-19 02:58:15,Arjun Nair,Kolkata,674531,Prepaid,1838.99,AWB70000981,
+AJM-10453,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-19 00:00:11,Rohan Singh,Lucknow,166037,Prepaid,1238.00,AWB70002389,"Fragile, handle with care"
+EMZ-10318,Emiza Gurgaon,Delivered,Ecom Express,2026-11-19 01:57:41,Meera Sharma,Pune,607382,Prepaid,12776.00,AWB70001681,Gift wrap
+EMZ-10203,Emiza Gurgaon,Delivered,dunzo ndd,2026-11-19 03:40:19,Kiara Kapoor,Bengaluru,656633,COD,1189.99,AWB70001067,
+EMZ-O40026,Emiza Gurgaon,Delivered,Delhivery,2026-11-17 18:00:00,Neel Kapoor,Chandigarh,244081,Prepaid,2664.50,AWB70003790,Outside its window
+OTH-20033,ajmal and sons,Delivered,Delhivery,2026-11-19 03:09:01,Meera Mehta,Gurgaon,337788,COD,9192.99,AWB70003421,Other client
+AJM-10467,AJMAL & SONS,In Transit,BlueDart,2026-11-19 02:37:44,Tara Mehta,Gurgaon,256684,Prepaid,8634.99,AWB70002459,
+AJM-10245,AJMAL & SONS,Shipped,ElasticrunDirectNDD,2026-11-19 10:39:44,Arjun Verma,Bengaluru,498437,Prepaid,10911.00,AWB70001296,Call before delivery
+AJM-10585,AJMAL & SONS,In Transit,Shadowfax NDD,2026-11-18 22:53:07,Meera Iyer,Mumbai,655863,COD,5449.00,AWB70002982,Call before delivery
+EMZ-10101,Emiza Gurgaon,Delivered,Shadowfax NDD,2026-11-19 06:01:42,Aditya Bose,Kolkata,495019,COD,8398.00,AWB70000534,
+AJM-10208,AJMAL & SONS,Delivered,Ecom Express,2026-11-18 19:32:59,Saanvi Mehta,Pune,425276,Prepaid,2127.00,AWB70001088,
+AJM-10310,AJMAL & SONS,Delivered,dunzo ndd,2026-11-19 04:18:06,Isha Mehta,Chandigarh,129730,Prepaid,14469.99,AWB70001639,Gift wrap
+AJM-10241,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-19 06:25:43,Saanvi Bose,Chennai,480997,Partial COD,13236.50,AWB70001279,"Fragile, handle with care"
+AJM-10273,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 06:39:07,Rohan Singh,Pune,354590,COD,8751.99,AWB70001447,Gift wrap
+AJM-10489,AJMAL & SONS,Shipped,Delhivery,2026-11-18 16:07:16,Arjun Kapoor,New Delhi,341580,COD,2929.00,AWB70002563,
+AJM-10534,AJMAL & SONS,Packed,dunzo ndd,2026-11-18 21:59:12,Kabir Reddy,Gurgaon,351461,COD,7600.00,AWB70002729,
+AJM-10179,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-19 02:39:36,Neel Reddy,Chennai,472406,COD,3929.50,AWB70000937,
+AJM-10259,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-19 04:45:22,Meera Joshi,Jaipur,493969,Prepaid,9083.50,AWB70001377,"Fragile, handle with care"
+AJM-10547,AJMAL & SONS,Shipped,Ecom Express,2026-11-18 19:24:28,Vivaan Nair,Jaipur,394334,Prepaid,9966.00,AWB70002788,"Fragile, handle with care"
+AJM-X30003,AJMAL & SONS,Returned,BlueDart,2026-11-18 23:56:32,Vivaan Iyer,Kolkata,261898,COD,12240.00,AWB70003453,Excluded status
+AJM-10130,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-19 05:36:35,Kiara Bose,Lucknow,603364,Prepaid,10771.99,AWB70000690,
+AJM-10562,AJMAL & SONS,Shipped,BlueDart,2026-11-19 06:36:20,Rohan Reddy,Kolkata,493800,COD,10199.99,AWB70002871,Call before delivery
+EMZ-10640,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-18 15:03:48,Diya Joshi,Mumbai,183630,COD,402.00,AWB70003221,Customer asked to deliver after 6 PM
+AJM-10331,AJMAL & SONS,In Transit,DTDC,2026-11-19 01:16:33,Vihaan Mehta,Hyderabad,397916,COD,11400.50,AWB70001750,Call before delivery
+AJM-10103,AJMAL & SONS,In Transit,BlitzNDD,2026-11-18 20:08:47,Aditya Gupta,Bengaluru,218209,COD,12378.50,AWB70000545,
+AJM-10330,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 01:27:46,Aditya Gupta,Chennai,674607,Prepaid,3241.00,AWB70001744,Call before delivery
+AJM-10158,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 02:33:32,Aditya Singh,Hyderabad,371338,COD,884.50,AWB70000818,Customer asked to deliver after 6 PM
+EMZ-10240,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-19 07:45:37,Riya Nair,Lucknow,211774,Prepaid,1774.00,AWB70001277,
+AJM-10172,AJMAL & SONS,Shipped,BlitzNDD,2026-11-18 17:39:42,Vihaan Joshi,Mumbai,601624,Prepaid,1730.99,AWB70000892,
+AJM-10267,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 06:31:49,Meera Kapoor,Noida,454330,Prepaid,12397.50,AWB70001419,
+EMZ-10348,Emiza Gurgaon,Packed,Delhivery,2026-11-19 06:38:56,Vihaan Nair,Lucknow,389151,COD,13364.00,AWB70001860,"Says ""urgent"" on invoice"
+EMZ-10458,Emiza Gurgaon,In Transit,BlueDart,2026-11-19 06:43:19,Rohan Kapoor,New Delhi,426382,Prepaid,4801.00,AWB70002418,Gift wrap
+AJM-10356,AJMAL & SONS,Packed,BlitzNDD,2026-11-19 11:24:58,Diya Singh,Mumbai,260448,Prepaid,4631.99,AWB70001906,"Fragile, handle with care"
+EMZ-10372,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-18 14:52:29,Vihaan Joshi,Chennai,149494,Prepaid,11737.50,AWB70001992,
+EMZ-X30027,Emiza Gurgaon,on_hold,Amazon Shipping,2026-11-19 03:39:32,Arjun Kapoor,Hyderabad,489820,Prepaid,5413.00,AWB70003590,Excluded status
+AJM-10038,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 01:57:49,Tara Mehta,Hyderabad,492543,Prepaid,13835.50,AWB70000212,"Fragile, handle with care"
+AJM-10432,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-19 04:13:59,Kabir Joshi,Chandigarh,170732,Prepaid,7647.50,AWB70002285,
+AJM-10090,AJMAL & SONS,Packed,BlueDart,2026-11-18 15:18:36,Aditya Kapoor,Chennai,200201,Prepaid,4188.00,AWB70000485,Gift wrap
+AJM-10183,AJMAL & SONS,Shipped,DTDC,2026-11-18 23:30:34,Saanvi Kapoor,Noida,362542,COD,7013.99,AWB70000963,"Says ""urgent"" on invoice"
+AJM-10577,AJMAL & SONS,Shipped,Ecom Express,2026-11-19 05:49:04,Tara Iyer,New Delhi,401321,Prepaid,11934.00,AWB70002936,
+AJM-10236,AJMAL & SONS,Packed,BlitzNDD,2026-11-18 15:47:03,Saanvi Joshi,Pune,397667,Prepaid,7622.99,AWB70001254,"Says ""urgent"" on invoice"
+AJM-B50005,AJMAL & SONS,Delivered,DTDC,tomorrow 9am,Isha Singh,Chandigarh,660890,Partial COD,10272.50,AWB70003828,Unreadable order date
+AJM-10609,AJMAL & SONS,Packed,BlueDart,2026-11-19 11:21:16,Aditya Khanna,Noida,558166,COD,8774.99,AWB70003087,
+AJM-10444,AJMAL & SONS,Delivered,DTDC,2026-11-19 12:36:30,Isha Khanna,Hyderabad,240018,Prepaid,788.50,AWB70002350,"Leave with security, gate 2"
+EMZ-10217,Emiza Gurgaon,Shipped,Delhivery,2026-11-19 07:43:25,Tara Singh,Kolkata,317936,COD,13026.99,AWB70001146,
+AJM-10565,AJMAL & SONS,Out For Delivery,XpressBees,2026-11-19 05:59:00,Kabir Gupta,Kolkata,503902,Prepaid,3876.00,AWB70002881,Call before delivery
+EMZ-X30019,Emiza Gurgaon,Cancelled,DTDC,2026-11-18 16:38:31,Anaya Gupta,Chandigarh,567508,Prepaid,3667.99,AWB70003548,Excluded status
+AJM-10473,AJMAL & SONS,Out For Delivery,Shadowfax NDD,2026-11-19 05:27:46,Aarav Gupta,Hyderabad,614328,Prepaid,13574.00,AWB70002491,
+EMZ-10468,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-18 17:21:31,Vihaan Verma,Kolkata,585752,Prepaid,6846.99,AWB70002463,Call before delivery
+AJM-10608,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 16:09:00,Tara Verma,Noida,411337,Partial COD,4970.50,AWB70003085,Call before delivery
+EMZ-10618,Emiza Gurgaon,Out For Delivery,XpressBees,2026-11-18 18:27:49,Diya Joshi,Chennai,148328,COD,7027.00,AWB70003128,
+AJM-10110,AJMAL & SONS,Shipped,DTDC,2026-11-18 16:05:33,Meera Singh,Lucknow,271862,Partial COD,8002.00,AWB70000588,
+AJM-10359,AJMAL & SONS,Delivered,BlueDart,2026-11-19 01:28:37,Aditya Reddy,Chennai,220492,Prepaid,12655.99,AWB70001923,
+EMZ-10610,Emiza Gurgaon,Out For Delivery,Shiprocket Surface,2026-11-19 05:18:33,Aditya Gupta,Jaipur,531317,Prepaid,7247.99,AWB70003096,
+AJM-10490,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 14:43:45,Saanvi Gupta,Chennai,222334,COD,3170.00,AWB70002564,"Says ""urgent"" on invoice"
+EMZ-10527,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-19 01:36:23,Kiara Gupta,Pune,371308,Prepaid,12913.00,AWB70002700,Call before delivery
+OTH-20019,ajmal and sons,Delivered,Amazon Shipping,2026-11-19 14:39:46,Tara Gupta,Hyderabad,626792,COD,5627.50,AWB70003342,Other client
+AJM-10440,AJMAL & SONS,Shipped,Ecom Express,2026-11-19 13:57:03,Aarav Sharma,Chandigarh,188986,Prepaid,11889.00,AWB70002327,
+AJM-10117,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-18 18:19:23,Kabir Verma,Chennai,249965,Prepaid,9764.00,AWB70000625,"Says ""urgent"" on invoice"
+EMZ-10058,Emiza Gurgaon,Packed,Delhivery,2026-11-19 12:14:56,Isha Verma,Jaipur,175382,Prepaid,4551.50,AWB70000310,Customer asked to deliver after 6 PM
+AJM-10572,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-18 21:08:15,Saanvi Reddy,Pune,296866,Prepaid,3564.00,AWB70002917,
+AJM-10228,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 21:52:27,Kabir Iyer,Lucknow,521221,Prepaid,5693.99,AWB70001212,
+AJM-10082,AJMAL & SONS,Delivered,DTDC,2026-11-19 13:33:08,Kabir Iyer,Pune,591548,COD,4157.99,AWB70000443,"Fragile, handle with care"
+EMZ-10416,Emiza Gurgaon,Out For Delivery,Shiprocket Surface,2026-11-19 04:01:42,Riya Verma,Lucknow,366045,Prepaid,7196.00,AWB70002198,"Says ""urgent"" on invoice"
+AJM-10072,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 07:43:51,Arjun Verma,Chennai,259572,Partial COD,12148.00,AWB70000382,"Fragile, handle with care"
+AJM-10368,AJMAL & SONS,In Transit,Delhivery,2026-11-19 14:46:54,Neel Gupta,Chandigarh,468063,COD,11391.00,AWB70001970,
+AJM-10390,AJMAL & SONS,Out For Delivery,XpressBees,2026-11-19 03:16:54,Anaya Nair,Gurgaon,636318,Prepaid,725.00,AWB70002090,Customer asked to deliver after 6 PM
+AJM-10553,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-19 02:36:18,Vihaan Kapoor,Gurgaon,259041,Prepaid,8101.00,AWB70002820,"Says ""urgent"" on invoice"
+AJM-O40009,AJMAL & SONS,Delivered,Delhivery,2026-11-19 15:00:00,Vivaan Verma,Pune,405719,Prepaid,5797.50,AWB70003708,Outside its window
+AJM-10438,AJMAL & SONS,Out For Delivery,BlueDart,2026-11-19 00:45:19,Tara Joshi,Kolkata,499530,COD,4445.00,AWB70002319,Gift wrap
+AJM-10525,AJMAL & SONS,Shipped,ElasticrunDirectNDD,2026-11-18 23:03:15,Saanvi Khanna,Jaipur,505174,Prepaid,2436.00,AWB70002693,
+AJM-10014,AJMAL & SONS,Delivered,XpressBees,2026-11-18 18:53:17,Aarav Khanna,Bengaluru,619771,Prepaid,1134.00,AWB70000084,
+AJM-10080,AJMAL & SONS,Shipped,DTDC,2026-11-19 06:08:27,Rohan Gupta,Mumbai,694852,COD,2778.99,AWB70000430,
+EMZ-10204,Emiza Gurgaon,In Transit,XpressBees,2026-11-19 08:38:33,Arjun Verma,Chandigarh,531704,Partial COD,2517.00,AWB70001073,"Leave with security, gate 2"
+EMZ-10554,Emiza Gurgaon,Delivered,Ecom Express,2026-11-18 16:04:34,Anaya Gupta,Noida,474170,Prepaid,6093.00,AWB70002829,
+OTH-20016,Emiza Mumbai,Delivered,Amazon Shipping,2026-11-19 12:22:32,Aarav Nair,New Delhi,235275,Prepaid,1894.50,AWB70003329,Other client
+AJM-10296,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-19 05:14:46,Rohan Nair,Jaipur,339582,COD,14006.99,AWB70001584,
+EMZ-10590,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-18 20:50:21,Vihaan Kapoor,New Delhi,369479,Prepaid,2542.00,AWB70003008,
+EMZ-10335,Emiza Gurgaon,Delivered,DTDC,2026-11-19 01:44:49,Meera Mehta,Chennai,118218,Prepaid,6613.50,AWB70001777,
+AJM-10398,AJMAL & SONS,Delivered,Delhivery,2026-11-18 17:10:40,Arjun Singh,Chennai,559645,Prepaid,14846.50,AWB70002115,"Fragile, handle with care"
+EMZ-10378,Emiza Gurgaon,In Transit,XpressBees,2026-11-19 10:40:33,Isha Reddy,Noida,285523,COD,5127.00,AWB70002027,
+EMZ-10501,Emiza Gurgaon,Out For Delivery,BlitzNDD,2026-11-18 20:12:04,Vivaan Iyer,Pune,482046,COD,9978.50,AWB70002619,"Says ""urgent"" on invoice"
+EMZ-X30033,Emiza Gurgaon,Returned,DTDC,2026-11-19 11:28:55,Isha Iyer,Lucknow,265826,COD,6826.00,AWB70003631,Excluded status
+AJM-10436,AJMAL & SONS,Shipped,DTDC,2026-11-18 18:41:33,Neel Singh,Lucknow,456987,COD,1248.50,AWB70002303,"Leave with security, gate 2"
+AJM-10413,AJMAL & SONS,In Transit,DTDC,2026-11-19 12:00:53,Neel Khanna,Bengaluru,381850,Prepaid,14844.99,AWB70002183,Gift wrap
+AJM-10555,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-19 03:35:03,Vivaan Khanna,Jaipur,667110,Prepaid,1512.99,AWB70002834,
+AJM-10408,AJMAL & SONS,In Transit,Amazon Shipping,2026-11-19 12:30:02,Kiara Verma,Lucknow,479549,COD,9840.99,AWB70002158,Customer asked to deliver after 6 PM
+AJM-10558,AJMAL & SONS,In Transit,XpressBees,2026-11-19 03:11:04,Aarav Sharma,Jaipur,156044,Prepaid,1794.99,AWB70002854,"Leave with security, gate 2"
+AJM-10148,AJMAL & SONS,Delivered,DTDC,2026-11-19 10:46:00,Isha Bose,Gurgaon,350901,COD,6145.99,AWB70000766,"Leave with security, gate 2"
+AJM-10488,AJMAL & SONS,Delivered,Delhivery,2026-11-19 08:30:02,Diya Kapoor,Hyderabad,359444,Prepaid,10943.99,AWB70002560,"Fragile, handle with care"
+AJM-10480,AJMAL & SONS,Shipped,XpressBees,2026-11-19 12:46:06,Kiara Verma,Chennai,620536,Prepaid,4753.99,AWB70002523,
+OTH-20027,ajmal and sons,Delivered,Ecom Express,2026-11-19 03:37:59,Aarav Mehta,Chennai,688554,Prepaid,10076.00,AWB70003380,Other client
+AJM-10485,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 23:59:09,Neel Khanna,Mumbai,545060,Prepaid,8949.99,AWB70002543,Gift wrap
+AJM-10402,AJMAL & SONS,Shipped,ElasticrunDirectNDD,2026-11-19 10:05:15,Meera Kapoor,Chennai,157627,Prepaid,14326.50,AWB70002133,Call before delivery
+AJM-10599,AJMAL & SONS,In Transit,Delhivery,2026-11-19 01:12:45,Tara Joshi,Chandigarh,182855,Prepaid,8499.99,AWB70003045,"Leave with security, gate 2"
+EMZ-10029,Emiza Gurgaon,Delivered,Ecom Express,2026-11-18 22:24:19,Kiara Singh,Chandigarh,598323,Prepaid,2241.99,AWB70000157,
+AJM-10605,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 13:25:52,Vivaan Iyer,New Delhi,576641,COD,12882.00,AWB70003076,Gift wrap
+EMZ-10386,Emiza Gurgaon,Shipped,XpressBees,2026-11-19 04:02:50,Anaya Mehta,Pune,153330,COD,10422.00,AWB70002068,"Fragile, handle with care"
+AJM-10044,AJMAL & SONS,In Transit,Shadowfax NDD,2026-11-18 23:41:19,Aditya Nair,Pune,539608,COD,5151.99,AWB70000242,Call before delivery
+AJM-10311,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-19 10:28:55,Kiara Gupta,Noida,569264,Prepaid,7428.00,AWB70001643,Gift wrap
+AJM-10070,AJMAL & SONS,Packed,DTDC,2026-11-19 00:09:09,Aarav Kapoor,New Delhi,623864,Prepaid,1958.00,AWB70000368,
+AJM-10302,AJMAL & SONS,In Transit,XpressBees,2026-11-19 00:35:49,Vihaan Khanna,Bengaluru,145302,COD,10121.00,AWB70001611,
+AJM-10381,AJMAL & SONS,In Transit,Delhivery,2026-11-18 23:00:35,Aditya Bose,Bengaluru,248401,COD,6027.50,AWB70002046,
+EMZ-10156,Emiza Gurgaon,Shipped,Ecom Express,2026-11-19 01:17:40,Aditya Gupta,Pune,695123,Prepaid,2263.99,AWB70000810,Gift wrap
+AJM-10126,AJMAL & SONS,In Transit,XpressBees,2026-11-18 19:13:34,Rohan Bose,Bengaluru,127592,COD,3533.50,AWB70000670,"Fragile, handle with care"
+EMZ-X30021,Emiza Gurgaon,On-Hold,XpressBees,2026-11-19 11:10:54,Riya Khanna,Pune,275532,Prepaid,7980.99,AWB70003559,Excluded status
+AJM-10393,AJMAL & SONS,Shipped,Ecom Express,2026-11-18 16:56:17,Aarav Sharma,New Delhi,529289,Prepaid,5031.99,AWB70002097,
+EMZ-X30005,Emiza Gurgaon,CANCELLED,XpressBees,2026-11-19 13:30:32,Tara Mehta,Bengaluru,565445,Prepaid,3425.00,AWB70003466,Excluded status
+EMZ-10223,Emiza Gurgaon,Shipped,Shiprocket Surface,2026-11-18 16:21:28,Kiara Reddy,Lucknow,649997,COD,10589.50,AWB70001188,
+EMZ-10596,Emiza Gurgaon,Delivered,Ecom Express,2026-11-18 15:54:13,Saanvi Joshi,New Delhi,227807,Prepaid,4832.50,AWB70003039,Customer asked to deliver after 6 PM
+AJM-X30016,AJMAL & SONS,CANCELLED,Delhivery,2026-11-18 22:16:16,Isha Gupta,Mumbai,288295,COD,7661.00,AWB70003531,Excluded status
+AJM-10142,AJMAL & SONS,Shipped,BlueDart,2026-11-18 23:49:54,Aditya Mehta,Kolkata,611474,COD,8525.50,AWB70000731,
+OTH-20013,Emiza Mumbai,Delivered,Shiprocket Surface,2026-11-19 01:40:56,Arjun Gupta,New Delhi,574769,COD,7308.00,AWB70003317,Other client
+AJM-10638,AJMAL & SONS,Shipped,Delhivery,2026-11-19 13:43:39,Riya Gupta,Noida,256428,Prepaid,14411.99,AWB70003215,
+AJM-10177,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 11:54:29,Vivaan Kapoor,New Delhi,689079,COD,5344.99,AWB70000920,
+EMZ-O40012,Emiza Gurgaon,Delivered,Delhivery,2026-11-17 18:00:00,Vihaan Joshi,Noida,254289,COD,4355.99,AWB70003723,Outside its window
+AJM-10078,AJMAL & SONS,Shipped,Ecom Express,2026-11-19 01:54:22,Kabir Sharma,Chandigarh,153234,Prepaid,5074.50,AWB70000412,"Says ""urgent"" on invoice"
+EMZ-10566,Emiza Gurgaon,Out For Delivery,Ecom Express,2026-11-19 03:55:09,Saanvi Reddy,New Delhi,500006,Prepaid,14211.50,AWB70002890,
+AJM-10625,AJMAL & SONS,Shipped,ElasticrunDirectNDD,2026-11-19 04:01:51,Aditya Khanna,New Delhi,612535,Prepaid,12315.00,AWB70003161,Customer asked to deliver after 6 PM
+AJM-10542,AJMAL & SONS,Shipped,Ecom Express,2026-11-19 01:22:02,Riya Sharma,Kolkata,697975,COD,1919.00,AWB70002773,"Leave with security, gate 2"
+AJM-O40006,AJMAL & SONS,Delivered,DTDC,2026-11-20 01:00:00,Kabir Kapoor,Noida,160842,COD,13840.99,AWB70003695,Outside its window
+EMZ-10314,Emiza Gurgaon,Delivered,DTDC,2026-11-18 20:13:43,Isha Bose,Hyderabad,377937,COD,11329.99,AWB70001652,
+AJM-10535,AJMAL & SONS,Shipped,BlueDart,2026-11-19 02:53:20,Meera Mehta,Lucknow,212067,Prepaid,3976.50,AWB70002737,Gift wrap
+AJM-10018,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 06:44:59,Riya Mehta,Pune,459083,Prepaid,8085.00,AWB70000109,
+AJM-10326,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-18 18:13:48,Kabir Mehta,Mumbai,503394,Prepaid,1515.99,AWB70001723,
+OTH-20003,Emiza Mumbai,Delivered,XpressBees,2026-11-18 19:44:40,Vihaan Verma,Chandigarh,533308,COD,2135.50,AWB70003269,Other client
+AJM-10462,AJMAL & SONS,Delivered,BlueDart,2026-11-18 23:53:42,Vihaan Sharma,Pune,242032,COD,14757.99,AWB70002431,
+AJM-X30039,AJMAL & SONS,CANCELLED,Delhivery,2026-11-19 00:07:55,Arjun Verma,Gurgaon,415648,COD,1218.50,AWB70003663,Excluded status
+AJM-10195,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 23:13:03,Saanvi Verma,New Delhi,274707,COD,5128.50,AWB70001024,"Leave with security, gate 2"
+AJM-10560,AJMAL & SONS,Delivered,Ecom Express,2026-11-19 09:10:30,Saanvi Bose,Lucknow,500054,COD,7177.00,AWB70002860,"Leave with security, gate 2"
+AJM-10189,AJMAL & SONS,Delivered,XpressBees,2026-11-18 23:24:42,Anaya Khanna,Kolkata,270507,COD,6339.50,AWB70000987,Call before delivery
+AJM-10213,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 05:01:08,Neel Sharma,Noida,460732,Prepaid,10862.99,AWB70001116,Call before delivery
+AJM-10190,AJMAL & SONS,Packed,XpressBees,2026-11-19 06:50:44,Riya Nair,Pune,616027,COD,6846.99,AWB70000996,"Fragile, handle with care"
+AJM-10053,AJMAL & SONS,In Transit,DTDC,2026-11-19 03:29:00,Saanvi Mehta,Mumbai,472764,COD,3336.50,AWB70000286,Gift wrap
+AJM-10235,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 11:02:38,Vihaan Singh,Chennai,136596,COD,754.00,AWB70001249,
+AJM-10396,AJMAL & SONS,Delivered,dunzo ndd,2026-11-19 11:16:49,Kabir Sharma,Bengaluru,126506,Prepaid,9790.00,AWB70002112,
+AJM-10563,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 08:40:25,Saanvi Singh,Chandigarh,678131,Prepaid,8997.00,AWB70002874,Gift wrap
+AJM-10218,AJMAL & SONS,Delivered,DTDC,2026-11-19 02:41:26,Diya Sharma,Lucknow,118157,Prepaid,14042.00,AWB70001153,
+AJM-B50004,AJMAL & SONS,Delivered,Shiprocket Surface,19/11/26,Tara Bose,Pune,276823,Prepaid,9999.00,AWB70003822,Unreadable order date
+AJM-10127,AJMAL & SONS,Out For Delivery,dunzo ndd,2026-11-18 15:24:25,Tara Nair,Bengaluru,417368,Prepaid,3880.00,AWB70000674,Gift wrap
+AJM-10496,AJMAL & SONS,In Transit,ElasticrunDirectNDD,2026-11-19 04:30:05,Meera Sharma,New Delhi,622781,COD,8052.99,AWB70002594,"Fragile, handle with care"
+AJM-10594,AJMAL & SONS,In Transit,BlueDart,2026-11-18 16:11:02,Kabir Gupta,Pune,566760,Prepaid,8395.99,AWB70003028,
+AJM-10043,AJMAL & SONS,In Transit,Amazon Shipping,2026-11-18 20:49:22,Neel Khanna,Hyderabad,141408,Prepaid,12906.00,AWB70000235,
+AJM-10441,AJMAL & SONS,Delivered,BlueDart,2026-11-18 16:55:41,Diya Singh,Kolkata,367310,Prepaid,1052.50,AWB70002333,Call before delivery
+AJM-10478,AJMAL & SONS,Shipped,dunzo ndd,2026-11-18 17:12:25,Meera Reddy,Chandigarh,123322,Prepaid,2176.50,AWB70002516,Gift wrap
+AJM-10025,AJMAL & SONS,Shipped,Ecom Express,2026-11-18 22:23:34,Diya Gupta,Bengaluru,245644,Partial COD,13838.99,AWB70000152,"Says ""urgent"" on invoice"
+AJM-10293,AJMAL & SONS,In Transit,BlitzNDD,2026-11-19 11:35:49,Meera Joshi,Bengaluru,445765,Partial COD,1883.99,AWB70001564,"Says ""urgent"" on invoice"
+AJM-10508,AJMAL & SONS,Delivered,Delhivery,2026-11-19 12:32:22,Arjun Reddy,New Delhi,676829,Prepaid,12165.99,AWB70002644,
+EMZ-10067,Emiza Gurgaon,Delivered,BlueDart,2026-11-19 01:19:51,Neel Sharma,Pune,425730,Prepaid,743.00,AWB70000357,
+EMZ-10008,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-19 04:45:14,Kiara Sharma,Kolkata,160573,Prepaid,5544.50,AWB70000044,Call before delivery
+EMZ-10184,Emiza Gurgaon,Out For Delivery,XpressBees,2026-11-19 00:50:14,Vivaan Mehta,Chennai,497762,Prepaid,12006.99,AWB70000970,
+AJM-10584,AJMAL & SONS,Delivered,BlueDart,2026-11-19 14:16:07,Rohan Verma,Kolkata,181525,Prepaid,1742.50,AWB70002973,Gift wrap
+AJM-X30028,AJMAL & SONS,CANCELLED,DTDC,2026-11-19 04:57:49,Vihaan Joshi,Lucknow,278678,Prepaid,10899.50,AWB70003598,Excluded status
+EMZ-10077,Emiza Gurgaon,Shipped,Shiprocket Surface,2026-11-18 19:03:59,Kabir Sharma,Noida,116116,Prepaid,9902.50,AWB70000403,"Says ""urgent"" on invoice"
+EMZ-10350,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-18 18:27:17,Aditya Singh,Pune,656120,Prepaid,8499.50,AWB70001875,"Leave with security, gate 2"
+EMZ-B50006,Emiza Gurgaon,Delivered,DTDC,N/A,Anaya Kapoor,Jaipur,423812,COD,6408.50,AWB70003831,Unreadable order date
+AJM-10281,AJMAL & SONS,In Transit,Delhivery,2026-11-19 07:05:10,Diya Iyer,Mumbai,392379,Prepaid,7200.99,AWB70001492,"Says ""urgent"" on invoice"
+AJM-X30015,AJMAL & SONS,On-Hold,DTDC,2026-11-19 09:37:47,Tara Joshi,Hyderabad,272998,Prepaid,979.50,AWB70003528,Excluded status
+AJM-10474,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-19 08:31:21,Arjun Mehta,Pune,383480,Prepaid,10858.50,AWB70002500,Customer asked to deliver after 6 PM
+AJM-10345,AJMAL & SONS,Out For Delivery,DTDC,2026-11-18 17:28:56,Saanvi Kapoor,Kolkata,641134,COD,3072.00,AWB70001839,Customer asked to deliver after 6 PM
+AJM-10035,AJMAL & SONS,In Transit,BlueDart,2026-11-18 20:24:34,Neel Khanna,Gurgaon,544290,Partial COD,13021.00,AWB70000192,"Says ""urgent"" on invoice"
+AJM-10449,AJMAL & SONS,In Transit,DTDC,2026-11-19 07:49:54,Vivaan Singh,Mumbai,671956,Prepaid,5047.99,AWB70002374,"Says ""urgent"" on invoice"
+AJM-10431,AJMAL & SONS,Delivered,dunzo ndd,2026-11-18 20:49:26,Neel Sharma,Hyderabad,512059,Prepaid,7270.99,AWB70002282,Customer asked to deliver after 6 PM
+AJM-10317,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 03:25:24,Neel Khanna,Chandigarh,462611,COD,1605.99,AWB70001678,
+EMZ-10051,Emiza Gurgaon,Shipped,Amazon Shipping,2026-11-18 17:51:42,Aarav Mehta,Noida,685955,Prepaid,14272.99,AWB70000274,
+EMZ-10239,Emiza Gurgaon,Delivered,XpressBees,2026-11-19 01:09:09,Kiara Kapoor,Gurgaon,649347,Prepaid,6240.50,AWB70001269,
+AJM-O40023,AJMAL & SONS,Delivered,Delhivery,2026-11-19 15:00:00,Arjun Joshi,Bengaluru,171713,COD,4681.99,AWB70003768,Outside its window
+AJM-10391,AJMAL & SONS,Delivered,dunzo ndd,2026-11-19 06:15:05,Meera Reddy,Pune,118124,COD,5245.00,AWB70002091,
+EMZ-10012,Emiza Gurgaon,Shipped,BlueDart,2026-11-19 07:08:13,Kabir Bose,Gurgaon,584976,Prepaid,12364.50,AWB70000076,
+EMZ-O40000,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-19 12:00:00,Neel Verma,Bengaluru,392175,COD,10834.50,AWB70003670,Outside its window
+AJM-10168,AJMAL & SONS,In Transit,BlueDart,2026-11-18 16:45:19,Tara Joshi,Kolkata,362654,COD,9822.50,AWB70000874,"Says ""urgent"" on invoice"
+EMZ-10600,Emiza Gurgaon,Shipped,Amazon Shipping,2026-11-19 09:42:43,Aditya Mehta,Pune,409242,Partial COD,4884.50,AWB70003051,Customer asked to deliver after 6 PM
+AJM-10092,AJMAL & SONS,Shipped,Shadowfax NDD,2026-11-18 17:18:05,Rohan Bose,Gurgaon,487315,COD,7236.00,AWB70000493,
+EMZ-10435,Emiza Gurgaon,Delivered,Shadowfax NDD,2026-11-18 21:45:59,Aditya Gupta,Mumbai,519544,Prepaid,6566.00,AWB70002295,Gift wrap
+AJM-10333,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-18 20:11:16,Rohan Kapoor,Kolkata,203121,COD,7259.50,AWB70001762,
+EMZ-B50003,Emiza Gurgaon,Delivered,XpressBees,2026-11-19,Isha Iyer,New Delhi,259420,Prepaid,14322.99,AWB70003813,Unreadable order date
+AJM-10493,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-19 03:10:49,Kiara Khanna,Lucknow,314738,COD,3428.99,AWB70002576,Call before delivery
+EMZ-10632,Emiza Gurgaon,Delivered,Ecom Express,2026-11-19 13:18:43,Arjun Verma,Gurgaon,391995,COD,14012.99,AWB70003190,Call before delivery
+AJM-10380,AJMAL & SONS,Delivered,BlueDart,2026-11-19 02:53:20,Isha Mehta,Pune,473618,COD,13159.50,AWB70002042,
+EMZ-O40015,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-18 11:59:59,Neel Iyer,Gurgaon,197297,Prepaid,3619.00,AWB70003736,Outside its window
+EMZ-10556,Emiza Gurgaon,Shipped,Amazon Shipping,2026-11-19 10:41:39,Tara Kapoor,Noida,299114,Prepaid,3882.50,AWB70002841,Gift wrap
+EMZ-EDGE6,Emiza Gurgaon,Shipped,XpressBees,2026-11-18 15:00:00,Tara Iyer,Mumbai,339792,Prepaid,13270.99,AWB70003258,Window boundary (included)
+EMZ-10346,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-19 04:06:47,Vihaan Sharma,Mumbai,371223,COD,10846.99,AWB70001845,
+EMZ-10486,Emiza Gurgaon,In Transit,Amazon Shipping,2026-11-19 04:40:15,Kiara Khanna,Chandigarh,209966,COD,12595.50,AWB70002550,
+AJM-10134,AJMAL & SONS,In Transit,Delhivery,2026-11-19 08:04:42,Meera Gupta,Chennai,670984,Prepaid,5706.99,AWB70000701,
+EMZ-10479,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-18 15:00:05,Isha Singh,Bengaluru,624610,COD,571.99,AWB70002522,
+EMZ-10187,Emiza Gurgaon,Shipped,BlueDart,2026-11-19 02:10:20,Neel Iyer,Gurgaon,281527,COD,10304.50,AWB70000982,"Says ""urgent"" on invoice"
+OTH-20006,ajmal and sons,Delivered,Delhivery,2026-11-18 16:45:27,Saanvi Mehta,Bengaluru,459778,COD,978.50,AWB70003281,Other client
+AJM-X30025,AJMAL & SONS,On-Hold,Shiprocket Surface,2026-11-19 07:13:11,Kiara Nair,Pune,382637,COD,2802.00,AWB70003581,Excluded status
+AJM-10046,AJMAL & SONS,Out For Delivery,XpressBees,2026-11-19 05:35:53,Vivaan Sharma,Bengaluru,652071,COD,1680.50,AWB70000248,Customer asked to deliver after 6 PM
+AJM-10464,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-19 04:12:31,Aditya Nair,Hyderabad,151154,Prepaid,13946.99,AWB70002442,Call before delivery
+AJM-X30012,AJMAL & SONS,Cancelled,Delhivery,2026-11-19 03:15:10,Aditya Iyer,Bengaluru,546696,Prepaid,589.50,AWB70003516,Excluded status
+AJM-10049,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 17:02:26,Neel Sharma,Mumbai,327513,Prepaid,3738.99,AWB70000266,
+AJM-X30034,AJMAL & SONS,CANCELLED,DTDC,2026-11-19 05:27:23,Kiara Nair,Jaipur,197183,COD,6353.50,AWB70003637,Excluded status
+AJM-10627,AJMAL & SONS,Delivered,BlueDart,2026-11-18 22:06:18,Neel Bose,Bengaluru,300151,Prepaid,2456.00,AWB70003167,Call before delivery
+EMZ-10301,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-19 08:56:38,Vihaan Kapoor,Hyderabad,330329,COD,10653.00,AWB70001606,"Says ""urgent"" on invoice"
+EMZ-10607,Emiza Gurgaon,In Transit,Delhivery,2026-11-19 08:30:46,Arjun Mehta,New Delhi,176308,COD,10661.50,AWB70003084,
+EMZ-10519,Emiza Gurgaon,Out For Delivery,XpressBees,2026-11-18 18:02:17,Vihaan Singh,Chandigarh,525707,Prepaid,2337.00,AWB70002673,Call before delivery
+EMZ-10457,Emiza Gurgaon,Shipped,DTDC,2026-11-18 20:35:38,Meera Khanna,Pune,625620,Prepaid,4518.99,AWB70002411,
+EMZ-10122,Emiza Gurgaon,Out For Delivery,XpressBees,2026-11-19 12:47:00,Arjun Singh,Chennai,481851,Prepaid,8034.50,AWB70000651,
+AJM-10443,AJMAL & SONS,In Transit,BlueDart,2026-11-19 12:22:08,Anaya Sharma,Hyderabad,253431,COD,1564.99,AWB70002344,
+AJM-10034,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-18 19:50:31,Diya Kapoor,Bengaluru,347926,Prepaid,10881.99,AWB70000183,Gift wrap
+EMZ-10617,Emiza Gurgaon,In Transit,XpressBees,2026-11-18 20:31:46,Isha Bose,Hyderabad,696175,Prepaid,10791.99,AWB70003124,"Leave with security, gate 2"
+AJM-10282,AJMAL & SONS,Shipped,dunzo ndd,2026-11-18 13:37:19,Riya Mehta,Jaipur,430724,Prepaid,5119.00,AWB70001501,
+EMZ-10582,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-19 04:08:27,Aarav Nair,Gurgaon,203927,COD,13504.99,AWB70002962,
+AJM-10306,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 05:52:20,Riya Joshi,New Delhi,633780,COD,14602.99,AWB70001624,
+EMZ-10494,Emiza Gurgaon,Delivered,XpressBees,2026-11-18 17:11:09,Isha Iyer,Lucknow,307070,COD,6311.99,AWB70002585,Customer asked to deliver after 6 PM
+EMZ-10456,Emiza Gurgaon,Shipped,Ecom Express,2026-11-19 05:10:20,Aditya Khanna,New Delhi,127440,COD,11793.99,AWB70002403,"Leave with security, gate 2"
+EMZ-10199,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-18 22:33:57,Vivaan Sharma,Bengaluru,227609,Prepaid,4797.99,AWB70001041,
+EMZ-10511,Emiza Gurgaon,Delivered,Delhivery,2026-11-19 12:43:57,Neel Sharma,Pune,291622,Prepaid,2597.00,AWB70002659,Gift wrap
+,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-19 03:05:34,Rohan Mehta,Mumbai,130307,COD,1128.50,AWB70003860,Missing Reference Code
+EMZ-10261,Emiza Gurgaon,In Transit,dunzo ndd,2026-11-18 22:22:07,Neel Mehta,Chandigarh,139062,COD,9428.00,AWB70001390,
+AJM-10574,AJMAL & SONS,Delivered,Delhivery,2026-11-18 23:59:36,Isha Reddy,New Delhi,688310,COD,10454.00,AWB70002932,
+AJM-10112,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-19 01:58:59,Tara Joshi,Chennai,424327,Prepaid,13136.00,AWB70000599,"Says ""urgent"" on invoice"
+EMZ-10123,Emiza Gurgaon,Packed,Delhivery,2026-11-19 03:17:16,Tara Kapoor,Kolkata,630547,Prepaid,11320.99,AWB70000654,
+EMZ-O40014,Emiza Gurgaon,Delivered,ElasticrunDirectNDD,2026-11-19 12:00:00,Tara Bose,Jaipur,272973,Prepaid,371.50,AWB70003730,Outside its window
+AJM-10634,AJMAL & SONS,Shipped,dunzo ndd,2026-11-19 04:40:08,Arjun Bose,Noida,377505,COD,4196.99,AWB70003204,
+EMZ-10175,Emiza Gurgaon,Shipped,Shadowfax NDD,2026-11-19 08:06:07,Tara Gupta,Lucknow,181216,Prepaid,9300.00,AWB70000912,
+AJM-10397,AJMAL & SONS,Delivered,XpressBees,2026-11-18 17:29:50,Meera Verma,Noida,367286,COD,2992.99,AWB70002114,
+AJM-10093,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 19:47:19,Neel Sharma,Chennai,355743,COD,6162.99,AWB70000499,
+OTH-20011,Some Other Brand,Delivered,Shiprocket Surface,2026-11-19 07:31:10,Meera Nair,Hyderabad,285274,COD,8490.00,AWB70003305,Other client
+AJM-10446,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-18 18:18:00,Saanvi Singh,Chennai,614656,Prepaid,13755.99,AWB70002359,
+AJM-10091,AJMAL & SONS,In Transit,Shiprocket Surface,2026-11-19 08:47:23,Saanvi Iyer,New Delhi,355049,COD,7254.99,AWB70000486,
+AJM-10466,AJMAL & SONS,In Transit,ElasticrunDirectNDD,2026-11-19 02:04:56,Rohan Verma,Mumbai,668747,Prepaid,6017.99,AWB70002451,"Fragile, handle with care"
+EMZ-10320,Emiza Gurgaon,Shipped,DTDC,2026-11-19 12:15:47,Meera Reddy,Lucknow,353842,Prepaid,1477.00,AWB70001687,
+AJM-10366,AJMAL & SONS,Delivered,Delhivery,2026-11-18 17:05:33,Kabir Mehta,Hyderabad,492674,Prepaid,13657.00,AWB70001953,"Says ""urgent"" on invoice"
+AJM-10193,AJMAL & SONS,Delivered,DTDC,2026-11-19 07:38:09,Tara Khanna,Kolkata,182613,Prepaid,4522.00,AWB70001015,Call before delivery
+EMZ-O40002,Emiza Gurgaon,Delivered,Delhivery,2026-11-19 15:00:00,Kiara Sharma,Chennai,248644,COD,5118.50,AWB70003677,Outside its window
+AJM-10059,AJMAL & SONS,In Transit,DTDC,2026-11-19 00:18:43,Vivaan Verma,Hyderabad,477033,Prepaid,9926.50,AWB70000318,
+AJM-10442,AJMAL & SONS,In Transit,Delhivery,2026-11-19 02:37:28,Anaya Iyer,Chandigarh,142315,Prepaid,2371.99,AWB70002336,"Leave with security, gate 2"
+AJM-10277,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-19 02:17:54,Neel Bose,Hyderabad,608480,Prepaid,9008.99,AWB70001464,Call before delivery
+AJM-O40019,AJMAL & SONS,Delivered,Delhivery,2026-11-17 18:00:00,Arjun Reddy,Chennai,619968,COD,14796.99,AWB70003761,Outside its window
+EMZ-10266,Emiza Gurgaon,Delivered,XpressBees,2026-11-19 06:25:27,Saanvi Mehta,Lucknow,487006,Partial COD,14040.00,AWB70001414,Gift wrap
+AJM-10052,AJMAL & SONS,Delivered,XpressBees,2026-11-18 23:54:28,Arjun Khanna,Jaipur,572747,Prepaid,7404.50,AWB70000281,Customer asked to deliver after 6 PM
+AJM-10153,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-18 22:41:59,Aarav Iyer,Bengaluru,508337,COD,918.00,AWB70000793,
+AJM-10283,AJMAL & SONS,Packed,XpressBees,2026-11-19 07:16:26,Meera Sharma,Bengaluru,303459,COD,10140.50,AWB70001506,
+OTH-20009,Emiza Mumbai,Delivered,Shiprocket Surface,2026-11-19 10:04:12,Arjun Kapoor,Hyderabad,337204,Prepaid,13026.99,AWB70003294,Other client
+OTH-20026,ajmal and sons,Delivered,Shiprocket Surface,2026-11-19 04:59:26,Diya Kapoor,Pune,485665,Partial COD,794.99,AWB70003377,Other client
+AJM-X30006,AJMAL & SONS,Returned,XpressBees,2026-11-18 17:20:03,Kiara Sharma,Jaipur,377269,Prepaid,5505.00,AWB70003473,Excluded status
+AJM-10463,AJMAL & SONS,Shipped,DTDC,2026-11-19 03:51:14,Rohan Mehta,Noida,162521,COD,7657.50,AWB70002437,Gift wrap
+AJM-10529,AJMAL & SONS,Shipped,Delhivery,2026-11-18 20:43:36,Kiara Bose,Bengaluru,401782,COD,9778.99,AWB70002707,
+AJM-10630,AJMAL & SONS,Delivered,Shiprocket Surface,2026-11-19 02:35:02,Vivaan Singh,Kolkata,385154,Prepaid,11157.99,AWB70003176,"Fragile, handle with care"
+AJM-B50008,AJMAL & SONS,Delivered,XpressBees,yesterday,Vihaan Gupta,Hyderabad,629544,Prepaid,9190.00,AWB70003843,Unreadable order date
+EMZ-10475,Emiza Gurgaon,Delivered,Shadowfax NDD,2026-11-19 01:06:42,Vihaan Iyer,Noida,697877,Prepaid,12593.50,AWB70002503,
+EMZ-10616,Emiza Gurgaon,Delivered,Amazon Shipping,2026-11-19 00:32:45,Meera Gupta,Mumbai,252386,Prepaid,451.99,AWB70003118,"Leave with security, gate 2"
+AJM-10222,AJMAL & SONS,Out For Delivery,Shiprocket Surface,2026-11-19 01:08:11,Aditya Verma,Mumbai,176628,Prepaid,11425.00,AWB70001184,Gift wrap
+AJM-10188,AJMAL & SONS,Shipped,BlueDart,2026-11-18 18:17:08,Neel Verma,New Delhi,581786,Prepaid,3378.99,AWB70000984,Customer asked to deliver after 6 PM
+EMZ-X30038,Emiza Gurgaon,On Hold,Ecom Express,2026-11-19 01:14:08,Anaya Iyer,Chennai,141926,Partial COD,1156.00,AWB70003655,Excluded status
+AJM-10290,AJMAL & SONS,Shipped,BlitzNDD,2026-11-19 01:53:51,Diya Verma,Pune,602036,COD,7017.99,AWB70001549,Gift wrap
+EMZ-X30023,Emiza Gurgaon,Cancelled,Shiprocket Surface,2026-11-19 08:27:19,Aarav Khanna,Lucknow,319420,COD,9415.99,AWB70003570,Excluded status
+AJM-10450,AJMAL & SONS,In Transit,Ecom Express,2026-11-18 23:42:51,Aarav Nair,Hyderabad,546703,COD,5984.00,AWB70002377,
+AJM-10383,AJMAL & SONS,Out For Delivery,Shiprocket Surface,2026-11-18 15:11:29,Vivaan Reddy,New Delhi,657572,Prepaid,4572.00,AWB70002058,
+AJM-10400,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-18 22:57:17,Aditya Sharma,Noida,539852,Prepaid,3774.99,AWB70002125,
+AJM-10027,AJMAL & SONS,In Transit,BlitzNDD,2026-11-18 17:42:02,Arjun Gupta,Pune,662513,COD,2638.99,AWB70000155,Customer asked to deliver after 6 PM
+AJM-10176,AJMAL & SONS,In Transit,dunzo ndd,2026-11-18 23:59:49,Riya Iyer,Lucknow,150937,COD,2354.00,AWB70000914,Customer asked to deliver after 6 PM
+AJM-X30024,AJMAL & SONS,On-Hold,Shiprocket Surface,2026-11-19 01:43:15,Tara Reddy,Hyderabad,430597,Prepaid,12047.00,AWB70003574,Excluded status
+AJM-10452,AJMAL & SONS,In Transit,XpressBees,2026-11-18 22:05:41,Vivaan Nair,Hyderabad,539965,Partial COD,3373.99,AWB70002383,"Says ""urgent"" on invoice"
+AJM-10622,AJMAL & SONS,Delivered,Amazon Shipping,2026-11-19 13:13:44,Aditya Kapoor,New Delhi,634580,Prepaid,9541.00,AWB70003148,Call before delivery
+EMZ-B50009,Emiza Gurgaon,Delivered,BlueDart,2026-02-31 10:00:00,Aarav Kapoor,Hyderabad,427615,Prepaid,9773.50,AWB70003846,Unreadable order date
+AJM-10278,AJMAL & SONS,Packed,Ecom Express,2026-11-19 01:47:48,Meera Khanna,Hyderabad,643764,Prepaid,9693.00,AWB70001470,
+AJM-10628,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-18 19:42:40,Kiara Singh,Kolkata,383809,Prepaid,6194.50,AWB70003168,"Says ""urgent"" on invoice"
+AJM-X30011,AJMAL & SONS,On Hold,BlueDart,2026-11-19 06:22:08,Meera Verma,Gurgaon,517860,Partial COD,1814.99,AWB70003509,Excluded status
+AJM-X30022,AJMAL & SONS,CANCELLED,Amazon Shipping,2026-11-19 08:52:16,Aarav Mehta,Hyderabad,342845,Prepaid,11903.99,AWB70003565,Excluded status
+OTH-20002,Kapoor Textiles,Delivered,Shiprocket Surface,2026-11-18 23:14:02,Vivaan Khanna,Pune,531874,Prepaid,1533.99,AWB70003268,Other client
+EMZ-10119,Emiza Gurgaon,Shipped,Delhivery,2026-11-18 17:07:11,Riya Nair,Chandigarh,669700,COD,3882.00,AWB70000637,
+AJM-10571,AJMAL & SONS,In Transit,BlueDart,2026-11-19 01:15:51,Kabir Mehta,Pune,489232,COD,8727.99,AWB70002908,"Fragile, handle with care"
+AJM-10294,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-18 14:18:54,Meera Joshi,Kolkata,660923,COD,6796.50,AWB70001570,
+AJM-10216,AJMAL & SONS,In Transit,Delhivery,2026-11-19 05:36:19,Neel Joshi,Kolkata,378829,COD,911.99,AWB70001138,Call before delivery
+AJM-10414,AJMAL & SONS,In Transit,BlitzNDD,2026-11-18 15:01:57,Kiara Iyer,Mumbai,204701,Prepaid,2251.99,AWB70002185,
+AJM-10037,AJMAL & SONS,Packed,Ecom Express,2026-11-19 00:51:57,Saanvi Singh,New Delhi,345588,Prepaid,4561.00,AWB70000204,"Says ""urgent"" on invoice"
+AJM-10098,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-19 02:54:09,Aarav Khanna,Bengaluru,358419,COD,11522.00,AWB70000518,"Leave with security, gate 2"
+EMZ-10247,Emiza Gurgaon,In Transit,XpressBees,2026-11-19 13:37:19,Neel Reddy,Chennai,660967,COD,11388.00,AWB70001307,
+AJM-10131,AJMAL & SONS,Shipped,Shiprocket Surface,2026-11-19 11:56:27,Rohan Verma,New Delhi,697671,Prepaid,14852.50,AWB70000691,Call before delivery
+AJM-10505,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-19 04:21:06,Kabir Singh,Lucknow,200998,COD,10263.00,AWB70002634,"Says ""urgent"" on invoice"
+AJM-10604,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-18 23:38:51,Arjun Gupta,Hyderabad,679074,COD,4098.50,AWB70003071,Customer asked to deliver after 6 PM
+EMZ-10075,Emiza Gurgaon,Out For Delivery,Delhivery,2026-11-19 01:05:02,Arjun Reddy,Kolkata,304549,COD,3214.50,AWB70000396,Call before delivery
+EMZ-10170,Emiza Gurgaon,In Transit,Shiprocket Surface,2026-11-19 02:42:04,Saanvi Sharma,Jaipur,226887,Prepaid,6822.50,AWB70000886,"Says ""urgent"" on invoice"
+EMZ-10321,Emiza Gurgaon,Packed,DTDC,2026-11-19 00:57:42,Tara Khanna,Lucknow,629889,COD,9336.50,AWB70001692,
+EMZ-10001,Emiza Gurgaon,Delivered,XpressBees,2026-11-18 15:00:00,Arjun Verma,Kolkata,199120,Prepaid,14457.50,AWB70000003,"Says ""urgent"" on invoice"
+AJM-10536,AJMAL & SONS,In Transit,BlueDart,2026-11-19 04:44:55,Rohan Joshi,New Delhi,540961,Prepaid,5035.50,AWB70002743,"Leave with security, gate 2"
+AJM-X30035,AJMAL & SONS,on_hold,Amazon Shipping,2026-11-19 07:24:17,Neel Singh,Jaipur,500924,Partial COD,14171.50,AWB70003643,Excluded status
+AJM-10055,AJMAL & SONS,In Transit,XpressBees,2026-11-18 15:37:53,Riya Gupta,Kolkata,205321,Prepaid,11638.00,AWB70000294,
+AJM-10234,AJMAL & SONS,Shipped,dunzo ndd,2026-11-18 22:34:33,Neel Verma,New Delhi,266368,Prepaid,11558.00,AWB70001244,
+EMZ-10071,Emiza Gurgaon,Shipped,BlueDart,2026-11-19 06:31:12,Aarav Gupta,Pune,336688,COD,4180.99,AWB70000376,Call before delivery
+EMZ-10173,Emiza Gurgaon,In Transit,Shadowfax NDD,2026-11-18 22:21:28,Aarav Sharma,Pune,321837,Prepaid,9470.50,AWB70000898,"Says ""urgent"" on invoice"
+AJM-10022,AJMAL & SONS,Shipped,Amazon Shipping,2026-11-19 08:55:19,Aarav Joshi,Noida,278891,Prepaid,14926.50,AWB70000130,
+AJM-10422,AJMAL & SONS,Delivered,XpressBees,2026-11-19 13:13:42,Saanvi Kapoor,Kolkata,339052,Prepaid,11543.99,AWB70002231,
+EMZ-10500,Emiza Gurgaon,Shipped,BlueDart,2026-11-19 04:35:04,Rohan Reddy,Lucknow,575761,Prepaid,3080.50,AWB70002617,"Says ""urgent"" on invoice"
+EMZ-O40018,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-19 14:00:00,Vihaan Nair,Noida,601578,COD,13714.99,AWB70003755,Outside its window
+AJM-10497,AJMAL & SONS,In Transit,DTDC,2026-11-19 07:31:12,Vivaan Khanna,Jaipur,188330,Partial COD,2802.00,AWB70002599,
+AJM-10298,AJMAL & SONS,Shipped,Delhivery,2026-11-18 16:35:24,Arjun Joshi,Gurgaon,470782,Prepaid,2377.50,AWB70001594,Gift wrap
+EMZ-10001,Emiza Gurgaon,Delivered,XpressBees,2026-11-18 15:00:00,Duplicate Person,Kolkata,199120,Prepaid,1.00,AWB00000000,Duplicate row (ignored)
+AJM-10003,AJMAL & SONS,Delivered,Delhivery,2026-11-19 03:45:10,Duplicate Person,New Delhi,649445,COD,1.00,AWB00000000,Duplicate row (ignored)
+AJM-10005,AJMAL & SONS,Delivered,Shadowfax NDD,2026-11-19 02:37:40,Duplicate Person,Lucknow,272379,COD,1.00,AWB00000000,Duplicate row (ignored)
+AJM-10007,AJMAL & SONS,Delivered,Delhivery,2026-11-18 21:48:25,Duplicate Person,Gurgaon,164682,Prepaid,1.00,AWB00000000,Duplicate row (ignored)
+AJM-10009,AJMAL & SONS,Delivered,Delhivery,2026-11-19 00:18:53,Duplicate Person,Gurgaon,647854,COD,1.00,AWB00000000,Duplicate row (ignored)
+EMZ-10011,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-18 20:00:05,Duplicate Person,New Delhi,300102,Prepaid,1.00,AWB00000000,Duplicate row (ignored)
+EMZ-10013,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-19 06:36:28,Duplicate Person,Jaipur,516617,COD,1.00,AWB00000000,Duplicate row (ignored)
+EMZ-10015,Emiza Gurgaon,Delivered,dunzo ndd,2026-11-19 07:54:15,Duplicate Person,Hyderabad,658334,COD,1.00,AWB00000000,Duplicate row (ignored)
+EMZ-10017,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-19 01:58:22,Duplicate Person,Jaipur,145905,Prepaid,1.00,AWB00000000,Duplicate row (ignored)
+AJM-10019,AJMAL & SONS,Delivered,DTDC,2026-11-19 02:58:06,Duplicate Person,Gurgaon,138008,Prepaid,1.00,AWB00000000,Duplicate row (ignored)
+EMZ-10021,Emiza Gurgaon,Delivered,Shiprocket Surface,2026-11-19 06:26:58,Duplicate Person,Kolkata,577427,COD,1.00,AWB00000000,Duplicate row (ignored)
+EMZ-10023,Emiza Gurgaon,Delivered,DTDC,2026-11-18 15:12:04,Duplicate Person,New Delhi,299364,Prepaid,1.00,AWB00000000,Duplicate row (ignored)
+AJM-10025,AJMAL & SONS,Delivered,Ecom Express,2026-11-18 22:23:34,Duplicate Person,Bengaluru,245644,Partial COD,1.00,AWB00000000,Duplicate row (ignored)
+AJM-10027,AJMAL & SONS,Delivered,BlitzNDD,2026-11-18 17:42:02,Duplicate Person,Pune,662513,COD,1.00,AWB00000000,Duplicate row (ignored)
+EMZ-10029,Emiza Gurgaon,Delivered,Ecom Express,2026-11-18 22:24:19,Duplicate Person,Chandigarh,598323,Prepaid,1.00,AWB00000000,Duplicate row (ignored)

@@ -18,6 +18,8 @@ const BASE_SERVICES = [
   "daily-insights-service",
   "weekly-reports-service",
   "weekly-reports-worker",
+  "ndd-sla-service",
+  "ndd-sla-worker",
   "analytics-service",
   "sessions-service",
   "kafka-service",

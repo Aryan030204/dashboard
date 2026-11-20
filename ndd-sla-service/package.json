@@ -1,0 +1,23 @@
+{
+  "name": "ndd-sla-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "start:worker": "node src/worker.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.19.2",
+    "helmet": "^7.0.0",
+    "mysql2": "^3.22.0",
+    "zod": "^3.23.8",
+    "multer": "^2.1.1"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  }
+}

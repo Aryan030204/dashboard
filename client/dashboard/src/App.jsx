@@ -50,6 +50,7 @@ import {
   Wallet,
   Megaphone,
   Presentation,
+  Truck,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -68,6 +69,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "requests", label: "Requests", icon: ClipboardList },
   { id: "weekly-reports", label: "Weekly Reports", icon: Presentation },
+  { id: "ndd-sla", label: "NDD / SLA", icon: Truck },
   { id: "tenant-setup", label: "Tenant Setup", icon: Store },
   { id: "client-settings", label: "Client Side Settings", icon: Settings },
   //  { id: "notifications-log", label: "Logs", icon: Bell },
@@ -92,6 +94,7 @@ const TAB_ROUTE_MAP = {
   alerts: "/alerts",
   requests: "/requests",
   "weekly-reports": "/weekly-reports",
+  "ndd-sla": "/ndd-sla-reports",
   access: "/access-control",
   "traffic-split-config": "/configurations",
   "tenant-setup": "/tenant-setup",
@@ -198,6 +201,7 @@ import WebVitalsRouteContainer from "./routes/WebVitalsRouteContainer.jsx";
 import PnlRouteContainer from "./routes/PnlRouteContainer.jsx";
 import AdsRouteContainer from "./routes/AdsRouteContainer.jsx";
 import WeeklyReportsRouteContainer from "./routes/WeeklyReportsRouteContainer.jsx";
+import NddSlaRouteContainer from "./routes/NddSlaRouteContainer.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
 );
@@ -678,6 +682,18 @@ export default function App() {
     return hasPermission("weekly_report_preview");
   }, [hasPermission, isAuthor]);
 
+  // Read-only NDD / SLA snapshots (+ CSV export). Re-running a report is backend-enforced to elevated roles.
+  const canAccessNddSlaPanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("ndd_sla_panel");
+  }, [hasPermission, isAuthor]);
+
+  // Manual upload of the GoKwik + EasyCom files (backend-enforced as well).
+  const canUploadNddSla = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("ndd_sla_upload");
+  }, [hasPermission, isAuthor]);
+
   const defaultLandingTab = useMemo(() => {
     if (isAuthor) return "overall-snapshot";
     return canAccessOverallSnapshotPanel ? "overall-snapshot" : "dashboard";
@@ -698,6 +714,7 @@ export default function App() {
     if (canAccessAdsPanel) tabs.push("ads");
     if (canAccessHealthMonitorPanel) tabs.push("health-monitor");
     if (canAccessWeeklyReportsPanel) tabs.push("weekly-reports");
+    if (canAccessNddSlaPanel) tabs.push("ndd-sla");
     return tabs;
   }, [
     canAccessOverallSnapshotPanel,
@@ -712,6 +729,7 @@ export default function App() {
     canAccessAdsPanel,
     canAccessHealthMonitorPanel,
     canAccessWeeklyReportsPanel,
+    canAccessNddSlaPanel,
     isAuthor,
   ]);
 
@@ -827,6 +845,16 @@ export default function App() {
       );
       return;
     }
+    if (authorTab === "ndd-sla" && !canAccessNddSlaPanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
     if (authorTab === "health-monitor" && !canAccessHealthMonitorPanel) {
       navigate(
         {
@@ -851,6 +879,7 @@ export default function App() {
     canAccessAdsPanel,
     canAccessHealthMonitorPanel,
     canAccessWeeklyReportsPanel,
+    canAccessNddSlaPanel,
     initialized,
     location.search,
     sanitizedSearch,
@@ -1345,7 +1374,8 @@ export default function App() {
       authorTab === "pnl" ||
       authorTab === "ads" ||
       authorTab === "health-monitor" ||
-      authorTab === "weekly-reports"
+      authorTab === "weekly-reports" ||
+      authorTab === "ndd-sla"
     ) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
@@ -2010,7 +2040,8 @@ export default function App() {
       authorTab === "pnl" ||
       authorTab === "ads" ||
       authorTab === "health-monitor" ||
-      authorTab === "weekly-reports"
+      authorTab === "weekly-reports" ||
+      authorTab === "ndd-sla"
     ) {
       return;
     }
@@ -2362,6 +2393,15 @@ export default function App() {
             hasBrand={hasBrand}
             activeBrandKey={activeBrandKey}
             isManager={isAuthor}
+          />
+        );
+      case "ndd-sla":
+        return (
+          <NddSlaRouteContainer
+            hasBrand={hasBrand}
+            activeBrandKey={activeBrandKey}
+            isManager={isAuthor}
+            canUpload={canUploadNddSla}
           />
         );
       case "session-analytics":

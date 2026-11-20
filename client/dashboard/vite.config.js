@@ -158,6 +158,14 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
 
+      // NDD / SLA reports service (must stay above the catch-all)
+      '/api/ndd-sla': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
       // Weekly reports service (must stay above the catch-all)
       '/api/weekly-reports': {
         target: 'http://localhost:8081',
@@ -266,6 +274,14 @@ export default defineConfig({
 
       // Health monitor service
       '/api/health-monitor': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+
+      // NDD / SLA reports service (must stay above the catch-all)
+      '/api/ndd-sla': {
         target: 'http://localhost:8081',
         changeOrigin: true,
         secure: false,

@@ -186,6 +186,7 @@ export default async function handler(req, res) {
       "/alerts",
       "/daily-insights",
       "/weekly-reports",
+      "/ndd-sla",
       "/tenant",
       "/push",
       "/track",
