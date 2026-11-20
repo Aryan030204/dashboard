@@ -1,0 +1,18 @@
+Reference Code,Client Location,Order Status,Courier Name,Order Date,Remarks
+AJM-1001,AJMAL & SONS,Delivered,ElasticrunDirectNDD,2026-11-18 12:00:00,NDD order exactly at the window start (included)
+AJM-1002,AJMAL & SONS,Shipped,BlitzNDD,2026-11-18 18:45:30,Never picked up (breached)
+AJM-1003,AJMAL & SONS,Delivered,Delhivery,2026-11-18 15:00:00,Non-NDD order exactly at its window start (included)
+AJM-1004,AJMAL & SONS,Delivered,BlueDart,2026-11-19 09:15:00,"Pickup is the Excel 1900 placeholder, so no pickup (breached)"
+AJM-1005,AJMAL & SONS,In Transit,Ecom Express,2026-11-19 14:59:59,Last second of the non-NDD window (included)
+EMZ-2001,Emiza Gurgaon,Delivered,BlitzNDD,2026-11-19 11:59:59,Last second of the NDD window (included)
+EMZ-2002,Emiza Gurgaon,Delivered,Delhivery,2026-11-18 23:30:00,Picked up the next morning (met)
+EMZ-2003,Emiza Gurgaon,Packed,Ecom Express,2026-11-19 00:05:00,"Not present in the EasyCom file, so no pickup (breached)"
+AJM-1006,AJMAL & SONS,Cancelled,Delhivery,2026-11-19 09:30:00,Excluded: cancelled
+AJM-1007,AJMAL & SONS,On Hold,Delhivery,2026-11-19 10:30:00,Excluded: on hold
+EMZ-2004,Emiza Gurgaon,Returned,BlueDart,2026-11-19 08:00:00,Excluded: returned
+OTH-3001,Some Other Brand,Delivered,Delhivery,2026-11-19 09:30:00,Excluded: other client
+AJM-1008,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 12:00:00,Excluded: NDD window end is exclusive
+AJM-1009,AJMAL & SONS,Delivered,Delhivery,2026-11-18 14:59:59,Excluded: one second before the non-NDD window
+AJM-1010,AJMAL & SONS,Delivered,BlitzNDD,2026-11-19 13:00:00,"Excluded: NDD orders use the 12:00 window, not 15:00"
+AJM-1001,AJMAL & SONS,Delivered,Delhivery,2026-11-18 20:00:00,Excluded: duplicate Reference Code (first row wins)
+AJM-1011,AJMAL & SONS,Delivered,Delhivery,yesterday,Excluded: unreadable order date (counted as invalid)

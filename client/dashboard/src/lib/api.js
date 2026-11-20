@@ -2139,6 +2139,106 @@ export async function fetchWeeklyReportSlide({ brandKey, id, slide, thumb = fals
   }
 }
 
+// ---- NDD / SLA Reports ------------------------------------------------------
+// Read-only snapshot API. The browser never computes a report: it shows what the worker persisted. brand_key goes in
+// the query string (the gateway reads brand context from there), including for POST.
+function nddSlaPath(path, brandKey, extra = {}) {
+  return `/ndd-sla${path}${qs({ brand_key: normalizeBrandKey(brandKey), ...extra })}`;
+}
+
+export function nddSlaErrorMessage(res, fallback = "Something went wrong.") {
+  if (res?.status === 403) return "You don't have access to NDD / SLA reports.";
+  const message = res?.data?.error;
+  return typeof message === "string" && message.trim() ? message : fallback;
+}
+
+// A report is addressed by run id (several reports can exist for one date); the date form is kept for older callers.
+const nddRunBase = ({ runId, date }) => (runId ? `/runs/${encodeURIComponent(runId)}` : `/reports/${encodeURIComponent(date)}`);
+
+export async function listNddSlaRuns({ brandKey, limit = 60, from, to, signal } = {}) {
+  const res = await doGet("/ndd-sla/runs", { brand_key: normalizeBrandKey(brandKey), limit: String(limit), from, to }, { signal });
+  if (res.error) return res;
+  return { error: false, data: Array.isArray(res.data?.runs) ? res.data.runs : [] };
+}
+
+export async function getNddSlaReport({ brandKey, runId, date, signal } = {}) {
+  return doGet(`/ndd-sla${nddRunBase({ runId, date })}`, { brand_key: normalizeBrandKey(brandKey) }, { signal });
+}
+
+export async function listNddSlaOrders({ brandKey, runId, date, location, sla, cursor, limit = 50, signal } = {}) {
+  return doGet(
+    `/ndd-sla${nddRunBase({ runId, date })}/orders`,
+    { brand_key: normalizeBrandKey(brandKey), location, sla, cursor, limit: String(limit) },
+    { signal },
+  );
+}
+
+export async function requeueNddSlaReport({ brandKey, runId, date }) {
+  return doPost(nddSlaPath(`${nddRunBase({ runId, date })}/requeue`, brandKey), {});
+}
+
+export async function deleteNddSlaRun({ brandKey, runId }) {
+  return doDelete(nddSlaPath(`/runs/${encodeURIComponent(runId)}`, brandKey));
+}
+
+// action: "pause" | "resume" | "cancel" for a report that is waiting or being processed.
+export async function controlNddSlaRun({ brandKey, runId, action }) {
+  return doPost(nddSlaPath(`/runs/${encodeURIComponent(runId)}/${action}`, brandKey), {});
+}
+
+// Downloads the persisted snapshot as CSV (type: "orders" | "summary"). Never triggers Gmail/EasyCom.
+export async function downloadNddSlaExport({ brandKey, runId, date, type = "orders", location, sla } = {}) {
+  const url = `${API_BASE}${nddSlaPath(`${nddRunBase({ runId, date })}/export`, brandKey, { type, location, sla })}`;
+  try {
+    const res = await fetchWithAuth(url);
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      captureFailure("/ndd-sla/export", { status: res.status, method: "GET", brandKey });
+      return { error: true, status: res.status, data: json };
+    }
+    return { error: false, blob: await res.blob() };
+  } catch {
+    captureFailure("/ndd-sla/export", { method: "GET", brandKey });
+    return { error: true };
+  }
+}
+
+// Manual mode: upload the GoKwik CSV and the EasyCom export for a report date. Each file is gzipped in the browser when
+// possible (CSV shrinks ~10x), because the hosting proxy rejects request bodies over ~4.5 MB; the service un-gzips it.
+const NDD_SLA_PROXY_LIMIT = 4 * 1024 * 1024;
+
+async function gzipForUpload(file) {
+  if (typeof CompressionStream === "undefined" || typeof file.stream !== "function") return { blob: file, name: file.name };
+  const blob = await new Response(file.stream().pipeThrough(new CompressionStream("gzip"))).blob();
+  return { blob, name: /\.gz$/i.test(file.name) ? file.name : `${file.name}.gz` };
+}
+
+export async function uploadNddSlaReports({ brandKey, date, gokwikFile, easycomFile, onPhase } = {}) {
+  try {
+    onPhase?.("compressing");
+    const gokwik = /\.gz$/i.test(gokwikFile.name) ? { blob: gokwikFile, name: gokwikFile.name } : await gzipForUpload(gokwikFile);
+    const easycom = /\.gz$/i.test(easycomFile.name) ? { blob: easycomFile, name: easycomFile.name } : await gzipForUpload(easycomFile);
+    if (gokwik.blob.size + easycom.blob.size > NDD_SLA_PROXY_LIMIT) {
+      return { error: true, status: 413, data: { error: "The files are too large to upload from the browser (about 4 MB after compression). Use the automated ingestion instead." } };
+    }
+    onPhase?.("uploading");
+    const form = new FormData();
+    form.append("gokwik", gokwik.blob, gokwik.name);
+    form.append("easycom", easycom.blob, easycom.name);
+    const url = `${API_BASE}${nddSlaPath(`/reports/${encodeURIComponent(date)}/upload`, brandKey)}`;
+    const res = await fetchWithAuth(url, { method: "POST", body: form });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      captureFailure("/ndd-sla/upload", { status: res.status, method: "POST", brandKey });
+      return { error: true, status: res.status, data: json };
+    }
+    return { error: false, data: json };
+  } catch {
+    captureFailure("/ndd-sla/upload", { method: "POST", brandKey });
+    return { error: true };
+  }
+}
+
 // One XHR request (XHR, not fetch, because only XHR reports upload progress). Resolves to
 // { status, data } | { networkError: true } | { aborted: true }; it never rejects.
 function xhrRequest({ method, url, json, body, signal, onProgress }) {

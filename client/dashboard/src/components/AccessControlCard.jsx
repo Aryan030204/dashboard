@@ -126,6 +126,8 @@ const PERMISSION_OPTIONS = [
   "pnl_panel",
   "ads_panel",
   "weekly_report_preview",
+  "ndd_sla_panel",
+  "ndd_sla_upload",
 ];
 
 const COLUMN_PERMISSIONS = [
@@ -172,6 +174,8 @@ const PERMISSION_CATEGORIES = [
       "pnl_panel",
       "ads_panel",
       "weekly_report_preview",
+      "ndd_sla_panel",
+      "ndd_sla_upload",
       "daily_insight_view",
       "compare_mode",
       "multiselectable_kpi_cards",

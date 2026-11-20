@@ -17,6 +17,7 @@
     { "source": "/funnels", "destination": "/" },
     { "source": "/daily-funnel", "destination": "/" },
     { "source": "/weekly-reports", "destination": "/" },
+    { "source": "/ndd-sla-reports", "destination": "/" },
     { "source": "/bundles", "destination": "/" },
     { "source": "/inventory", "destination": "/" },
     { "source": "/health-monitor", "destination": "/" },

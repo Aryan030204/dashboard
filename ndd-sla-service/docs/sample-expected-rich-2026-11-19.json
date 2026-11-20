@@ -1,0 +1,421 @@
+{
+  "reportDate": "2026-11-19",
+  "windows": {
+    "ndd": {
+      "start": "2026-11-18 12:00:00",
+      "end": "2026-11-19 12:00:00"
+    },
+    "other": {
+      "start": "2026-11-18 15:00:00",
+      "end": "2026-11-19 15:00:00"
+    }
+  },
+  "rowsInGoKwikFile": 778,
+  "rowsInEasycomFile": 731,
+  "excluded": {
+    "wrong_client": 35,
+    "wrong_status": 40,
+    "out_of_window": 28,
+    "duplicate": 15,
+    "invalid": 14
+  },
+  "kept": 646,
+  "notInEasycom": 27,
+  "total": {
+    "orders": 646,
+    "met": 507,
+    "breached": 139
+  },
+  "byLocation": {
+    "AJMAL_SONS": {
+      "orders": 450,
+      "met": 355,
+      "breached": 95
+    },
+    "EMIZA_GGN": {
+      "orders": 196,
+      "met": 152,
+      "breached": 44
+    }
+  },
+  "hourly": [
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 12,
+      "met": 1,
+      "breached": 1
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 13,
+      "met": 3,
+      "breached": 0
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 14,
+      "met": 2,
+      "breached": 2
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 15,
+      "met": 15,
+      "breached": 4
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 16,
+      "met": 14,
+      "breached": 4
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 17,
+      "met": 18,
+      "breached": 5
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 18,
+      "met": 9,
+      "breached": 6
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 19,
+      "met": 8,
+      "breached": 1
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 20,
+      "met": 12,
+      "breached": 4
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 21,
+      "met": 11,
+      "breached": 3
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 22,
+      "met": 18,
+      "breached": 6
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-18",
+      "orderHour": 23,
+      "met": 25,
+      "breached": 9
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 0,
+      "met": 17,
+      "breached": 6
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 1,
+      "met": 24,
+      "breached": 6
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 2,
+      "met": 25,
+      "breached": 6
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 3,
+      "met": 19,
+      "breached": 0
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 4,
+      "met": 21,
+      "breached": 5
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 5,
+      "met": 17,
+      "breached": 2
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 6,
+      "met": 15,
+      "breached": 2
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 7,
+      "met": 14,
+      "breached": 3
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 8,
+      "met": 13,
+      "breached": 4
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 9,
+      "met": 8,
+      "breached": 2
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 10,
+      "met": 8,
+      "breached": 2
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 11,
+      "met": 15,
+      "breached": 3
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 12,
+      "met": 8,
+      "breached": 2
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 13,
+      "met": 7,
+      "breached": 5
+    },
+    {
+      "client": "AJMAL_SONS",
+      "orderDate": "2026-11-19",
+      "orderHour": 14,
+      "met": 8,
+      "breached": 2
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 12,
+      "met": 2,
+      "breached": 0
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 13,
+      "met": 1,
+      "breached": 0
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 14,
+      "met": 2,
+      "breached": 0
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 15,
+      "met": 7,
+      "breached": 1
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 16,
+      "met": 2,
+      "breached": 5
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 17,
+      "met": 8,
+      "breached": 2
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 18,
+      "met": 6,
+      "breached": 2
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 19,
+      "met": 2,
+      "breached": 2
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 20,
+      "met": 12,
+      "breached": 1
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 21,
+      "met": 2,
+      "breached": 2
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 22,
+      "met": 8,
+      "breached": 1
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-18",
+      "orderHour": 23,
+      "met": 4,
+      "breached": 0
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 0,
+      "met": 5,
+      "breached": 0
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 1,
+      "met": 11,
+      "breached": 3
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 2,
+      "met": 7,
+      "breached": 1
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 3,
+      "met": 4,
+      "breached": 5
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 4,
+      "met": 17,
+      "breached": 4
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 5,
+      "met": 6,
+      "breached": 0
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 6,
+      "met": 8,
+      "breached": 4
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 7,
+      "met": 7,
+      "breached": 3
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 8,
+      "met": 8,
+      "breached": 0
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 9,
+      "met": 4,
+      "breached": 2
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 10,
+      "met": 3,
+      "breached": 1
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 11,
+      "met": 3,
+      "breached": 0
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 12,
+      "met": 5,
+      "breached": 3
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 13,
+      "met": 4,
+      "breached": 2
+    },
+    {
+      "client": "EMIZA_GGN",
+      "orderDate": "2026-11-19",
+      "orderHour": 14,
+      "met": 4,
+      "breached": 0
+    }
+  ]
+}
