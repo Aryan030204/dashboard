@@ -15,7 +15,7 @@ const fs = require("fs");
 const path = require("path");
 const { PipelineError } = require("../errors");
 const { ensureLogger, describeError } = require("../logger");
-const { parseCsv } = require("../lib/csvStream");
+const { parseCsv, sniffHeaderRows, hasColumns } = require("../lib/csvStream");
 const { openCsvStream, hashFile } = require("../lib/openFile");
 const { toWall, wallToEpochMs, addHoursWall, addDaysDate } = require("../lib/wall");
 const { selectGokwikMessage } = require("../integrations/gokwikMatcher");
@@ -253,7 +253,42 @@ function buildPipeline({ config, repo, gmail, easycom, logger, now = () => Date.
 
   // ---- MANUAL: two uploaded files ---------------------------------------------------------------------------------
   // `files` = { gokwik: { path, name }, easycom: { path, name } }; the caller deletes them afterwards.
-  async function processUpload(run, files) {
+  // Reads the start of an uploaded file and returns its first header rows (the file may be gzipped).
+  async function peekHeaders(file) {
+    const stream = await openCsvStream(file.path, { maxExpandedBytes: config.upload.maxExpandedBytes });
+    let text = "";
+    try {
+      for await (const chunk of stream) {
+        text += chunk.toString("utf8");
+        if (text.length >= 64 * 1024) break;
+      }
+    } finally {
+      stream.destroy();
+    }
+    return sniffHeaderRows(text);
+  }
+
+  // The two files are easy to put in the wrong slot (their names are alike and both carry a Reference/Order code). If the
+  // file in the GoKwik slot is a shipment/pickup export and the one in the EasyCom slot is the orders export, use them
+  // the other way round instead of failing; anything else is left as it is and fails with the usual clear message.
+  async function orientUpload(files) {
+    const orderCols = Object.keys(config.columns).map((k) => [config.columns[k], ...(config.columnAliases[k] || [])]);
+    const ec = config.upload.easycomColumns;
+    const ecAl = config.upload.easycomColumnAliases;
+    const pickupCols = [[ec.reference, ...(ecAl.reference || [])], [ec.pickedAt, ...(ecAl.pickedAt || [])]];
+    try {
+      const [first, second] = await Promise.all([peekHeaders(files.gokwik), peekHeaders(files.easycom)]);
+      const swapped = !hasColumns(first, orderCols) && hasColumns(first, pickupCols) && hasColumns(second, orderCols);
+      if (swapped) log.warn("uploaded files were in the wrong slots; swapping them", { gokwik: files.gokwik.name, easycom: files.easycom.name });
+      return swapped ? { files: { gokwik: files.easycom, easycom: files.gokwik }, swapped } : { files, swapped };
+    } catch (err) {
+      log.warn("could not inspect the uploaded files; using them as given", { error: err });
+      return { files, swapped: false };
+    }
+  }
+
+  async function processUpload(run, uploaded) {
+    const { files, swapped } = await orientUpload(uploaded);
     const columns = config.upload.easycomColumns;
     return execute(run, {
       manual: true,
@@ -264,7 +299,7 @@ function buildPipeline({ config, repo, gmail, easycom, logger, now = () => Date.
           source_filename: String(files.gokwik.name).slice(0, 255), source_bytes: bytes, source_sha256: sha256,
           easycom_source_filename: String(files.easycom.name).slice(0, 255),
         });
-        await moveTo("GOKWIK_RECEIVED", null, { manualUpload: true });
+        await moveTo("GOKWIK_RECEIVED", null, { manualUpload: true, ...(swapped ? { filesSwapped: true } : {}) });
         await beat();
         return { csvPath: files.gokwik.path };
       },

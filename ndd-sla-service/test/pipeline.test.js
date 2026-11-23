@@ -265,3 +265,25 @@ test("delete: removes the report and its rows; refused while a process holds it;
   assert.deepEqual(await repo.deleteRun("AJMAL", id), { deleted: true });
   assert.deepEqual([repo._runs.length, repo._orders.length, repo._summary.length], [0, 0, 0]);
 });
+
+test("upload: files put in the wrong slots (pickup export as GoKwik, orders export as EasyCom) are swapped and still build the report", async () => {
+  const path = require("path");
+  const { repo, config, state } = setup();
+  const pipeline = buildPipeline({ config, repo, gmail: fakeGmail({ messages: [], csvByMessage: {} }), easycom: fakeEasycom({ pages: [] }), now: () => state.t, workerId: "w1" });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ndd-swap-"));
+  const orders = path.join(dir, "orders.csv");
+  const pickups = path.join(dir, "pickups.csv");
+  fs.writeFileSync(orders, CSV.replace("Courier Name", "Courier"));
+  fs.writeFileSync(pickups, "S.no,AWB,Order Code,Shipment picked at\n1,A1,R1,11/18/2026 02:15 PM\n2,A2,R2,\n");
+  const windows = { ndd: { start: "2026-11-18 12:00:00", end: "2026-11-19 12:00:00" }, other: { start: "2026-11-18 15:00:00", end: "2026-11-19 15:00:00" } };
+  const claim = await repo.claimForUpload({ brandKey: "AJMAL", reportDate: "2026-11-19", windows, lockedBy: "manual:u", uploadedBy: "u" });
+  // the pickup export sits in the GoKwik slot, the orders export in the EasyCom slot
+  const r = await pipeline.processUpload(claim.run, { gokwik: { path: pickups, name: "pickups.csv" }, easycom: { path: orders, name: "orders.csv" } });
+  assert.equal(r.outcome, "completed");
+  const stored = Object.fromEntries(repo._orders.map((o) => [o.reference_code, o]));
+  assert.equal(stored.R1.sla_status, "MET");
+  assert.equal(stored.R1.shipment_picked_at, "2026-11-18 14:15:00");
+  assert.equal(stored.R2.sla_status, "BREACHED");
+  assert.equal(repo._runs.find((x) => x.id === claim.run.id).source_filename, "orders.csv", "the audit record names the files by their real role");
+  fs.rmSync(dir, { recursive: true, force: true });
+});

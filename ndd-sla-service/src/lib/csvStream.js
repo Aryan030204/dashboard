@@ -164,4 +164,39 @@ async function* parseCsv(readable, { required = [], aliases = {}, project = fals
   for (const r of pending) yield r;
 }
 
-module.exports = { parseCsv };
+// The first few lines of a CSV as arrays of header-like cells (quotes respected), so a caller can tell what kind of report
+// a file is before processing it. `text` is the start of the file; a partial last line is ignored.
+function sniffHeaderRows(text, maxRows = HEADER_SCAN_ROWS) {
+  const rows = [];
+  const BOM = String.fromCharCode(0xfeff);
+  const raw = String(text);
+  const lines = (raw.startsWith(BOM) ? raw.slice(1) : raw).split(String.fromCharCode(10)).map((l) => (l.endsWith(String.fromCharCode(13)) ? l.slice(0, -1) : l));
+  lines.pop(); // possibly cut off
+  for (const line of lines) {
+    if (rows.length >= maxRows) break;
+    const cells = [];
+    let cell = "";
+    let quoted = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (quoted) {
+        if (ch === '"') { if (line[i + 1] === '"') { cell += '"'; i += 1; } else quoted = false; } else cell += ch;
+      } else if (ch === '"' && cell === "") quoted = true;
+      else if (ch === ",") { cells.push(cell); cell = ""; } else cell += ch;
+    }
+    cells.push(cell);
+    rows.push(cells);
+  }
+  return rows;
+}
+
+// True when some header row contains, for every wanted column, one of its accepted spellings (same matching as parseCsv).
+// wanted: [[preferredName, ...aliases], ...]
+function hasColumns(rows, wanted) {
+  return rows.some((cells) => {
+    const have = new Set(cells.map(canon));
+    return wanted.every((names) => names.some((n) => have.has(canon(n))));
+  });
+}
+
+module.exports = { parseCsv, sniffHeaderRows, hasColumns };

@@ -119,7 +119,7 @@ function getConfig(env = process.env) {
         pickedAt: env.NDD_SLA_EASYCOM_FILE_COL_PICKED_AT || "Shipment(Pickup At)",
       },
       easycomColumnAliases: {
-        reference: aliasList(env.NDD_SLA_EASYCOM_FILE_COL_REFERENCE_ALIASES, ["Reference Code", "Reference No", "Order Reference", "Order No"]),
+        reference: aliasList(env.NDD_SLA_EASYCOM_FILE_COL_REFERENCE_ALIASES, ["Reference Code", "Order Code", "Reference No", "Order Reference", "Order No"]),
         pickedAt: aliasList(env.NDD_SLA_EASYCOM_FILE_COL_PICKED_AT_ALIASES, ["Shipment Picked At", "Shipment Pickup At", "Shipment Picked Up At", "Pickup At", "Picked At", "Pickup Date", "Pickup Time"]),
       },
     },
