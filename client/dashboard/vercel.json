@@ -27,6 +27,7 @@
     { "source": "/configurations", "destination": "/" },
     { "source": "/tenant-setup", "destination": "/" },
     { "source": "/privacy-policy", "destination": "/" },
+    { "source": "/terms-of-service", "destination": "/" },
     { "source": "/login", "destination": "/" },
     { "source": "/unauthorized", "destination": "/" }
   ],

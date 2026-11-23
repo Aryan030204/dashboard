@@ -6,6 +6,7 @@ import './styles/datum-tokens.css';
 import './styles/datum.css';
 import App from './App.jsx';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx';
+import TermsOfServicePage from './pages/TermsOfServicePage.jsx';
 import { Provider } from 'react-redux';
 import { store } from './state/store.js';
 import { ToastContainer } from 'react-toastify';
@@ -17,12 +18,17 @@ import { BrowserRouter } from 'react-router-dom';
 initFrontendObservability();
 
 // Public, standalone pages that must render without the authenticated app.
-const isPrivacyPolicy = /^\/privacy-policy\/?$/i.test(window.location.pathname);
+const PUBLIC_PAGES = {
+  '/privacy-policy': PrivacyPolicyPage,
+  '/terms-of-service': TermsOfServicePage,
+};
+const PublicPage =
+  PUBLIC_PAGES[window.location.pathname.replace(/\/+$/, '').toLowerCase()];
 
 createRoot(document.getElementById('root')).render(
-  isPrivacyPolicy ? (
+  PublicPage ? (
     <StrictMode>
-      <PrivacyPolicyPage />
+      <PublicPage />
     </StrictMode>
   ) : (
   <StrictMode>
