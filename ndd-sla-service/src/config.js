@@ -82,6 +82,12 @@ function getConfig(env = process.env) {
       courier: env.NDD_SLA_COL_COURIER || "Courier",
       orderDate: env.NDD_SLA_COL_ORDER_DATE || "Order Date",
     },
+    // OPTIONAL order-file column: the sales channel (MP Name). When the file has it, only the channels in
+    // `marketplaces` are counted (the legacy report is Shopify-only: Flipkart/Firstcry orders never go through GoKwik, so
+    // they have no pickup record and would all show as breached). Empty list = count every channel.
+    optionalColumns: { marketplace: env.NDD_SLA_COL_MARKETPLACE || "MP Name" },
+    optionalColumnAliases: { marketplace: aliasList(env.NDD_SLA_COL_MARKETPLACE_ALIASES, ["MP Name", "Marketplace", "Sales Channel"]) },
+    marketplaces: env.NDD_SLA_MARKETPLACES === undefined ? ["Shopify"] : aliasList(env.NDD_SLA_MARKETPLACES, []),
     // Other header spellings accepted when the preferred name above is absent (comma-separated env override replaces them).
     columnAliases: {
       reference: aliasList(env.NDD_SLA_COL_REFERENCE_ALIASES, ["Reference Code", "Reference No", "Order Reference", "Order No"]),

@@ -99,15 +99,9 @@ function buildPipeline({ config, repo, gmail, easycom, logger, now = () => Date.
     return selectGokwikMessage(withWall, config.gmail, range);
   }
 
-  // The shared core. `acquire` produces the GoKwik file path (or ends the attempt early); `shipmentPages` yields the
-  // EasyCom data. `manual` runs never retry: their temp files are not kept, so the author uploads again.
-  async function execute(run, { acquire, shipmentPages, manual = false, maxKeptRows }) {
-    const started = now();
-    const wid = run.locked_by || workerId;
-    const windows = windowsOf(run);
-    const state = { stage: manual ? "csv" : "gmail", generation: null, status: run.status };
-    // Heartbeat + obey the user: CANCEL stops the run, PAUSE holds it here (the lock stays fresh) until resumed or
-    // config.worker.pauseMaxMs passes. Called at every stage change and every few thousand rows / pages / batches.
+  // Heartbeat + obey the user: CANCEL stops the run, PAUSE holds it here (the lock stays fresh) until resumed or
+  // config.worker.pauseMaxMs passes. `beat` runs at every stage change and every few thousand rows / pages / batches.
+  function makeControl(run, wid, state) {
     const beat = async () => {
       let control = await repo.heartbeat(run.id, wid);
       if (control === "PAUSE") {
@@ -126,6 +120,17 @@ function buildPipeline({ config, repo, gmail, easycom, logger, now = () => Date.
       await repo.transition(run.id, wid, next, fields || {}, metadata);
       state.status = next;
     };
+    return { beat, moveTo };
+  }
+
+  // The shared core. `acquire` produces the GoKwik file path (or ends the attempt early); `shipmentPages` yields the
+  // EasyCom data. `manual` runs never retry: their temp files are not kept, so the author uploads again.
+  async function execute(run, { acquire, shipmentPages, manual = false, maxKeptRows }) {
+    const started = now();
+    const wid = run.locked_by || workerId;
+    const windows = windowsOf(run);
+    const state = { stage: manual ? "csv" : "gmail", generation: null, status: run.status };
+    const { beat, moveTo } = makeControl(run, wid, state);
     const tmpFile = path.join(config.tmpDir, `ndd-sla-${run.id}-${process.pid}-${started}.csv`);
 
     try {
@@ -136,8 +141,13 @@ function buildPipeline({ config, repo, gmail, easycom, logger, now = () => Date.
       state.stage = "csv";
       const required = Object.values(config.columns);
       const csvStream = await openCsvStream(acquired.csvPath, { maxExpandedBytes: config.upload.maxExpandedBytes });
-      const rows = withHeartbeat(parseCsv(csvStream, { required, project: true, aliases: aliasesByName(config.columns, config.columnAliases) }), 5000, beat);
-      const { kept, counts } = await filterOrders(rows, { windows, columns: config.columns, maxKeptRows: maxKeptRows ?? config.limits.maxKeptRows });
+      const mp = config.optionalColumns?.marketplace || null;
+      const aliases = { ...aliasesByName(config.columns, config.columnAliases), ...(mp ? { [mp]: config.optionalColumnAliases?.marketplace || [] } : {}) };
+      const rows = withHeartbeat(parseCsv(csvStream, { required, optional: mp ? [mp] : [], project: true, aliases }), 5000, beat);
+      const { kept, counts } = await filterOrders(rows, {
+        windows, columns: config.columns, maxKeptRows: maxKeptRows ?? config.limits.maxKeptRows,
+        marketplaceColumn: mp, marketplaces: config.marketplaces || [],
+      });
       log.info("csv filtered", { run: run.id, ...counts });
 
       // ---- easycom / shipments (pass 2) --------------------------------------------------------------------------
@@ -254,7 +264,7 @@ function buildPipeline({ config, repo, gmail, easycom, logger, now = () => Date.
   // ---- MANUAL: two uploaded files ---------------------------------------------------------------------------------
   // `files` = { gokwik: { path, name }, easycom: { path, name } }; the caller deletes them afterwards.
   // Reads the start of an uploaded file and returns its first header rows (the file may be gzipped).
-  async function peekHeaders(file) {
+  async function peekHeaders(file, maxRows) {
     const stream = await openCsvStream(file.path, { maxExpandedBytes: config.upload.maxExpandedBytes });
     let text = "";
     try {
@@ -265,7 +275,7 @@ function buildPipeline({ config, repo, gmail, easycom, logger, now = () => Date.
     } finally {
       stream.destroy();
     }
-    return sniffHeaderRows(text);
+    return sniffHeaderRows(text, maxRows);
   }
 
   // The two files are easy to put in the wrong slot (their names are alike and both carry a Reference/Order code). If the

@@ -22,7 +22,7 @@ const UPDATABLE = new Set([
   "duplicate_messages", "easycom_pages", "easycom_fetched", "rows_in", "rows_wrong_client", "rows_wrong_status",
   "rows_out_of_window", "rows_duplicate", "rows_invalid", "rows_kept", "rows_unmatched", "sla_met", "sla_breached",
   "gmail_ms", "easycom_ms", "process_ms", "error_code", "error_detail", "next_attempt_at",
-  "easycom_source_filename", "control", "paused_at",
+  "easycom_source_filename", "control", "paused_at", "source_mode",
 ]);
 
 function setClause(fields) {

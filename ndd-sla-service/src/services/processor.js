@@ -149,8 +149,10 @@ function inWindow(wallText, window) {
 // Exports often prefix IDs with ` or ' (Excel "keep as text") or wrap them in quotes/spaces; strip those so GoKwik and
 // EasyCom codes compare equal.
 function normalizeReference(value) {
-  return String(value ?? "").replace(/^[\s`'‘’"=]+|[\s`'‘’"]+$/g, "");
+  return String(value ?? "").replace(/^[\s`'ï¿½ï¿½"=]+|[\s`'ï¿½ï¿½"]+$/g, "");
 }
+
+const canonName = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 function normalizeLocation(value) {
   const key = String(value ?? "").trim().replace(/\s+/g, " ").toUpperCase();
@@ -187,8 +189,9 @@ function emptyCounts() {
 // Returns { kept: Map<referenceCode, compactRow>, counts }. Only surviving rows are retained, and only the fields the
 // report needs (never the raw row), which is what keeps memory proportional to |F|.
 // Duplicate Reference Codes: the first occurrence wins (the tie-break is an open question, plan K2.4).
-async function filterOrders(rows, { windows, columns, maxKeptRows = null }) {
+async function filterOrders(rows, { windows, columns, maxKeptRows = null, marketplaceColumn = null, marketplaces = [] }) {
   const kept = new Map();
+  const allowedChannels = new Set(marketplaces.map(canonName).filter(Boolean));
   const counts = emptyCounts();
 
   for await (const row of rows) {
@@ -198,6 +201,14 @@ async function filterOrders(rows, { windows, columns, maxKeptRows = null }) {
     if (!location) {
       counts.rows_wrong_client += 1;
       continue;
+    }
+    // Sales channel (MP Name), only when the file has that column and a channel list is configured. A blank channel is kept.
+    if (allowedChannels.size && marketplaceColumn && row[marketplaceColumn] !== undefined) {
+      const channel = canonName(row[marketplaceColumn]);
+      if (channel && !allowedChannels.has(channel)) {
+        counts.rows_wrong_client += 1;
+        continue;
+      }
     }
     if (isExcludedStatus(row[columns.orderStatus])) {
       counts.rows_wrong_status += 1;

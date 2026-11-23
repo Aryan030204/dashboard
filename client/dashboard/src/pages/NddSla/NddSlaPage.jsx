@@ -143,7 +143,7 @@ function RunDetails({ run }) {
   const c = run.counts || {};
   const source = run.source;
   const excluded = [
-    ["Other client", c.wrongClient],
+    ["Other client / channel", c.wrongClient],
     ["Excluded status", c.wrongStatus],
     ["Outside its window", c.outOfWindow],
     ["Duplicate reference", c.duplicate],

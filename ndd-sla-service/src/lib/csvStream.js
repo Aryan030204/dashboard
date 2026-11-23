@@ -15,8 +15,9 @@ const HEADER_SCAN_ROWS = 25; // a title/banner above the real header is tolerate
 // `aliases`: { requiredName: [other accepted header spellings] }, tried when the preferred name is absent. Column ORDER
 // never matters (cells are read by header name). If the first row is not the header (banner/blank lines above it), the
 // first of the next HEADER_SCAN_ROWS rows that contains every required column is used instead.
-async function* parseCsv(readable, { required = [], aliases = {}, project = false, delimiter = ",", maxFieldChars = 100000 } = {}) {
+async function* parseCsv(readable, { required = [], optional = [], aliases = {}, project = false, delimiter = ",", maxFieldChars = 100000 } = {}) {
   const decoder = new StringDecoder("utf8");
+  const known = [...required, ...optional]; // optional columns are matched/renamed when present but never reported missing
   let header = null;
   let projected = null; // with `project`: [[index, name]] of the required columns only
   let row = [];
@@ -42,7 +43,7 @@ async function* parseCsv(readable, { required = [], aliases = {}, project = fals
     row = [];
     if (!header) {
       const wanted = new Map();
-      for (const name of required) {
+      for (const name of known) {
         for (const alias of [name, ...(aliases[name] || [])]) if (!wanted.has(canon(alias))) wanted.set(canon(alias), name);
       }
       // Preferred spelling wins over an alias when both exist in the file.
@@ -50,7 +51,7 @@ async function* parseCsv(readable, { required = [], aliases = {}, project = fals
       const preferred = new Set(fields.map((c) => canon(c)));
       const seen = new Set();
       const candidate = mapped.map((name, i) => {
-        if (!required.includes(name)) return name;
+        if (!known.includes(name)) return name;
         const isPreferred = canon(fields[i]) === canon(name);
         if (seen.has(name)) return `${name}#dup${i}`;
         if (!isPreferred && preferred.has(canon(name))) return `${name}#alias${i}`;
@@ -71,7 +72,7 @@ async function* parseCsv(readable, { required = [], aliases = {}, project = fals
         throw new PipelineError("CSV_MISSING_COLUMNS", `CSV header is missing column(s): ${(firstHeaderFields ? firstMissing : missing).join(", ")}. The file's columns are: ${found}`);
       }
       header = candidate;
-      if (project) projected = candidate.map((name, i) => [i, name]).filter(([, name]) => required.includes(name));
+      if (project) projected = candidate.map((name, i) => [i, name]).filter(([, name]) => known.includes(name));
       return;
     }
     if (fields.length === 1 && fields[0] === "") return; // blank line
@@ -166,12 +167,12 @@ async function* parseCsv(readable, { required = [], aliases = {}, project = fals
 
 // The first few lines of a CSV as arrays of header-like cells (quotes respected), so a caller can tell what kind of report
 // a file is before processing it. `text` is the start of the file; a partial last line is ignored.
-function sniffHeaderRows(text, maxRows = HEADER_SCAN_ROWS) {
+function sniffHeaderRows(text, maxRows = HEADER_SCAN_ROWS, { complete = false } = {}) {
   const rows = [];
   const BOM = String.fromCharCode(0xfeff);
   const raw = String(text);
   const lines = (raw.startsWith(BOM) ? raw.slice(1) : raw).split(String.fromCharCode(10)).map((l) => (l.endsWith(String.fromCharCode(13)) ? l.slice(0, -1) : l));
-  lines.pop(); // possibly cut off
+  if (!complete) lines.pop(); // possibly cut off (a `complete` text is the whole file, so its last line is real)
   for (const line of lines) {
     if (rows.length >= maxRows) break;
     const cells = [];
