@@ -1,0 +1,154 @@
+/*
+ * Datum presentation primitives (class prefix "dz-").
+ * Ported from the design spec (design-reference/datum-ui-v2.html). Visual only:
+ * these classes carry no behavior. Phone layout uses the app's existing 900px
+ * boundary so shell and panels always agree (the spec's 760px is intentionally not used).
+ */
+.dz-mono { font-family: var(--dz-font-mono); font-size: 12px; }
+.dz-muted { color: var(--dz-muted); }
+.dz-num { font-variant-numeric: tabular-nums; }
+
+/* Keyboard focus ring for all datum primitives */
+.dz-pill:focus-visible, .dz-seg button:focus-visible, .dz-mc:focus-visible,
+.dz-pager button:focus-visible, .dz-tbl th button:focus-visible {
+  outline: 2px solid var(--dz-accent);
+  outline-offset: 2px;
+}
+
+/* Page header */
+.dz-phead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 4px 0 16px; }
+.dz-h1 { margin: 0; font-size: 26px; font-weight: 650; letter-spacing: -0.025em; line-height: 1.15; color: var(--dz-text); }
+.dz-desc { margin: 4px 0 0; font-size: 13.5px; color: var(--dz-muted); }
+.dz-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 12.5px; color: var(--dz-muted); }
+.dz-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* Filter bar + pills */
+.dz-fbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--dz-line); border-bottom: 1px solid var(--dz-line); }
+.dz-fbar-sep { width: 1px; height: 20px; background: var(--dz-line); margin: 0 4px; }
+.dz-pill { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px 0 11px; border-radius: var(--dz-r-control); border: 1px solid var(--dz-line-2); background: var(--dz-panel); color: var(--dz-text); font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; box-shadow: var(--dz-shadow); cursor: pointer; }
+.dz-pill:hover:not(:disabled):not([aria-disabled="true"]) { border-color: var(--dz-muted); }
+.dz-pill .dz-pill-k { color: var(--dz-muted); font-weight: 450; }
+.dz-pill .dz-pill-chev { color: var(--dz-muted); width: 13px; height: 13px; flex: none; }
+.dz-pill.is-on { background: var(--dz-accent-soft); border-color: var(--dz-accent-line); color: var(--dz-accent); }
+.dz-pill:disabled, .dz-pill[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.dz-pill.is-static { cursor: default; }
+
+/* Panel */
+.dz-panel { background: var(--dz-panel); border: 1px solid var(--dz-line); border-radius: var(--dz-r-panel); box-shadow: var(--dz-shadow); min-width: 0; overflow: hidden; }
+.dz-ph { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 14px 18px; border-bottom: 1px solid var(--dz-line); }
+.dz-pt { margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; color: var(--dz-text); }
+.dz-ps { margin: 2px 0 0; font-size: 12.5px; color: var(--dz-muted); }
+.dz-pb { padding: 18px; }
+.dz-pf { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 14px; padding: 10px 18px; border-top: 1px solid var(--dz-line); font-size: 12.5px; color: var(--dz-muted); }
+
+/* Metric grid (connected cells) */
+.dz-mg { display: grid; gap: 1px; background: var(--dz-line); grid-template-columns: repeat(var(--dz-cols, 4), minmax(0, 1fr)); }
+.dz-mc { background: var(--dz-panel); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; text-align: left; font: inherit; color: inherit; border: 0; position: relative; }
+button.dz-mc { cursor: pointer; }
+button.dz-mc:hover { background: var(--dz-hover); }
+.dz-mc.is-sel { background: var(--dz-accent-soft); }
+.dz-mc.is-sel::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--dz-accent); }
+.dz-ml { font-size: 12.5px; color: var(--dz-muted); font-weight: 500; display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.dz-mv { font-size: 24px; font-weight: 620; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; line-height: 1.2; color: var(--dz-text); }
+.dz-mv small { font-size: 13px; font-weight: 500; color: var(--dz-muted); letter-spacing: 0; margin-left: 3px; }
+.dz-md { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dz-muted); flex-wrap: wrap; }
+.dz-d { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dz-d.is-good { color: var(--dz-good); } .dz-d.is-bad { color: var(--dz-bad); } .dz-d.is-flat { color: var(--dz-muted); }
+
+/* Tag */
+.dz-tag { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: var(--dz-r-tag); font-size: 11px; font-weight: 600; background: var(--dz-sunk); color: var(--dz-text-2); white-space: nowrap; }
+.dz-tag.is-good { background: var(--dz-good-bg); color: var(--dz-good); }
+.dz-tag.is-bad { background: var(--dz-bad-bg); color: var(--dz-bad); }
+.dz-tag.is-warn { background: var(--dz-warn-bg); color: var(--dz-warn); }
+.dz-tag.is-info { background: var(--dz-info-bg); color: var(--dz-info); }
+.dz-tag.has-dot::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* Segmented */
+.dz-seg { display: inline-flex; padding: 3px; border-radius: 9px; background: var(--dz-sunk); border: 1px solid var(--dz-line); gap: 2px; }
+.dz-seg button { height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--dz-muted); font: inherit; font-size: 12.5px; font-weight: 550; white-space: nowrap; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.dz-seg button[aria-pressed="true"] { background: var(--dz-panel); color: var(--dz-text); box-shadow: 0 0 0 1px var(--dz-line-2), var(--dz-shadow); }
+.dz-seg button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Table */
+.dz-tw { overflow-x: auto; }
+.dz-tbl { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.dz-tbl th { font-size: 11.5px; font-weight: 600; color: var(--dz-muted); text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--dz-line); white-space: nowrap; background: var(--dz-sunk); }
+.dz-tbl td { padding: 11px 14px; border-bottom: 1px solid var(--dz-line); white-space: nowrap; vertical-align: middle; }
+.dz-tbl.is-dense td { padding: 8px 14px; }
+.dz-tbl .is-r { text-align: right; }
+.dz-tbl .is-m { color: var(--dz-muted); }
+.dz-tbl .is-url { max-width: 440px; overflow: hidden; text-overflow: ellipsis; font-family: var(--dz-font-mono); font-size: 12px; color: var(--dz-text-2); }
+.dz-tbl tbody tr:hover td { background: var(--dz-hover); }
+.dz-tbl tbody tr:last-child td { border-bottom: 0; }
+.dz-tbl th button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.dz-tbl-empty { padding: 28px; text-align: center; color: var(--dz-muted); font-size: 13px; background: var(--dz-sunk); border-radius: 10px; margin: 14px; }
+
+/* Mobile list (rendered by the page in place of the table, using the page's own breakpoint check) */
+.dz-mrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--dz-line); }
+.dz-mrow:last-child { border-bottom: 0; }
+.dz-mrow-l { min-width: 0; flex: 1; }
+.dz-mrow-t { font-weight: 550; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dz-text); }
+.dz-mrow-s { font-size: 12px; color: var(--dz-muted); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px 10px; font-variant-numeric: tabular-nums; }
+.dz-mrow-r { text-align: right; flex: none; font-variant-numeric: tabular-nums; }
+.dz-mrow-v { font-weight: 600; font-size: 14px; color: var(--dz-text); }
+
+/* Pager */
+.dz-pager { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--dz-line); font-size: 12.5px; color: var(--dz-muted); }
+.dz-pager button { width: 30px; height: 30px; border-radius: var(--dz-r-control); border: 1px solid var(--dz-line-2); background: var(--dz-panel); color: var(--dz-text); cursor: pointer; display: inline-grid; place-items: center; }
+.dz-pager button:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Tablet band: fewer metric columns */
+@media (max-width: 1100px) {
+  .dz-mg { grid-template-columns: repeat(min(var(--dz-cols, 4), 3), minmax(0, 1fr)); }
+}
+/* Phone (app's existing 900px boundary) */
+@media (max-width: 900px) {
+  .dz-h1 { font-size: 22px; }
+  .dz-mg { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dz-mg.is-keep3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dz-mc { padding: 11px 12px; }
+  .dz-mv { font-size: 19px; }
+  .dz-ph { padding: 12px 14px; }
+  .dz-pb { padding: 14px; }
+  .dz-pf, .dz-pager { padding: 10px 14px; justify-content: space-between; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dz-pill, .dz-seg button { transition: none; }
+}
+
+/* Top bar "Updated ..." status indicator (same data/states as before; styling only) */
+.dz-live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dz-muted); white-space: nowrap; }
+.dz-live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dz-good); box-shadow: 0 0 0 3px var(--dz-good-bg); }
+.dz-live.is-idle::before { background: var(--dz-muted); box-shadow: none; }
+
+/* Dashboard unified filter bar: segmented container -> row of separate pills (CSS only; no behavior change) */
+.dz-ufb.MuiPaper-root { background: transparent; border: 0; border-radius: 0; overflow: visible; gap: 8px; height: auto; box-shadow: none; flex-wrap: wrap; }
+.dz-ufb > .MuiDivider-root { display: none; }
+.dz-ufb > *:not(.MuiDivider-root) { border: 1px solid var(--dz-line-2); border-radius: var(--dz-r-control); background: var(--dz-panel); height: 32px; box-shadow: var(--dz-shadow); display: inline-flex; align-items: center; overflow: hidden; }
+.dz-ufb .MuiButton-root { height: 32px; font-size: 13px; font-weight: 500; color: var(--dz-text); }
+
+/* Stacked share bar + swatch (Mode of payment / Traffic split) */
+.dz-stackbar { display: flex; gap: 2px; height: 12px; border-radius: 4px; overflow: hidden; background: var(--dz-sunk); }
+.dz-stackbar i { display: block; height: 100%; }
+.dz-sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+
+/* Text colour: everything that inherits its colour (tables, panels, plain Typography inside panels) must follow the active theme.
+   Without this, text inside panels fell back to the page default and was nearly invisible in dark mode. */
+#root { color: var(--dz-text); }
+.dz-panel, .dz-tbl td, .dz-mrow, .dz-mrow-v { color: var(--dz-text); }
+.dz-tbl th { color: var(--dz-muted); }
+
+/* Progress track (Product Funnel steps, Sessions bars) */
+.dz-track { height: 6px; border-radius: 3px; background: var(--dz-sunk); overflow: hidden; width: 100%; display: block; }
+.dz-track i { display: block; height: 100%; border-radius: 3px; background: var(--dz-accent); }
+
+/* Phone-only blocks mirror the existing MUI "md" boundary (hidden from 900px up) */
+@media (min-width: 900px) {
+  .dz-phone-only { display: none; }
+}
+
+/* Phones only (under 900px): the top bar shows the page title, so the page header drops its own title and description */
+@media (max-width: 899px) {
+  .dz-phead .dz-h1, .dz-phead .dz-desc { display: none; }
+  .dz-phead { padding-bottom: 8px; }
+}

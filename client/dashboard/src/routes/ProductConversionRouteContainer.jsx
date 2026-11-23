@@ -1,8 +1,9 @@
 import { Suspense, lazy, useMemo } from "react";
-import { Box, Skeleton, Stack, Typography } from "@mui/material";
+import { Skeleton, Stack } from "@mui/material";
 import { EmptyStateCard, SectionFallback } from "./shared/RouteUi.jsx";
+import { PageHeader } from "../components/datum/index.js";
+import ProductFunnelPanel from "../components/ProductFunnelPanel.jsx";
 
-const FunnelChart = lazy(() => import("../components/charts/FunnelChart.jsx"));
 const ProductConversionTable = lazy(
   () => import("../components/ProductConversionTable.jsx"),
 );
@@ -67,30 +68,15 @@ export default function ProductConversionRouteContainer({
   return (
     <Suspense fallback={<SectionFallback />}>
       <Stack spacing={{ xs: 2, md: 3 }}>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            mb: 2,
-            mt: 1,
-          }}
-        >
-          <Typography
-            variant="h6"
-            sx={{
-              color: darkMode === "dark" ? "text.primary" : "text.secondary",
-              fontWeight: 600,
-            }}
-          >
-            Product Funnel
-          </Typography>
-        </Box>
+        <PageHeader
+          title="Product Funnel"
+          description="Sessions to orders, overall and by landing page"
+        />
         {funnelData?.stats ? (
           <Suspense
             fallback={<Skeleton variant="rounded" width="100%" height={250} />}
           >
-            <FunnelChart data={funnelChartData} height={250} />
+            <ProductFunnelPanel data={funnelChartData} height={250} />
           </Suspense>
         ) : (
           <Skeleton variant="rounded" width="100%" height={250} />

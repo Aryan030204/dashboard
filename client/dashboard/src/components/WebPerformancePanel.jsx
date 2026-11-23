@@ -1,9 +1,45 @@
 import { memo } from "react";
-import { Box, Card, CardContent, Skeleton, Typography } from "@mui/material";
+import { Box, Button, Card, Skeleton } from "@mui/material";
+import { useNavigate } from "react-router-dom";
 import { useTheme, alpha } from "@mui/material/styles";
 import { useDashboardWebVitalsData } from "../features/dashboard/widgetDataHooks.js";
 
 const nfFloat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+
+// Presentation: score gauge with the standard Web Vitals performance bands (0-50 poor, 50-90 needs work, 90-100 good).
+// The marker position is derived from the same averaged score the widget already shows.
+function ScoreGauge({ score }) {
+  const pct = Math.max(0, Math.min(100, Number(score) || 0));
+  return (
+    <Box aria-hidden="true" sx={{ width: "100%", mt: 1.5 }}>
+      <Box sx={{ position: "relative" }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: "50fr 40fr 10fr", gap: "2px", height: 8 }}>
+          <i style={{ background: "var(--dz-bad)", opacity: 0.35, borderRadius: "4px 0 0 4px" }} />
+          <i style={{ background: "var(--dz-warn)", opacity: 0.35 }} />
+          <i style={{ background: "var(--dz-good)", opacity: 0.35, borderRadius: "0 4px 4px 0" }} />
+        </Box>
+        <Box
+          sx={{
+            position: "absolute",
+            top: -4,
+            left: `${pct}%`,
+            width: 3,
+            height: 16,
+            borderRadius: "2px",
+            bgcolor: "text.primary",
+            transform: "translateX(-50%)",
+          }}
+        />
+      </Box>
+      <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.75, fontSize: 11, color: "text.secondary" }}>
+        <span>0</span>
+        <span>50</span>
+        <span>90</span>
+        <span>100</span>
+      </Box>
+    </Box>
+  );
+}
 
 function WebPerformancePanel({
   query,
@@ -13,6 +49,7 @@ function WebPerformancePanel({
   onToggleMetric,
 }) {
   const theme = useTheme();
+  const navigate = useNavigate();
   const { performanceAvg, performancePrev, performanceChange, loading } =
     useDashboardWebVitalsData(query, "PERFORMANCE", {
       usePerformanceSummary: true,
@@ -41,6 +78,7 @@ function WebPerformancePanel({
   return (
     <Card
       elevation={0}
+      className="dz-panel"
       onClick={clickable ? () => onSelectMetric("performance") : undefined}
       onKeyDown={handleKeyDown}
       role={clickable ? "button" : undefined}
@@ -49,92 +87,83 @@ function WebPerformancePanel({
       sx={{
         height: "100%",
         minHeight: { xs: 150, md: 310 },
-        border: "1px solid",
-        borderColor: selected ? "#06b6d4" : "divider",
+        display: "flex",
+        flexDirection: "column",
         position: "relative",
         cursor: clickable ? "pointer" : "default",
-        boxShadow: selected
-          ? `0 0 0 1px #06b6d4, 0 10px 20px ${alpha("#06b6d4", 0.2)}, 0 6px 6px ${alpha("#06b6d4", 0.1)}`
-          : "0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)",
-        transition: "all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-        "&:hover": clickable
-          ? {
-              boxShadow: selected
-                ? `0 0 0 1.5px #06b6d4, 0 14px 28px ${alpha("#06b6d4", 0.25)}, 0 10px 10px ${alpha("#06b6d4", 0.15)}`
-                : "0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23)",
-              transform: "translateY(-4px)",
-            }
-          : undefined,
-        "&:focus-visible": clickable
-          ? { borderColor: "primary.main" }
-          : undefined,
+        borderColor: selected ? "var(--dz-accent)" : undefined,
+        boxShadow: selected ? "0 0 0 1px var(--dz-accent)" : undefined,
+        "&:focus-visible": { outline: "2px solid var(--dz-accent)", outlineOffset: 2 },
       }}
     >
-      <CardContent
+      <div className="dz-ph">
+        <div style={{ minWidth: 0 }}>
+          <h2 className="dz-pt">Web performance</h2>
+          <p className="dz-ps">Average score across tracked pages</p>
+        </div>
+      </div>
+      <Box
         sx={{
-          height: "100%",
-          display: "grid",
-          placeItems: "center",
-          p: { xs: 1.5, md: 2 },
-          textAlign: "center",
-          "&:last-child": { pb: { xs: 1.5, md: 2 } },
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          p: { xs: 1.5, md: 2.25 },
         }}
       >
         {loading ? (
-          <Box sx={{ textAlign: "center" }}>
-            <Skeleton variant="text" width={160} sx={{ mx: "auto" }} />
-            <Skeleton variant="text" width={120} height={42} sx={{ mx: "auto" }} />
+          <Box>
+            <Skeleton variant="text" width={160} />
+            <Skeleton variant="text" width={120} height={42} />
           </Box>
         ) : (
-          <Box sx={{ textAlign: "center" }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Web Performance(Avg)
-            </Typography>
-            <Typography variant="h3" sx={{ fontWeight: 700, lineHeight: 1 }}>
-              {nfFloat.format(performanceAvg ?? 0)}
-            </Typography>
-            {query?.compare_start &&
-            query?.compare_end &&
-            performancePrev != null ? (
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ mt: 0.75, fontWeight: 400 }}
-              >
+          <>
+            <Box sx={{ display: "flex", alignItems: "baseline", gap: 1.25 }}>
+              <Box component="span" className="dz-num" sx={{ fontSize: 44, fontWeight: 620, letterSpacing: "-0.03em", lineHeight: 1.1 }}>
+                {nfFloat.format(performanceAvg ?? 0)}
+              </Box>
+              <Box component="span" sx={{ color: "text.secondary" }}>/ 100</Box>
+              {typeof performanceChange === "number" ? (
+                <Box
+                  component="span"
+                  className="dz-num"
+                  sx={{
+                    ml: "auto",
+                    fontWeight: 600,
+                    color:
+                      performanceChange > 0
+                        ? "var(--dz-good)"
+                        : performanceChange < 0
+                          ? "var(--dz-bad)"
+                          : "text.secondary",
+                  }}
+                >
+                  {performanceChange > 0 ? "↑" : performanceChange < 0 ? "↓" : ""}{" "}
+                  {nfFloat.format(Math.abs(performanceChange))}%
+                </Box>
+              ) : null}
+            </Box>
+            {query?.compare_start && query?.compare_end && performancePrev != null ? (
+              <Box sx={{ mt: 0.5, fontSize: 12.5, color: "text.secondary" }}>
                 vs {nfFloat.format(performancePrev)}
-              </Typography>
+              </Box>
             ) : null}
-            {typeof performanceChange === "number" ? (
-              <Typography
-                variant="caption"
-                sx={{
-                  mt: 1,
-                  display: "block",
-                  color:
-                    performanceChange > 0
-                      ? "#10b981"
-                      : performanceChange < 0
-                        ? "#ef4444"
-                        : "text.secondary",
-                  fontWeight: 600,
+            <ScoreGauge score={performanceAvg} />
+            <Box sx={{ mt: 2 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigate("/web-vitals");
                 }}
               >
-                {performanceChange > 0 ? "↗" : performanceChange < 0 ? "↘" : ""}
-                {" "}
-                {nfFloat.format(Math.abs(performanceChange))}%
-              </Typography>
-            ) : (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ mt: 1, display: "block" }}
-              >
-                Performance score for selected period
-              </Typography>
-            )}
-          </Box>
+                Open Web Vitals ›
+              </Button>
+            </Box>
+          </>
         )}
-      </CardContent>
+      </Box>
       {selectionClickable && (
         <Box
           component="button"
@@ -151,23 +180,20 @@ function WebPerformancePanel({
             borderRadius: "50%",
             border: "1.5px solid",
             borderColor: radioSelected
-              ? "#06b6d4"
+              ? "var(--dz-accent)"
               : alpha(theme.palette.text.secondary, 0.35),
-            bgcolor: radioSelected ? "#06b6d4" : "transparent",
+            bgcolor: radioSelected ? "var(--dz-accent)" : "transparent",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             transition: "all 0.18s ease",
-            boxShadow: radioSelected
-              ? `0 2px 6px ${alpha("#06b6d4", 0.35)}`
-              : "none",
             cursor: selectionClickable ? "pointer" : "default",
             p: 0,
             outline: "none",
             appearance: "none",
             WebkitAppearance: "none",
             "&:focus-visible": {
-              boxShadow: `0 0 0 2px ${alpha("#06b6d4", 0.28)}`,
+              boxShadow: "0 0 0 2px var(--dz-accent-line)",
             },
           }}
         >

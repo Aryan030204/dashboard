@@ -1,12 +1,14 @@
-import { Box, Card, Skeleton, Typography } from "@mui/material";
+import { Box, Card, Skeleton, Typography, useMediaQuery, useTheme } from "@mui/material";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import { METRIC_DEFS, METRIC_ORDER, getStatusMeta } from "../webVitalsFormat.js";
 
-const GOOD_COLOR = "#10b981";
-const BAD_COLOR = "#ef4444";
+const GOOD_COLOR = "var(--dz-good)";
+const BAD_COLOR = "var(--dz-bad)";
 
 function KpiCard({ metricId, current, previous, loading, selected, onSelect }) {
+  const theme = useTheme();
+  const isPhone = useMediaQuery(theme.breakpoints.down("md"));
   const def = METRIC_DEFS[metricId];
   const value = current?.value ?? null;
   const previousValue = previous?.value ?? null;
@@ -45,11 +47,17 @@ function KpiCard({ metricId, current, previous, loading, selected, onSelect }) {
         flexDirection: "column",
         gap: 0.75,
         cursor: "pointer",
-        borderColor: selected ? GOOD_COLOR : undefined,
-        boxShadow: selected ? `0 0 0 1px ${GOOD_COLOR}, 0 0 14px rgba(16, 185, 129, 0.25)` : "none",
-        transition: "border-color 0.15s, box-shadow 0.15s",
-        "&:hover": { borderColor: selected ? GOOD_COLOR : "text.secondary" },
-        "&:focus-visible": { outline: `2px solid ${GOOD_COLOR}`, outlineOffset: 2 },
+        position: "relative",
+        border: 0,
+        borderRadius: 0,
+        boxShadow: "none",
+        bgcolor: selected ? "var(--dz-accent-soft)" : "background.paper",
+        transition: "background-color 0.15s",
+        "&:hover": { bgcolor: selected ? "var(--dz-accent-soft)" : "var(--dz-hover)" },
+        "&::after": selected
+          ? { content: '""', position: "absolute", left: 0, right: 0, bottom: 0, height: 2, bgcolor: "var(--dz-accent)" }
+          : undefined,
+        "&:focus-visible": { outline: "2px solid var(--dz-accent)", outlineOffset: -2 },
       }}
     >
       <Typography
@@ -63,7 +71,7 @@ function KpiCard({ metricId, current, previous, loading, selected, onSelect }) {
       {loading ? (
         <Skeleton variant="text" width={80} height={40} />
       ) : (
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>
+        <Typography variant="h5" sx={{ fontSize: 24, fontWeight: 620, letterSpacing: "-0.025em" }}>
           {def.format(value)}
           {metricId === "performance" && value !== null ? (
             <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
@@ -73,6 +81,26 @@ function KpiCard({ metricId, current, previous, loading, selected, onSelect }) {
         </Typography>
       )}
 
+      {isPhone ? (
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.75 }}>
+          {statusMeta ? (
+            <span
+              className="dz-tag has-dot"
+              style={{ color: statusMeta.color, background: `color-mix(in srgb, ${statusMeta.color} 14%, transparent)` }}
+            >
+              {statusMeta.label}
+            </span>
+          ) : (
+            <span className="dz-muted" style={{ fontSize: 12 }}>No data</span>
+          )}
+          {hasDelta ? (
+            <span className="dz-num" style={{ color: deltaColor, fontSize: 12, fontWeight: 600 }}>
+              {direction === "up" ? "↑" : direction === "down" ? "↓" : ""} {def.formatDelta(diff)}
+            </span>
+          ) : null}
+        </Box>
+      ) : (
+        <>
       {statusMeta ? (
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
           <Box
@@ -110,11 +138,13 @@ function KpiCard({ metricId, current, previous, loading, selected, onSelect }) {
           No comparison available
         </Typography>
       )}
+        </>
+      )}
     </Card>
   );
 }
 
-export default function WebVitalsKpiRow({ snapshot, loading, selectedMetric = "performance", onSelectMetric = () => {} }) {
+export default function WebVitalsKpiRow({ snapshot, loading, selectedMetric = "performance", onSelectMetric = () => {}, bare = false }) {
   const metrics = snapshot?.metrics || {};
   const previousMetrics = snapshot?.previousMetrics || {};
 
@@ -127,7 +157,11 @@ export default function WebVitalsKpiRow({ snapshot, loading, selectedMetric = "p
           sm: "repeat(3, 1fr)",
           md: "repeat(6, 1fr)",
         },
-        gap: 1.5,
+        gap: "1px",
+        bgcolor: "divider",
+        ...(bare
+          ? {}
+          : { border: "1px solid", borderColor: "divider", borderRadius: "12px", overflow: "hidden" }),
       }}
     >
       {METRIC_ORDER.map((metricId) => (

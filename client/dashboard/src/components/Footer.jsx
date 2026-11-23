@@ -82,14 +82,14 @@ export default function Footer() {
   const handleClose = () => setOpen(false);
 
   return (
-    <Box component="footer" sx={theme => ({ mt: 6, borderTop: '1px solid', borderColor: 'divider', bgcolor: theme.palette.mode === 'light' ? 'grey.50' : 'background.paper', py: 3 })}>
-      <Container maxWidth="lg">
+    <Box component="footer" sx={{ mt: 6, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.default', py: 2 }}>
+      <Container maxWidth={false} sx={{ maxWidth: 1320 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="center" justifyContent="space-between" sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
           <Typography variant="body2" color="text.secondary">©{year} Datum. All rights reserved.</Typography>
           <Stack direction="row" spacing={3} sx={{ opacity: 0.9 }}>
-            <Link underline="hover" variant="caption" onClick={() => handleOpen('privacy')} sx={{ cursor: 'pointer', color: (theme) => theme.palette.mode === 'dark' ? '#64b5f6' : 'primary.main' }}>Privacy</Link>
-            <Link underline="hover" variant="caption" onClick={() => handleOpen('terms')} sx={{ cursor: 'pointer', color: (theme) => theme.palette.mode === 'dark' ? '#64b5f6' : 'primary.main' }}>Terms</Link>
-            <Link underline="hover" variant="caption" onClick={() => handleOpen('support')} sx={{ cursor: 'pointer', color: (theme) => theme.palette.mode === 'dark' ? '#64b5f6' : 'primary.main' }}>Support</Link>
+            <Link underline="hover" variant="caption" onClick={() => handleOpen('privacy')} sx={{ cursor: 'pointer', color: 'primary.main' }}>Privacy</Link>
+            <Link underline="hover" variant="caption" onClick={() => handleOpen('terms')} sx={{ cursor: 'pointer', color: 'primary.main' }}>Terms</Link>
+            <Link underline="hover" variant="caption" onClick={() => handleOpen('support')} sx={{ cursor: 'pointer', color: 'primary.main' }}>Support</Link>
           </Stack>
         </Stack>
       </Container>

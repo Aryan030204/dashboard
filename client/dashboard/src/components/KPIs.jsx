@@ -112,11 +112,12 @@ function buildPinAccessory(isPinned, onTogglePin) {
           sx={{
             width: 24,
             height: 24,
-            color: isPinned ? "#f5c451" : "rgba(255,255,255,0.46)",
-            bgcolor: "rgba(0,0,0,0.18)",
-            border: "1px solid rgba(255,255,255,0.08)",
+            color: isPinned ? "#f5c451" : "text.secondary",
+            bgcolor: "transparent",
+            border: "1px solid",
+            borderColor: "divider",
             "&:hover": {
-              bgcolor: "rgba(255,255,255,0.08)",
+              bgcolor: "action.hover",
             },
           }}
         >
@@ -366,50 +367,41 @@ function MobileKpiPages({
 
   return (
     <>
-    <Stack spacing={1.25} sx={{ display: { xs: "flex", md: "none" } }}>
-      {pages.length > 1 ? (
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "flex-end",
-            alignItems: "center",
-            gap: 0.5,
-            minHeight: 28,
-          }}
-        >
-          <IconButton
-            size="small"
-            onClick={() => handlePageChange(pageIndex - 1)}
-            disabled={pageIndex === 0}
-            sx={{
-              color: "rgba(255,255,255,0.7)",
-              "&.Mui-disabled": { color: "rgba(255,255,255,0.22)" },
-            }}
-          >
-            <ChevronLeftRoundedIcon sx={{ fontSize: 18 }} />
-          </IconButton>
-          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 28, textAlign: "center" }}>
-            {pageIndex + 1}/{pages.length}
-          </Typography>
-          <IconButton
-            size="small"
-            onClick={() => handlePageChange(pageIndex + 1)}
-            disabled={pageIndex === pages.length - 1}
-            sx={{
-              color: "rgba(255,255,255,0.7)",
-              "&.Mui-disabled": { color: "rgba(255,255,255,0.22)" },
-            }}
-          >
-            <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />
-          </IconButton>
-        </Box>
-      ) : null}
-      {pinMessage ? (
-        <Typography variant="caption" color="warning.main" sx={{ minHeight: 18 }}>
-          {pinMessage}
-        </Typography>
-      ) : null}
+    <div className="dz-panel dz-phone-only">
+      <div className="dz-ph">
+        <div style={{ minWidth: 0 }}>
+          <h2 className="dz-pt">Performance</h2>
+          {pinMessage ? (
+            <p className="dz-ps" style={{ color: "var(--dz-warn)" }}>{pinMessage}</p>
+          ) : pages.length > 1 ? (
+            <p className="dz-ps">vs previous period · page {pageIndex + 1} of {pages.length}</p>
+          ) : null}
+        </div>
+        {pages.length > 1 ? (
+          <Stack direction="row" spacing={0.25} alignItems="center">
+            <IconButton
+              size="small"
+              aria-label="Previous metrics"
+              onClick={() => handlePageChange(pageIndex - 1)}
+              disabled={pageIndex === 0}
+              sx={{ color: "text.secondary", border: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}
+            >
+              <ChevronLeftRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+            <IconButton
+              size="small"
+              aria-label="Next metrics"
+              onClick={() => handlePageChange(pageIndex + 1)}
+              disabled={pageIndex === pages.length - 1}
+              sx={{ color: "text.secondary", border: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}
+            >
+              <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Stack>
+        ) : null}
+      </div>
       {isEditing ? (
+        <div className="dz-pb">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -491,6 +483,7 @@ function MobileKpiPages({
             </Stack>
           </SortableContext>
         </DndContext>
+        </div>
       ) : (
         <Box
           sx={{ position: "relative", overflow: "hidden" }}
@@ -507,52 +500,50 @@ function MobileKpiPages({
               exit="exit"
               transition={{ duration: 0.22, ease: "easeOut" }}
             >
-              <Grid container spacing={2} columns={12}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: "1px",
+                  bgcolor: "divider",
+                }}
+              >
                 {currentPageSlots.map((metricId, index) =>
                   metricId ? (
-                    <Grid
-                      key={metricId}
-                      size={cardsById.get(metricId)?.size}
-                      sx={cardsById.get(metricId)?.sx}
-                    >
+                    <Box key={metricId} sx={{ bgcolor: "background.paper", minWidth: 0 }}>
                       {cloneElement(cardsById.get(metricId)?.node, {
+                        variant: "cell",
                         bottomRightAccessory: buildPinAccessory(
                           pinnedSet.has(metricId),
                           () => handleTogglePin(metricId),
                         ),
                       })}
-                    </Grid>
+                    </Box>
                   ) : (
-                    <Grid
+                    <Box
                       key={`empty-mobile-kpi-slot-${pageIndex}-${index}`}
-                      size={{ xs: 6, sm: 6, md: 3 }}
-                    >
-                      <Box
-                        aria-hidden="true"
-                        sx={{
-                          minHeight: MOBILE_KPI_SLOT_PLACEHOLDER_HEIGHT,
-                          borderRadius: "12px",
-                          visibility: "hidden",
-                        }}
-                      />
-                    </Grid>
+                      aria-hidden="true"
+                      sx={{ minHeight: MOBILE_KPI_SLOT_PLACEHOLDER_HEIGHT, bgcolor: "background.paper" }}
+                    />
                   ),
                 )}
-              </Grid>
+              </Box>
             </motion.div>
           </AnimatePresence>
         </Box>
       )}
       {footerCards.length > 0 ? (
-        <Grid container spacing={2} columns={12}>
-          {footerCards.map((card) => (
-            <Grid key={card.id} size={card.size} sx={card.sx}>
-              {card.node}
-            </Grid>
-          ))}
-        </Grid>
+        <div className="dz-pb">
+          <Grid container spacing={2} columns={12}>
+            {footerCards.map((card) => (
+              <Grid key={card.id} size={card.size} sx={card.sx}>
+                {card.node}
+              </Grid>
+            ))}
+          </Grid>
+        </div>
       ) : null}
-    </Stack>
+    </div>
     </>
   );
 }
@@ -610,6 +601,7 @@ function DesktopKpiCard({
       }}
     >
       <KPIStat
+        variant={isEditing ? "card" : "cell"}
         label={metric.label}
         value={metric.value}
         unavailable={metric.unavailable}
@@ -1220,40 +1212,27 @@ function DesktopKpiPages({
 
   return (
     <>
-    <Stack spacing={1.25}>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          minHeight: 34,
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Box sx={{ minHeight: 24 }}>
-            {pinMessage ? (
-              <Typography variant="caption" color="warning.main">
-                {pinMessage}
-              </Typography>
-            ) : null}
-          </Box>
-          {isEditing ? (
-            <Typography variant="caption" color="text.secondary" sx={{ px: 0.5 }}>
-              KPI edit mode: drag within pinned or unpinned groups. Page placement updates automatically.
-            </Typography>
+    <div className="dz-panel">
+      <div className="dz-ph">
+        <div style={{ minWidth: 0 }}>
+          <h2 className="dz-pt">Performance</h2>
+          {pinMessage ? (
+            <p className="dz-ps" style={{ color: "var(--dz-warn)" }}>{pinMessage}</p>
+          ) : isEditing ? (
+            <p className="dz-ps">KPI edit mode: drag within pinned or unpinned groups. Page placement updates automatically.</p>
+          ) : pages.length > 1 ? (
+            <p className="dz-ps">vs previous period · page {pageIndex + 1} of {pages.length}</p>
           ) : null}
-        </Stack>
+        </div>
         <Stack direction="row" spacing={0.25} alignItems="center">
           {pages.length > 1 ? (
             <>
               <IconButton
                 size="small"
+                aria-label="Previous metrics"
                 onClick={() => handlePageChange(pageIndex - 1)}
                 disabled={pageIndex === 0}
-                sx={{
-                  color: "text.secondary",
-                  bgcolor: "rgba(255,255,255,0.03)",
-                }}
+                sx={{ color: "text.secondary", border: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}
               >
                 <ChevronLeftRoundedIcon fontSize="small" />
               </IconButton>
@@ -1262,21 +1241,20 @@ function DesktopKpiPages({
               </Typography>
               <IconButton
                 size="small"
+                aria-label="Next metrics"
                 onClick={() => handlePageChange(pageIndex + 1)}
                 disabled={pageIndex === pages.length - 1}
-                sx={{
-                  color: "text.secondary",
-                  bgcolor: "rgba(255,255,255,0.03)",
-                }}
+                sx={{ color: "text.secondary", border: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}
               >
                 <ChevronRightRoundedIcon fontSize="small" />
               </IconButton>
             </>
           ) : null}
         </Stack>
-      </Box>
+      </div>
 
       {isEditing ? (
+        <div className="dz-pb">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -1328,6 +1306,7 @@ function DesktopKpiPages({
             </Stack>
           </SortableContext>
         </DndContext>
+        </div>
       ) : (
         <Box sx={{ overflow: "hidden", position: "relative" }}>
           <AnimatePresence mode="wait" initial={false} custom={pageDirection}>
@@ -1344,7 +1323,8 @@ function DesktopKpiPages({
                 sx={{
                   display: "grid",
                   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                  gap: 2,
+                  gap: "1px",
+                  bgcolor: "divider",
                 }}
               >
                 {currentPageSlots.map((metricId, index) =>
@@ -1362,8 +1342,7 @@ function DesktopKpiPages({
                       aria-hidden="true"
                       sx={{
                         minHeight: 110,
-                        borderRadius: "12px",
-                        visibility: "hidden",
+                        bgcolor: "background.paper",
                       }}
                     />
                   ),
@@ -1373,7 +1352,7 @@ function DesktopKpiPages({
           </AnimatePresence>
         </Box>
       )}
-    </Stack>
+    </div>
     </>
   );
 }

@@ -4,61 +4,60 @@
 
 @layer base {
   :root {
-    /* Aligned to the dashboard MUI brand palette (light): primary #0b6bcb on #FDFDFD/#ffffff */
-    --background: 0 0% 99%;
-    --foreground: 222.2 84% 4.9%;
+    /* Aligned to the Datum design tokens (src/styles/datum-tokens.css), light */
+    --background: 120 5% 96%;
+    --foreground: 148 25% 7%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 148 25% 7%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 210 90% 42%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 210 90% 42%;
+    --popover-foreground: 148 25% 7%;
+    --primary: 155 78% 27%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 140 7% 95%;
+    --secondary-foreground: 148 25% 7%;
+    --muted: 140 7% 95%;
+    --muted-foreground: 150 8% 40%;
+    --accent: 140 7% 95%;
+    --accent-foreground: 148 25% 7%;
+    --destructive: 6 64% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 9% 90%;
+    --input: 150 9% 90%;
+    --ring: 155 78% 27%;
     --radius: 0.5rem;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --chart-1: 212 70% 50%;
+    --chart-2: 16 82% 55%;
+    --chart-3: 160 72% 40%;
+    --chart-4: 43 100% 46%;
+    --chart-5: 337 71% 70%;
   }
 
   .dark {
-    /* Aligned to the dashboard MUI brand palette (dark): primary #5ba3e0, #000 bg / #1a1a1a paper */
-    --background: 0 0% 0%;
-    --foreground: 0 0% 94%;
-    --card: 0 0% 10%;
-    --card-foreground: 0 0% 94%;
-    /* Floating surfaces (dropdowns/menus) use elevated "paper" #1a1a1a, not the #000 page */
-    --popover: 0 0% 10%;
-    --popover-foreground: 0 0% 94%;
-    --primary: 208 68% 62%;
-    --primary-foreground: 0 0% 8%;
-    --secondary: 0 0% 18%;
-    --secondary-foreground: 0 0% 94%;
-    --muted: 0 0% 18%;
-    --muted-foreground: 0 0% 80%;
-    --accent: 0 0% 18%;
-    --accent-foreground: 0 0% 94%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 0 0% 25%;
-    --input: 0 0% 25%;
-    --ring: 208 68% 62%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    /* Aligned to the Datum design tokens, dark */
+    --background: 140 15% 4%;
+    --foreground: 140 15% 92%;
+    --card: 150 12% 7%;
+    --card-foreground: 140 15% 92%;
+    --popover: 150 12% 7%;
+    --popover-foreground: 140 15% 92%;
+    --primary: 158 48% 49%;
+    --primary-foreground: 150 60% 5%;
+    --secondary: 150 12% 10%;
+    --secondary-foreground: 140 15% 92%;
+    --muted: 150 12% 10%;
+    --muted-foreground: 150 6% 59%;
+    --accent: 150 12% 10%;
+    --accent-foreground: 140 15% 92%;
+    --destructive: 6 82% 69%;
+    --destructive-foreground: 150 60% 5%;
+    --border: 150 13% 13%;
+    --input: 150 13% 13%;
+    --ring: 158 48% 49%;
+    --chart-1: 214 77% 55%;
+    --chart-2: 18 70% 50%;
+    --chart-3: 163 78% 36%;
+    --chart-4: 39 100% 40%;
+    --chart-5: 335 60% 56%;
   }
 }
 
@@ -83,7 +82,8 @@ body,
 }
 body {
   margin: 0;
-  background-color: #fdfdfd;
+  background-color: var(--dz-bg, #fdfdfd);
+  font-family: var(--dz-font, system-ui, sans-serif);
 }
 
 /* Google Sign-in custom button styles (gsi-material-button) */

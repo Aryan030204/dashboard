@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@shopify/polaris/build/esm/styles.css';
 import './index.css';
+import './styles/datum-tokens.css';
+import './styles/datum.css';
 import App from './App.jsx';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx';
 import { Provider } from 'react-redux';

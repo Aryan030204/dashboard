@@ -69,10 +69,10 @@ const nfInt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 function Stat({ label, value, hint }) {
   return (
     <Box sx={{ flex: "1 1 130px", minWidth: 0, px: 2, py: 1.25 }}>
-      <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontWeight: 600 }}>
+      <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontSize: 12.5, fontWeight: 500 }}>
         {label}
       </Typography>
-      <Typography sx={{ fontWeight: 700, fontSize: 20, lineHeight: 1.3 }}>{value}</Typography>
+      <Typography className="dz-num" sx={{ fontWeight: 620, fontSize: 24, letterSpacing: "-0.025em", lineHeight: 1.3 }}>{value}</Typography>
       {hint ? (
         <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", fontSize: 11 }}>
           {hint}
@@ -416,13 +416,13 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
   const hasAnyEvent = chartData.some((b) => b.new_oos > 0 || b.restocked > 0 || b.oos_count > 0);
 
   return (
-    <Card variant="outlined" sx={{ mt: 2 }}>
+    <Card variant="outlined">
       <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {/* Title on the left; date range and granularity stay together on the right and move below the title when there is no room. */}
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "center", justifyContent: "space-between" }}>
           <Box sx={{ flex: "1 1 240px", minWidth: 0 }}>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Out-of-stock trend
+            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: "14.5px", letterSpacing: "-0.01em" }}>
+              Out-of-stock
             </Typography>
             <Typography variant="caption" color="text.secondary">
               When variants went out of stock and when they came back{timezone ? ` (${timezone})` : ""}.
@@ -447,14 +447,7 @@ function InventoryOosTrend({ brandKey, selectedProduct = null, onSelectProduct, 
                 value={granularity}
                 onChange={(event) => setPreferredGranularity(event.target.value)}
                 inputProps={{ "aria-label": "Trend granularity" }}
-                sx={{
-                  borderRadius: 2,
-                  height: 36,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  bgcolor: alpha(theme.palette.action.active, 0.04),
-                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
-                }}
+                sx={{ height: 32, fontSize: 13, fontWeight: 500 }}
               >
                 <MenuItem value="hourly" disabled={!hourlyAllowed(range.start, range.end)}>
                   Hourly

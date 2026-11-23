@@ -1,3 +1,4 @@
+import { PageHeader, FilterBar, FilterBarSeparator, Segmented } from "./datum/index.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 import {
@@ -32,8 +33,6 @@ import {
   TableRow,
   TableSortLabel,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
   useTheme,
@@ -369,25 +368,21 @@ export function FunnelDateRangePicker({ startDate, endDate, onApply }) {
         startIcon={<CalendarDays size={16} />}
         endIcon={<ChevronDown size={14} />}
         sx={{
-          px: 2,
-          minWidth: 220,
-          height: 48,
+          px: 1.5,
+          minWidth: 200,
+          height: 32,
           color: "text.primary",
           textTransform: "none",
           fontWeight: 500,
-          fontSize: "0.875rem",
+          fontSize: "0.8125rem",
           justifyContent: "space-between",
-          borderRadius: "14px",
+          borderRadius: "8px",
           border: "1px solid",
-          borderColor: isDark
-            ? "rgba(255,255,255,0.12)"
-            : "rgba(0,0,0,0.1)",
-          bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.9)",
+          borderColor: "var(--dz-line-2)",
+          bgcolor: "var(--dz-panel)",
           whiteSpace: "nowrap",
           "&:hover": {
-            bgcolor: isDark
-              ? "rgba(255,255,255,0.08)"
-              : "rgba(0,0,0,0.03)",
+            bgcolor: "var(--dz-hover)",
           },
         }}
       >
@@ -553,23 +548,19 @@ export function FunnelSingleDatePicker({ date, onApply, compact = false }) {
         sx={{
           px: compact ? 1.25 : 2,
           minWidth: compact ? "fit-content" : 200,
-          height: compact ? 36 : 48,
+          height: 32,
           color: "text.primary",
           textTransform: "none",
           fontWeight: 500,
-          fontSize: compact ? "0.75rem" : "0.875rem",
+          fontSize: "0.8125rem",
           justifyContent: "space-between",
-          borderRadius: compact ? "10px" : "14px",
+          borderRadius: "8px",
           border: "1px solid",
-          borderColor: isDark
-            ? "rgba(255,255,255,0.12)"
-            : "rgba(0,0,0,0.1)",
-          bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.9)",
+          borderColor: "var(--dz-line-2)",
+          bgcolor: "var(--dz-panel)",
           whiteSpace: "nowrap",
           "&:hover": {
-            bgcolor: isDark
-              ? "rgba(255,255,255,0.08)"
-              : "rgba(0,0,0,0.03)",
+            bgcolor: "var(--dz-hover)",
           },
         }}
       >
@@ -694,23 +685,19 @@ export function FunnelRangeOrDatePicker({ startDate, endDate, onApply, compact =
         sx={{
           px: compact ? 1.25 : 2,
           minWidth: compact ? "fit-content" : 200,
-          height: compact ? 36 : 48,
+          height: 32,
           color: "text.primary",
           textTransform: "none",
           fontWeight: 500,
-          fontSize: compact ? "0.75rem" : "0.875rem",
+          fontSize: "0.8125rem",
           justifyContent: "space-between",
-          borderRadius: compact ? "10px" : "14px",
+          borderRadius: "8px",
           border: "1px solid",
-          borderColor: isDark
-            ? "rgba(255,255,255,0.12)"
-            : "rgba(0,0,0,0.1)",
-          bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.9)",
+          borderColor: "var(--dz-line-2)",
+          bgcolor: "var(--dz-panel)",
           whiteSpace: "nowrap",
           "&:hover": {
-            bgcolor: isDark
-              ? "rgba(255,255,255,0.08)"
-              : "rgba(0,0,0,0.03)",
+            bgcolor: "var(--dz-hover)",
           },
         }}
       >
@@ -1515,91 +1502,67 @@ export default function DailyFunnelPanel({
 
   return (
     <Stack spacing={{ xs: 2, md: 3 }}>
-      <Card variant="outlined">
-        <CardContent>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            spacing={2}
-            alignItems={{ xs: "stretch", md: "center" }}
-            justifyContent="space-between"
+      <PageHeader
+        title="Conversion Funnel"
+        description="Daily funnel and payment split for the selected brand"
+        meta={[
+          startDate && endDate
+            ? `${dayjs(startDate).format("MMM D")} – ${dayjs(endDate).format("MMM D, YYYY")}`
+            : null,
+        ]}
+        actions={
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={handleExportCsv}
+            disabled={!hasRows}
           >
-            <Stack spacing={0.5}>
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                Conversion Funnel
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Daily funnel and payment split rows for the selected brand.
-              </Typography>
-            </Stack>
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={1.5}
-              alignItems={{ xs: "stretch", sm: "center" }}
-            >
-              <FunnelDateRangePicker
-                startDate={startDate}
-                endDate={endDate}
-                onApply={(nextStart, nextEnd) => {
-                  setStartDate(nextStart.format("YYYY-MM-DD"));
-                  setEndDate(nextEnd.format("YYYY-MM-DD"));
-                }}
-              />
-              <ToggleButtonGroup
-                size="small"
-                exclusive
-                value={displayMode}
-                onChange={handleModeChange}
-                aria-label="Count or percentage"
-              >
-                <ToggleButton value="count">Count</ToggleButton>
-                <ToggleButton value="percent">%</ToggleButton>
-              </ToggleButtonGroup>
-              {canAccessPercentBasisToggle ? (
-                <ToggleButtonGroup
-                  size="small"
-                  exclusive
-                  value={dailyPercentBasis}
-                  onChange={handleDailyPercentBasisChange}
-                  aria-label="Percentage basis"
-                  sx={{
-                    opacity: displayMode === "percent" ? 1 : 0.5,
-                    transition: "opacity 0.2s ease",
-                    "& .MuiToggleButton-root.Mui-disabled": {
-                      color: "text.secondary",
-                      borderColor: "divider",
-                      backgroundColor: "action.disabledBackground",
-                    },
-                    "& .MuiToggleButton-root.Mui-disabled.Mui-selected": {
-                      color: "text.disabled",
-                      backgroundColor: "action.selected",
-                    },
-                  }}
-                >
-                  <ToggleButton value="step" disabled={displayMode !== "percent"}>
-                    Prev Step
-                  </ToggleButton>
-                  <ToggleButton value="sessions" disabled={displayMode !== "percent"}>
-                    Sessions
-                  </ToggleButton>
-                </ToggleButtonGroup>
-              ) : null}
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<DownloadIcon />}
-                onClick={handleExportCsv}
-                disabled={!hasRows}
-                sx={{ minWidth: "fit-content" }}
-              >
-                Export CSV
-              </Button>
-            </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
+            Export CSV
+          </Button>
+        }
+      />
+      <FilterBar ariaLabel="Conversion funnel filters">
+        <FunnelDateRangePicker
+          startDate={startDate}
+          endDate={endDate}
+          onApply={(nextStart, nextEnd) => {
+            setStartDate(nextStart.format("YYYY-MM-DD"));
+            setEndDate(nextEnd.format("YYYY-MM-DD"));
+          }}
+        />
+        <FilterBarSeparator />
+        <Segmented
+          ariaLabel="Count or percentage"
+          value={displayMode}
+          onChange={(next) => handleModeChange(null, next)}
+          options={[
+            { value: "count", label: "Count" },
+            { value: "percent", label: "%" },
+          ]}
+        />
+        {canAccessPercentBasisToggle ? (
+          <Segmented
+            ariaLabel="Percentage basis"
+            value={dailyPercentBasis}
+            onChange={(next) => handleDailyPercentBasisChange(null, next)}
+            disabled={displayMode !== "percent"}
+            options={[
+              { value: "step", label: "Prev step" },
+              { value: "sessions", label: "Sessions" },
+            ]}
+          />
+        ) : null}
+      </FilterBar>
 
       <Card variant="outlined">
         <CardContent sx={{ p: 0 }}>
+          <div className="dz-ph">
+            <div style={{ minWidth: 0 }}>
+              <h2 className="dz-pt">Daily funnel</h2>
+              <p className="dz-ps">Conversion rate by day</p>
+            </div>
+          </div>
           {error ? (
             <Box sx={{ p: 2 }}>
               <Alert severity="error">{error}</Alert>
@@ -1775,7 +1738,7 @@ export default function DailyFunnelPanel({
           >
             <Stack spacing={0.5}>
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                UTM Source Funnel
+                UTM source funnel
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 UTM source breakdown for the selected brand, for a day or up to 7 days.

@@ -5,7 +5,6 @@ import {
   Box,
   Button,
   Card,
-  CardContent,
   Checkbox,
   CircularProgress,
   Divider,
@@ -15,14 +14,7 @@ import {
   ListItemText,
   Popover as MuiPopover,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
   TablePagination,
-  TableRow,
-  TableSortLabel,
   TextField,
   Typography,
 } from "@mui/material";
@@ -37,6 +29,7 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import { getBundleOptions, getBundleProducts, getBundleSummary, exportBundleSummaryCsv, exportBundleProductsCsv } from "../lib/api.js";
+import { PageHeader, Panel, FilterBar, DataTable as DzDataTable } from "./datum/index.js";
 import { formatInrAmount, useInrCurrency } from "../lib/currency.js";
 
 const DATE_PRESETS = [
@@ -209,13 +202,13 @@ function DateRangePicker({ startDate, endDate, onApply }) {
         tabIndex={0}
         sx={{
           px: 1.25,
-          height: 40,
-          minWidth: { xs: "100%", sm: 200 },
+          height: 32,
+          minWidth: { xs: "100%", sm: "fit-content" },
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           cursor: "pointer",
-          borderRadius: 999,
+          borderRadius: "8px",
           userSelect: "none",
           textAlign: "center",
           border: "1px solid",
@@ -226,7 +219,8 @@ function DateRangePicker({ startDate, endDate, onApply }) {
           "&:hover": { filter: "brightness(0.97)" },
         }}
       >
-        <Typography variant="body2" noWrap sx={{ color: "inherit" }}>
+        <Typography variant="body2" noWrap sx={{ color: "inherit", fontWeight: 500, px: 0.5 }}>
+          <Box component="span" sx={{ color: "text.secondary", fontWeight: 450, mr: 0.75 }}>Date</Box>
           {label}
         </Typography>
       </Card>
@@ -347,109 +341,66 @@ function DataTable({
     return rows.slice(startIdx, startIdx + rowsPerPage);
   }, [page, rows, rowsPerPage]);
 
+  const tableColumns = columns.map((column) => ({
+    key: column.id,
+    header: column.label,
+    align: column.align === "right" ? "right" : "left",
+    sortable: Boolean(column.sortable),
+    render: (row) => renderCell(row, column),
+  }));
+
   return (
-    <Stack spacing={1}>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Typography
-          variant="h6"
-          sx={{ fontWeight: 700, color: "text.primary" }}
-        >
-          {title}
-        </Typography>
-        {action}
-      </Box>
+    <Panel title={title} actions={action} flush>
+      <div style={{ position: "relative" }}>
+        <DzDataTable
+          ariaLabel={typeof title === "string" ? title : undefined}
+          columns={tableColumns}
+          rows={pagedRows}
+          getRowKey={(row, index) => `${row.id || row.bundle_product_id || row.child_product_sku || index}`}
+          sort={{ key: sortBy, direction: sortDir }}
+          onSort={onSort}
+          emptyLabel={emptyMessage}
+        />
 
-      <Card variant="outlined" sx={{ overflow: "hidden" }}>
-        <CardContent sx={{ p: 0, position: "relative" }}>
-          <TableContainer sx={{ overflow: "auto" }}>
-            <Table size="small" sx={{ minWidth: 560 }}>
-              <TableHead>
-                <TableRow sx={{ bgcolor: "rgba(255,255,255,0.08)" }}>
-                  {columns.map((column) => (
-                    <TableCell
-                      key={column.id}
-                      align={column.align || "left"}
-                      sx={{ fontWeight: 600 }}
-                    >
-                      {column.sortable ? (
-                        <TableSortLabel
-                          active={sortBy === column.id}
-                          direction={sortBy === column.id ? sortDir : "asc"}
-                          onClick={() => onSort(column.id)}
-                        >
-                          {column.label}
-                        </TableSortLabel>
-                      ) : (
-                        column.label
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {pagedRows.length > 0 ? (
-                  pagedRows.map((row, index) => (
-                    <TableRow key={`${row.id || row.bundle_product_id || row.child_product_sku || index}`}>
-                      {columns.map((column) => (
-                        <TableCell key={column.id} align={column.align || "left"}>
-                          {renderCell(row, column)}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} sx={{ py: 5, textAlign: "center" }}>
-                      <Typography variant="body2" color="text.secondary">
-                        {emptyMessage}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          {status === "loading" && (
-            <Box
-              sx={{
-                position: "absolute",
-                inset: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                bgcolor: "rgba(0,0,0,0.08)",
-              }}
-            >
-              <CircularProgress size={24} />
-            </Box>
-          )}
-
-          {error && (
-            <Box sx={{ p: 2 }}>
-              <Alert severity="error">{error}</Alert>
-            </Box>
-          )}
-
-          <Divider />
-          <Box sx={{ display: "flex", justifyContent: "center" }}>
-            <TablePagination
-              component="div"
-              count={rows.length}
-              page={page}
-              onPageChange={onPageChange}
-              rowsPerPage={rowsPerPage}
-              onRowsPerPageChange={onRowsPerPageChange}
-              rowsPerPageOptions={[5, 10, 25]}
-              ActionsComponent={(props) => (
-                <PaginationActions {...props} disabled={status === "loading"} />
-              )}
-              SelectProps={{ disabled: status === "loading" }}
-            />
+        {status === "loading" && (
+          <Box
+            sx={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: "rgba(0,0,0,0.08)",
+            }}
+          >
+            <CircularProgress size={24} />
           </Box>
-        </CardContent>
-      </Card>
-    </Stack>
+        )}
+
+        {error && (
+          <Box sx={{ p: 2 }}>
+            <Alert severity="error">{error}</Alert>
+          </Box>
+        )}
+      </div>
+
+      <Divider />
+      <Box sx={{ display: "flex", justifyContent: "flex-end", px: 1 }}>
+        <TablePagination
+          component="div"
+          count={rows.length}
+          page={page}
+          onPageChange={onPageChange}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={onRowsPerPageChange}
+          rowsPerPageOptions={[5, 10, 25]}
+          ActionsComponent={(props) => (
+            <PaginationActions {...props} disabled={status === "loading"} />
+          )}
+          SelectProps={{ disabled: status === "loading" }}
+        />
+      </Box>
+    </Panel>
   );
 }
 
@@ -472,8 +423,6 @@ export default function BundlesPanel({
   initialStartDate,
   initialEndDate,
 }) {
-  const theme = useTheme();
-  const isDark = theme.palette.mode === "dark";
   const today = dayjs().startOf("day");
   const [startDate, setStartDate] = useState(dayjs(initialStartDate || today).startOf("day"));
   const [endDate, setEndDate] = useState(dayjs(initialEndDate || initialStartDate || today).startOf("day"));
@@ -818,41 +767,23 @@ export default function BundlesPanel({
 
   return (
     <Stack spacing={2}>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: { xs: "stretch", md: "center" },
-          justifyContent: "space-between",
-          flexDirection: { xs: "column", md: "row" },
-          gap: 1.5,
-        }}
-      >
-
-        <Box
-          sx={{
-            display: "flex",
-            gap: 1,
-            flexDirection: { xs: "column", sm: "row" },
-            width: { xs: "100%", md: "auto" },
-            alignItems: { xs: "stretch", sm: "flex-end" },
-          }}
-        >
-          <Box sx={{ minWidth: { xs: "100%", sm: 300 } }}>
-            <Typography
-              variant="caption"
-              sx={{ px: 1.5, pb: 0.5, display: "block", color: "text.secondary" }}
-            >
-              Bundle
-            </Typography>
+      <PageHeader
+        title="Bundles"
+        description="Orders and sales allocated to bundle products"
+        meta={[bundleFilterLabel]}
+      />
+      <FilterBar ariaLabel="Bundles filters">
+        <Box sx={{ display: "contents" }}>
+          <Box sx={{ minWidth: { xs: "100%", sm: 240 } }}>
             <Button
               variant="outlined"
               onClick={(event) => setBundleAnchorEl(event.currentTarget)}
               disabled={optionsStatus === "loading" || bundleOptions.length === 0}
               sx={{
                 width: "100%",
-                minHeight: 40,
-                px: 2,
-                borderRadius: 999,
+                minHeight: 32,
+                px: 1.5,
+                borderRadius: "8px",
                 textTransform: "none",
                 justifyContent: "space-between",
                 color: "text.primary",
@@ -861,6 +792,7 @@ export default function BundlesPanel({
               }}
             >
               <Typography variant="body2" noWrap sx={{ fontWeight: 600, color: "inherit" }}>
+                <Box component="span" sx={{ color: "text.secondary", fontWeight: 450, mr: 0.75 }}>Bundle</Box>
                 {bundleFilterLabel}
               </Typography>
               <Typography variant="body2" sx={{ color: "text.secondary", ml: 1 }}>
@@ -882,17 +814,10 @@ export default function BundlesPanel({
                   width: 320,
                   borderRadius: 3,
                   overflow: "hidden",
-                  backdropFilter: "blur(12px)",
-                  backgroundColor: isDark
-                    ? "rgba(30, 30, 30, 0.78)"
-                    : "rgba(255, 255, 255, 0.9)",
+                  backgroundColor: "background.paper",
                   border: "1px solid",
-                  borderColor: isDark
-                    ? "rgba(255, 255, 255, 0.1)"
-                    : "rgba(0, 0, 0, 0.05)",
-                  boxShadow: isDark
-                    ? "0 8px 32px rgba(0, 0, 0, 0.5)"
-                    : "0 8px 32px rgba(0, 0, 0, 0.1)",
+                  borderColor: "divider",
+                  boxShadow: "0 6px 20px rgba(0,0,0,.12)",
                 },
               }}
             >
@@ -974,13 +899,7 @@ export default function BundlesPanel({
             </MuiPopover>
           </Box>
 
-          <Box sx={{ minWidth: { xs: "100%", sm: 200 } }}>
-            <Typography
-              variant="caption"
-              sx={{ px: 1.5, pb: 0.5, display: "block", color: "transparent" }}
-            >
-              Date
-            </Typography>
+          <Box sx={{ minWidth: { xs: "100%", sm: "auto" } }}>
             <DateRangePicker
               startDate={startDate}
               endDate={endDate}
@@ -994,7 +913,7 @@ export default function BundlesPanel({
             />
           </Box>
         </Box>
-      </Box>
+      </FilterBar>
 
       {optionsError && <Alert severity="error">{optionsError}</Alert>}
 

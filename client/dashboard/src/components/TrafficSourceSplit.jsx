@@ -1,3 +1,4 @@
+import { Segmented } from './datum/index.js';
 import { useEffect, useState, useMemo, useRef, memo } from 'react';
 import { Card, CardContent, Typography, Skeleton, Stack, useTheme, Select, MenuItem, FormControl, Box, Grid, Alert } from '@mui/material';
 import { TrendingUp, TrendingDown } from '@mui/icons-material';
@@ -15,10 +16,10 @@ ChartJS.register(ArcElement, ChartTooltip);
 const nfPct1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 const nfCompact = new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 });
 const TRAFFIC_COLORS = {
-    meta: '#2979FF',
-    google: '#FF1744',
-    direct: '#00E676',
-    others: '#D500F9',
+    meta: '#2a78d6',
+    google: '#eb6834',
+    direct: '#1baf7a',
+    others: '#eda100',
 };
 
 function useCountUp(end, duration = 800) {
@@ -358,129 +359,89 @@ export default memo(function TrafficSourceSplit({ query, compareMode = false, ma
         );
     };
 
+    const sourceRows = [
+        { key: 'meta', label: 'Meta', val: metaVal, obj: data?.meta, color: TRAFFIC_COLORS.meta },
+        { key: 'google', label: 'Google', val: googleVal, obj: data?.google, color: TRAFFIC_COLORS.google },
+        { key: 'direct', label: 'Direct', val: directVal, obj: data?.direct, color: TRAFFIC_COLORS.direct },
+        { key: 'others', label: 'Others', val: othersVal, obj: data?.others, color: TRAFFIC_COLORS.others },
+    ];
+    const compareLabel = comparisonRange && query?.start && query?.end && !isToday
+        ? (() => {
+            const fmt = (s0, e0) => {
+                const st = dayjs(s0);
+                const en = dayjs(e0);
+                return st.isSame(en, 'day') ? st.format('MMM D') : `${st.format('MMM D')} - ${en.format('MMM D')}`;
+            };
+            return `${fmt(query.start, query.end)} vs ${fmt(comparisonRange.start, comparisonRange.end)}`;
+        })()
+        : null;
+    const metricNoun = metric === 'sessions' ? 'total sessions' : 'total ATC sessions';
+
     return (
-        <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%', overflow: 'visible' }}>
-            <CardContent sx={{ p: 2.5, overflow: 'visible' }}> {/* Reduced main padding */}
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 3 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
-                        <Box sx={{ flex: '1 1 auto', minWidth: '150px' }}>
-                            <Typography variant="h6" fontWeight={700} sx={{ fontSize: '1.1rem', lineHeight: 1.2 }}>Traffic Split</Typography>
-                            <Typography variant="caption" color="text.secondary" fontWeight={500} sx={{ display: 'block', mt: 0.25 }}>By Source Group</Typography>
-                        </Box>
-
-                        <FormControl size="small" sx={{ minWidth: 100 }}>
-                            <Select
-                                value={metric}
-                                onChange={(e) => setMetric(e.target.value)}
-                                sx={{
-                                    height: 32,
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    borderRadius: 1.5,
-                                    bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                                    '.MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                    '&:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                                }}
-                            >
-                                <MenuItem value="sessions" sx={{ fontSize: '0.75rem' }}>Sessions</MenuItem>
-                                <MenuItem value="atc_sessions" sx={{ fontSize: '0.75rem' }}>ATC Sessions</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </Box>
-
-                    {comparisonRange && query?.start && query?.end && !isToday && (
-                        <Box>
-                            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', px: 1, py: 0.4, borderRadius: 1.5, display: 'inline-block', fontSize: '0.7rem' }}>
-                                {(() => {
-                                    const fmt = (s, e) => {
-                                        const start = dayjs(s);
-                                        const end = dayjs(e);
-                                        if (start.isSame(end, 'day')) {
-                                            return start.format('MMM D');
-                                        }
-                                        return `${start.format('MMM D')} - ${end.format('MMM D')}`;
-                                    };
-                                    return `${fmt(query.start, query.end)} vs ${fmt(comparisonRange.start, comparisonRange.end)}`;
-                                })()}
-                            </Typography>
-                        </Box>
-                    )}
-                </Box>
-
-                {compareMode && isToday && (
-                    <Alert severity="info" sx={{ mb: 2, py: 0.25, fontSize: '0.75rem', '& .MuiAlert-message': { py: 0.5 } }}>
-                        Hourly UTM source data is not available — traffic split deltas are hidden in compare mode.
-                    </Alert>
-                )}
-
+        <section className="dz-panel" style={{ height: '100%' }}>
+            <div className="dz-ph">
+                <div style={{ minWidth: 0 }}>
+                    <h2 className="dz-pt">Traffic split</h2>
+                    <p className="dz-ps">{compareLabel || 'By source group'}</p>
+                </div>
+                <Segmented
+                    ariaLabel="Traffic metric"
+                    value={metric}
+                    onChange={setMetric}
+                    options={[
+                        { value: 'sessions', label: 'Sessions' },
+                        { value: 'atc_sessions', label: 'ATC sessions' },
+                    ]}
+                />
+            </div>
+            <div className="dz-pb" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {loading ? (
-                    <Skeleton variant="rounded" width="100%" height={240} />
-                ) : empty ? (
-                    <Box sx={{ py: 6, textAlign: 'center' }}>
-                        <Typography variant="body1" color="text.secondary">No data available.</Typography>
-                    </Box>
+                    <Skeleton variant="rounded" width="100%" height={180} />
+                ) : !validData || empty ? (
+                    <div className="dz-tbl-empty" style={{ margin: 0 }}>No traffic data for this selection.</div>
                 ) : (
-                    <Grid container spacing={2} alignItems="center"> {/* Reduced spacing */}
-                        <Grid item xs={12} md={5}>
-                            <Box sx={{ position: 'relative', height: 180, width: '100%', display: 'flex', justifyContent: 'center', overflow: 'visible' }}> {/* Reduced height */}
-                                <Doughnut data={chartData} options={options} />
-                                <div
-                                    ref={tooltipRef}
-                                    onMouseEnter={() => { tooltipHoverRef.current = true; }}
-                                    onMouseLeave={() => {
-                                        tooltipHoverRef.current = false;
-                                        if (tooltipRef.current) tooltipRef.current.style.opacity = 0;
-                                    }}
-                                    style={{
-                                        opacity: 0,
-                                        position: 'absolute',
-                                        background: isDark ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-                                        color: isDark ? '#fff' : '#000',
-                                        borderRadius: '8px',
-                                        pointerEvents: 'auto',
-                                        transform: 'translate(-50%, 0)',
-                                        transition: 'all .1s ease',
-                                        padding: '12px',
-                                        boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
-                                        fontSize: '12px',
-                                        zIndex: 10,
-                                        border: `1px solid ${theme.palette.divider}`,
-                                        minWidth: '180px',
-                                        backdropFilter: 'blur(4px)',
-                                    }}
-                                />
-                                <Box sx={{
-                                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                                    textAlign: 'center', pointerEvents: 'none',
-                                    transition: 'opacity 0.3s ease'
-                                }}>
-                                    <Typography variant="h6" fontWeight={800} lineHeight={1}>
-                                        <AnimatedTotal val={total} />
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.25, display: 'block' }}>Total</Typography>
-                                </Box>
-                            </Box>
-                        </Grid>
-                        <Grid item xs={12} md={7}>
-                            <Grid container spacing={1.5}> {/* Reduced inner spacing */}
-                                <Grid item xs={6}>
-                                    <DetailItem label="Meta" value={metaVal} color={TRAFFIC_COLORS.meta} delta={getDelta(data.meta)} prevValue={getPrevValue(data.meta)} />
-                                </Grid>
-                                <Grid item xs={6}>
-                                    <DetailItem label="Google" value={googleVal} color={TRAFFIC_COLORS.google} delta={getDelta(data.google)} prevValue={getPrevValue(data.google)} />
-                                </Grid>
-                                <Grid item xs={6}>
-                                    <DetailItem label="Direct" value={directVal} color={TRAFFIC_COLORS.direct} delta={getDelta(data.direct)} prevValue={getPrevValue(data.direct)} />
-                                </Grid>
-                                <Grid item xs={6}>
-                                    <DetailItem label="Others" value={othersVal} color={TRAFFIC_COLORS.others} delta={getDelta(data.others)} prevValue={getPrevValue(data.others)} />
-                                </Grid>
-                            </Grid>
-                        </Grid>
-                    </Grid>
+                    <>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                            <span className="dz-num" style={{ fontSize: 28, fontWeight: 620, letterSpacing: '-0.02em' }}>{nfCompact.format(total)}</span>
+                            <span className="dz-muted" style={{ fontSize: 12.5 }}>{metricNoun}</span>
+                        </div>
+                        <div
+                            className="dz-stackbar"
+                            style={{ height: 10 }}
+                            role="img"
+                            aria-label={sourceRows.map((r) => `${r.label} ${nfPct1.format(total > 0 ? (r.val / total) * 100 : 0)}%`).join(', ')}
+                        >
+                            {sourceRows.map((r) => (
+                                <i key={r.key} style={{ background: r.color, width: `${total > 0 ? (r.val / total) * 100 : 0}%` }} />
+                            ))}
+                        </div>
+                        <div>
+                            {sourceRows.map((r) => {
+                                const delta = getDelta(r.obj);
+                                return (
+                                    <div key={r.key} className="dz-num" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '9px 0', borderBottom: '1px solid var(--dz-line)', fontSize: 13 }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                            <i className="dz-sw" style={{ background: r.color }} />
+                                            {r.label}
+                                        </span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 14 }}>
+                                            {typeof delta === 'number' && delta !== 0 ? (
+                                                <span style={{ fontSize: 12, fontWeight: 600, color: delta > 0 ? 'var(--dz-good)' : 'var(--dz-bad)' }}>
+                                                    {delta > 0 ? '\u2191' : '\u2193'} {Math.abs(Math.round(delta))}%
+                                                </span>
+                                            ) : null}
+                                            <b style={{ fontWeight: 600 }}>{nfCompact.format(r.val)}</b>
+                                            <span className="dz-muted" style={{ width: 46, textAlign: 'right' }}>
+                                                {nfPct1.format(total > 0 ? (r.val / total) * 100 : 0)}%
+                                            </span>
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </>
                 )}
-            </CardContent>
-        </Card>
+            </div>
+        </section>
     );
 });

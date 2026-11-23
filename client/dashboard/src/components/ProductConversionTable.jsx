@@ -1420,6 +1420,44 @@ function DetailedFilterPanel({
   );
 }
 
+// Phone layout for the landing pages: the SAME rows the table shows, as a compact list.
+// Rendered only when the page's existing `isMobile` check is true; desktop keeps the table untouched.
+function MobileLandingList({ rows, format, status }) {
+  if (!rows.length) {
+    return status === "loading" ? (
+      <Box sx={{ minHeight: 160 }} />
+    ) : (
+      <Box sx={{ p: 3, textAlign: "center", color: "text.secondary" }}>No data for the selected range.</Box>
+    );
+  }
+  return (
+    <ul style={{ listStyle: "none", margin: 0, padding: 0 }} aria-label="Landing pages">
+      {rows.map((row, idx) => {
+        const checkoutOver = Number(row.checkout_rate) > 100;
+        return (
+          <li key={`${row.landing_page_path || "path"}-${idx}`} className="dz-mrow">
+            <div className="dz-mrow-l">
+              <div className="dz-mrow-t dz-mono">{row.landing_page_path || "—"}</div>
+              <div className="dz-mrow-s">
+                <span>ATC {format("atc_rate", row)}</span>
+                <span>
+                  Checkout{" "}
+                  {checkoutOver ? <span className="dz-tag is-warn">{format("checkout_rate", row)}</span> : format("checkout_rate", row)}
+                </span>
+                <span>CVR {format("cvr", row)}</span>
+              </div>
+            </div>
+            <div className="dz-mrow-r">
+              <div className="dz-mrow-v">{format("sessions", row)}</div>
+              <div className="dz-muted" style={{ fontSize: 12 }}>{format("orders", row)} orders</div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 const MemoizedTable = memo(
   ({
     columns,
@@ -1546,17 +1584,38 @@ const MemoizedTable = memo(
                       width: "100%",
                     }}
                   >
-                    <span
-                      style={{
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        display: "block",
-                        width: "100%",
-                      }}
-                    >
-                      {display}
-                    </span>
+                    {col.id === "sessions" ? (
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, width: "100%" }}>
+                        <span className="dz-track" aria-hidden="true" style={{ width: 80, height: 5, flex: "none" }}>
+                          <i
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                (Number(raw || 0) /
+                                  Math.max(1, ...rows.map((r) => Number(r.sessions) || 0))) *
+                                  100,
+                              )}%`,
+                            }}
+                          />
+                        </span>
+                        <span style={{ whiteSpace: "nowrap" }}>{display}</span>
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          display: "block",
+                          width: "100%",
+                          ...(col.id === "landing_page_path"
+                            ? { fontFamily: "var(--dz-font-mono)", fontSize: 12 }
+                            : {}),
+                        }}
+                      >
+                        {display}
+                      </span>
+                    )}
                     {prevDisplay && (
                       <Typography
                         variant="caption"
@@ -2669,7 +2728,26 @@ export default function ProductConversionTable({
                 flexDirection: "column",
               }}
             >
-              <TableContainer sx={{ flex: 1, overflow: "auto" }}>
+              {isMobile ? (
+                <div className="dz-ph">
+                  <div style={{ minWidth: 0 }}>
+                    <h2 className="dz-pt">Landing pages</h2>
+                    <p className="dz-ps">{totalCount} pages</p>
+                  </div>
+                </div>
+              ) : null}
+              <TableContainer sx={{ flex: 1, overflow: "auto", ...(isMobile ? { position: "relative" } : {}) }}>
+                {isMobile ? (
+                  <MobileLandingList
+                    rows={rows}
+                    status={status}
+                    format={(id, row) => {
+                      const col = columns.find((c) => c.id === id);
+                      const raw = row[id] ?? "";
+                      return col && col.format ? col.format(raw) : formatNumber(raw);
+                    }}
+                  />
+                ) : (
                 <MemoizedTable
                   columns={visibleColumns}
                   rows={rows}
@@ -2690,6 +2768,7 @@ export default function ProductConversionTable({
                     visibleColumnIds.length < columns.length
                   }
                 />
+                )}
                 {error && (
                   <Box
                     sx={{

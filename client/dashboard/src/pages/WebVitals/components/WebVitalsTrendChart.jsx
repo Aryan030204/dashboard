@@ -1,3 +1,5 @@
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { Segmented } from "../../../components/datum/index.js";
 import { useMemo, useState } from "react";
 import {
   Box,
@@ -73,6 +75,7 @@ export default function WebVitalsTrendChart({
   onSelectPage = () => {},
 }) {
   const theme = useTheme();
+  const isPhone = useMediaQuery(theme.breakpoints.down("md"));
   const [chartMode, setChartMode] = useState("bar");
   const def = METRIC_DEFS[metricId] || METRIC_DEFS.performance;
 
@@ -130,16 +133,28 @@ export default function WebVitalsTrendChart({
               ))}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 90 }}>
-            <Select
+          {isPhone ? (
+            <Segmented
+              ariaLabel="Chart type"
               value={chartMode}
-              onChange={(event) => setChartMode(event.target.value)}
-              inputProps={{ "aria-label": "Chart type" }}
-            >
-              <MenuItem value="line">Line</MenuItem>
-              <MenuItem value="bar">Bar</MenuItem>
-            </Select>
-          </FormControl>
+              onChange={setChartMode}
+              options={[
+                { value: "bar", label: "Bar" },
+                { value: "line", label: "Line" },
+              ]}
+            />
+          ) : (
+            <FormControl size="small" sx={{ minWidth: 90 }}>
+              <Select
+                value={chartMode}
+                onChange={(event) => setChartMode(event.target.value)}
+                inputProps={{ "aria-label": "Chart type" }}
+              >
+                <MenuItem value="line">Line</MenuItem>
+                <MenuItem value="bar">Bar</MenuItem>
+              </Select>
+            </FormControl>
+          )}
           <FunnelRangeOrDatePicker
             compact
             startDate={rangeStart}

@@ -37,75 +37,40 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const DRAWER_WIDTH = 260;
+import { NAV_GROUPS, filterNavGroups } from "@/config/navigation";
 
-const AVATAR_COLORS = [
-  "#F44336",
-  "#E91E63",
-  "#9C27B0",
-  "#673AB7",
-  "#3F51B5",
-  "#2196F3",
-  "#03A9F4",
-  "#00BCD4",
-  "#009688",
-  "#4CAF50",
-  "#8BC34A",
-  "#CDDC39",
-  "#FFEB3B",
-  "#FFC107",
-  "#FF9800",
-  "#FF5722",
-];
+const DRAWER_WIDTH = 260;
 
 const getInitials = (name, email) => {
   const str = name || email || "U";
   return str.charAt(0).toUpperCase();
 };
 
-const getAvatarColor = (initial) => {
-  const code = initial.charCodeAt(0);
-  return AVATAR_COLORS[code % AVATAR_COLORS.length];
+// Display metadata lives in src/config/navigation.js (same 2 groups/items/order as before).
+const ICONS = {
+  LayoutGrid,
+  Activity,
+  HeartPulse,
+  ShieldCheck,
+  SlidersHorizontal,
+  Store,
+  Table2,
+  Bell,
+  Filter,
+  Package,
+  ClipboardList,
+  Gauge,
+  Settings,
+  Target,
+  Wallet,
+  Megaphone,
+  Presentation,
+  Truck,
 };
-
-
-const NAV_ITEMS = [
-  {
-    group: "main",
-    items: [
-      { id: "overall-snapshot", label: "Overall Snapshot", icon: LayoutGrid },
-      { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
-      { id: "product-conversion", label: "Product Funnel", icon: Filter },
-      { id: "daily-funnel", label: "Conversion Funnel", icon: Table2 },
-      { id: "intent-funnel", label: "Intent Funnel", icon: Target },
-      { id: "bundles", label: "Bundles", icon: Table2 },
-      { id: "inventory", label: "Inventory", icon: Package },
-      { id: "web-vitals", label: "Web Vitals", icon: Gauge },
-      { id: "pnl", label: "P&L", icon: Wallet },
-      { id: "ads", label: "Ads", icon: Megaphone },
-      { id: "requests", label: "Requests", icon: ClipboardList },
-      { id: "weekly-reports", label: "Weekly Reports", icon: Presentation },
-      { id: "ndd-sla", label: "NDD / SLA", icon: Truck },
-    ],
-  },
-  {
-    group: "admin",
-    items: [
-      { id: "access", label: "Access Control", icon: ShieldCheck },
-      { id: "session-analytics", label: "Dashboard Sessions", icon: Activity },
-      { id: "health-monitor", label: "Health Monitor", icon: HeartPulse },
-      { id: "alerts", label: "Alerts", icon: Bell },
-      {
-        id: "traffic-split-config",
-        label: "Configurations",
-        icon: SlidersHorizontal,
-      },
-      { id: "tenant-setup", label: "Tenant Setup", icon: Store },
-      { id: "client-settings", label: "Client Side Settings", icon: Settings },
-      //      { id: 'notifications-log', label: 'Notifications/Alerts', icon: Bell },
-    ],
-  },
-];
+const NAV_ITEMS = NAV_GROUPS.map((group) => ({
+  ...group,
+  items: group.items.map((item) => ({ ...item, icon: ICONS[item.icon] })),
+}));
 
 export default function Sidebar({
   open,
@@ -116,47 +81,32 @@ export default function Sidebar({
   user,
   onLogout,
   allowedTabs, // Array of tab IDs. If provided, specific filtering is applied.
+  brandKey = "", // Display only (read-only tenant card). Brand switching is unchanged and lives where it always did.
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const initials = getInitials(user?.name, user?.email);
-  const avatarColor = getAvatarColor(initials);
   const roleLabel = user?.isAuthor
     ? "Admin"
     : user?.role
       ? String(user.role).replace(/^author$/i, "Admin")
       : "Viewer";
 
-  const filteredNavItems = useMemo(() => {
-    let base = NAV_ITEMS;
-    if (allowedTabs) {
-      const set = new Set(allowedTabs);
-      base = NAV_ITEMS.map((group) => ({
-        ...group,
-        items: group.items.filter((item) => set.has(item.id)),
-      })).filter((group) => group.items.length > 0);
-    }
-
-    if (isMobile) {
-      base = base
-        .map((group) => ({
-          ...group,
-          items: group.items.filter((item) => item.id !== "tenant-setup"),
-        }))
-        .filter((group) => group.items.length > 0);
-    }
-
-    return base;
-  }, [allowedTabs, isMobile]);
+  const filteredNavItems = useMemo(
+    () => filterNavGroups(NAV_ITEMS, { allowedTabs, isMobile }),
+    [allowedTabs, isMobile],
+  );
+  const tenantLabel = String(brandKey || "").trim().toUpperCase();
+  const tenantInitials = tenantLabel.replace(/[^A-Z0-9]/g, "").slice(0, 2);
 
   const NavContent = () => (
     <div
       className={cn(
-        "flex flex-col h-full bg-white dark:bg-zinc-950",
-        !isMobile && "border-r border-zinc-200 dark:border-zinc-800",
+        "flex flex-col h-full bg-[var(--dz-side)]",
+        !isMobile && "border-r border-[var(--dz-line)]",
       )}
     >
-      <div className="px-6 py-6 flex items-center justify-between">
+      <div className="px-5 pt-5 pb-3 flex items-center justify-between">
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <img
@@ -171,12 +121,28 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* Read-only tenant card: shows the active brand. It is NOT a switcher. */}
+      {tenantLabel ? (
+        <div
+          className="mx-3 mb-2 flex items-center gap-2.5 rounded-[10px] border border-[var(--dz-line)] bg-[var(--dz-panel)] px-2.5 py-2 shadow-[var(--dz-shadow)]"
+          aria-label={`Active tenant ${tenantLabel}`}
+        >
+          <span className="grid h-[30px] w-[30px] flex-none place-items-center rounded-lg bg-[var(--dz-accent-soft)] text-[12px] font-bold text-[var(--dz-accent)]">
+            {tenantInitials}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13.5px] font-semibold text-[var(--dz-text)]">{tenantLabel}</span>
+            <span className="block text-[11.5px] text-[var(--dz-muted)]">Tenant</span>
+          </span>
+        </div>
+      ) : null}
+
       {/* Navigation Items */}
-      <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
+      <nav aria-label="Main" className="flex-1 px-3 space-y-6 overflow-y-auto pt-2">
         {filteredNavItems.map((section, sIdx) => (
-          <div key={section.group} className="space-y-1">
+          <div key={section.group} className="space-y-0.5">
             {sIdx > 0 && (
-              <div className="my-4 border-t border-zinc-100 dark:border-zinc-800" />
+              <div className="my-4 border-t border-[var(--dz-line)]" />
             )}
             {section.items.map((item) => {
               const Icon = item.icon;
@@ -185,21 +151,23 @@ export default function Sidebar({
               return (
                 <button
                   key={item.id}
+                  type="button"
+                  aria-current={isActive ? "page" : undefined}
                   onClick={() => {
                     onTabChange(item.id);
                     if (isMobile) onClose();
                   }}
                   className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium",
+                    "w-full flex items-center gap-2.5 px-2.5 min-h-[34px] rounded-lg transition-colors text-[13.5px] text-left",
                     isActive
-                      ? "bg-black text-white dark:bg-white dark:text-black shadow-sm"
-                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-900",
+                      ? "bg-[var(--dz-accent-soft)] text-[var(--dz-accent)] font-semibold"
+                      : "font-medium text-[var(--dz-text-2)] hover:text-[var(--dz-text)] hover:bg-[var(--dz-hover)]",
                   )}
                 >
                   <Icon
-                    size={18}
+                    size={16}
                     className={
-                      isActive ? "text-white dark:text-black" : "text-zinc-400"
+                      isActive ? "text-[var(--dz-accent)]" : "text-[var(--dz-muted)]"
                     }
                   />
                   {item.label}
@@ -211,53 +179,41 @@ export default function Sidebar({
       </nav>
 
       {/* User Profile Section */}
-      <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-4">
-        <div className="flex items-center gap-3 px-2">
+      <div className="p-4 border-t border-[var(--dz-line)] space-y-3">
+        <div className="flex items-center gap-3 px-1">
           <Avatar
             src={user?.avatar_url || user?.picture || ""}
             alt={user?.name || user?.email || "User"}
             sx={{
-              width: 40,
-              height: 40,
-              borderRadius: "10px",
-              bgcolor: avatarColor,
-              color: "#fff",
-              fontSize: "1rem",
-              fontWeight: "bold",
+              width: 32,
+              height: 32,
+              bgcolor: "var(--dz-sunk)",
+              color: "var(--dz-text)",
+              border: "1px solid var(--dz-line-2)",
+              fontSize: "0.75rem",
+              fontWeight: 600,
             }}
           >
             {!user?.avatar_url && !user?.picture && initials}
           </Avatar>
           <div className="flex flex-col items-start text-left min-w-0">
-            <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate w-full uppercase">
+            <span className="text-[13px] font-semibold text-[var(--dz-text)] truncate w-full">
               {user?.name || user?.email?.split("@")[0] || "User"}
             </span>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400 capitalize">
+            <span className="text-xs text-[var(--dz-muted)] capitalize">
               {roleLabel}
             </span>
           </div>
         </div>
 
         <button
+          type="button"
           onClick={onLogout}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 transition-colors"
+          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium text-[var(--dz-bad)] hover:bg-[var(--dz-bad-bg)] transition-colors"
         >
           <LogOut size={16} />
           Logout
         </button>
-
-        {/*
-        <div className="flex justify-center pt-1 pb-4">
-          <img
-            src="/brand-logo.jpg"
-            alt="TechIt"
-            className={cn(
-              "h-9 w-auto object-contain opacity-70",
-              darkMode && "invert hue-rotate-180 brightness-1.5"
-            )}
-          />
-        </div>
-*/}
       </div>
     </div>
   );

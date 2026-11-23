@@ -14,7 +14,6 @@ import { AppProvider } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import {
   ThemeProvider,
-  createTheme,
   CssBaseline,
   Box,
   Stack,
@@ -29,6 +28,8 @@ import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import LayoutPanelsIcon from "./components/ui/LayoutPanelsIcon.jsx";
 import SidebarToggle from "./components/ui/SidebarToggle.jsx";
+import { createDatumTheme } from "./design/muiTheme.js";
+import { getPageTitle } from "./config/navigation.js";
 import MaintenanceScreen from "./components/MaintenanceScreen.jsx";
 import DailyInsightBar from "./components/DailyInsightBar.jsx";
 import DailyInsightsEditor from "./components/DailyInsightsEditor.jsx";
@@ -1750,105 +1751,11 @@ export default function App() {
     dashboardRouteActionsRef.current?.downloadSnapshot?.();
   }, []);
 
-  const glassStyles = useMemo(
-    () => ({
-      backdropFilter: "blur(12px)",
-      backgroundColor:
-        darkMode === "dark"
-          ? "rgba(255, 255, 255, 0.08)"
-          : "rgba(255, 255, 255, 0.7)",
-      border: "1px solid",
-      borderColor:
-        darkMode === "dark"
-          ? "rgba(255, 255, 255, 0.15)"
-          : "rgba(0, 0, 0, 0.05)",
-    }),
-    [darkMode],
-  );
-
-  const depthShadows = useMemo(
-    () => ({
-      boxShadow:
-        darkMode === "dark"
-          ? "0 20px 40px rgba(0, 0, 0, 0.6), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.15)"
-          : "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.5)",
-    }),
-    [darkMode],
-  );
-
-  const theme = useMemo(
-    () =>
-      createTheme({
-        palette: {
-          mode: darkMode,
-          ...(darkMode === "light"
-            ? {
-                primary: { main: "#0b6bcb" },
-                background: { default: "#FDFDFD", paper: "#ffffff" },
-              }
-            : {
-                primary: { main: "#5ba3e0" },
-                background: { default: "#000000", paper: "#1a1a1a" },
-                text: {
-                  primary: "#f0f0f0",
-                  secondary: "#c0c0c0",
-                  disabled: "#808080",
-                },
-                divider: "#404040",
-              }),
-        },
-        shape: { borderRadius: 12 },
-        components: {
-          MuiCard: {
-            styleOverrides: {
-              root: {
-                borderRadius: 16,
-                transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                ...glassStyles,
-                ...depthShadows,
-                backgroundImage: "none",
-                "&:hover": {
-                  transform: "translateY(-4px)",
-                  boxShadow:
-                    darkMode === "dark"
-                      ? "0 30px 60px rgba(0, 0, 0, 0.8), inset 1px 1px 0px 0px rgba(255, 255, 255, 0.25)"
-                      : "0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08)",
-                },
-              },
-            },
-          },
-          MuiPaper: {
-            styleOverrides: {
-              root: {
-                backgroundImage: "none",
-                ...(darkMode === "dark"
-                  ? {
-                      backgroundColor: "rgba(65, 65, 65, 0.15)",
-                      backdropFilter: "blur(12px)",
-                      border: "1px solid rgba(255, 255, 255, 0.1)",
-                    }
-                  : {}),
-              },
-            },
-          },
-        },
-      }),
-    [darkMode, depthShadows, glassStyles],
-  );
+  // Visual theme: built from the Datum design tokens (src/design). Presentation only.
+  const theme = useMemo(() => createDatumTheme(darkMode), [darkMode]);
 
   // Light-only theme for sign-in page
-  const lightTheme = useMemo(
-    () =>
-      createTheme({
-        palette: {
-          mode: "light",
-          primary: { main: "#0b6bcb" },
-          background: { default: "#FDFDFD", paper: "#ffffff" },
-        },
-        shape: { borderRadius: 12 },
-      }),
-    [],
-  );
+  const lightTheme = useMemo(() => createDatumTheme("light"), []);
 
   // Persist when range changes
   useEffect(() => {
@@ -2487,6 +2394,7 @@ export default function App() {
               user={user}
               onLogout={handleLogout}
               allowedTabs={accessibleTabs}
+              brandKey={activeBrandKey}
             />
           )}
 
@@ -2538,12 +2446,9 @@ export default function App() {
                 position: { xs: "sticky", md: "static" },
                 top: 0,
                 zIndex: (theme) => theme.zIndex.appBar,
-                bgcolor: darkMode === "dark" ? "#000000" : "#FDFDFD",
+                bgcolor: "background.default",
                 borderBottom: isScrolled ? { xs: 1, md: 0 } : 0,
-                borderColor:
-                  darkMode === "dark"
-                    ? "rgba(255,255,255,0.1)"
-                    : "rgba(0,0,0,0.08)",
+                borderColor: "divider",
                 transition: "all 0.3s ease",
                 pl:
                   showSidebar && !isMobile && !desktopSidebarOpen ? "56px" : 0,
@@ -2559,6 +2464,7 @@ export default function App() {
                 darkMode={darkMode === "dark"}
                 onToggleDarkMode={handleToggleDarkMode}
                 brandKey={activeBrandKey}
+                pageTitle={getPageTitle(authorTab)}
                 showFilterButton={
                   showSidebar ||
                   hasPermission("product_filter") ||
@@ -2582,15 +2488,15 @@ export default function App() {
               {/* Non-Sticky Sub-Header (MobileTopBar etc) */}
               <Box
                 sx={{
-                  bgcolor: darkMode === "dark" ? "#000000" : "#FDFDFD",
+                  bgcolor: "background.default",
                   pb: 0,
                 }}
               >
               <Box
                 sx={{
                   px: { xs: 1.5, sm: 2.5, md: 4 },
-                  pt: 0,
-                  maxWidth: 1200,
+                  pt: { xs: 0, md: 2.5 },
+                  maxWidth: 1320,
                   mx: "auto",
                   width: "100%",
                   display: "flex",
@@ -2691,28 +2597,6 @@ export default function App() {
                         utmOptions={utmOptions}
                         dataRestrictionConfig={dataRestrictionConfig}
                         onDownload={handleDashboardDownloadSnapshot}
-                        children={
-                          canCustomizeDashboardLayout ? (
-                            <Tooltip title="Customize Layout">
-                              <IconButton
-                                size="small"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  handleOpenDashboardLayoutEditor();
-                                }}
-                                sx={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: "10px",
-                                  color: "text.secondary",
-                                }}
-                              >
-                                <LayoutPanelsIcon size={16} />
-                              </IconButton>
-                            </Tooltip>
-                          ) : null
-                        }
                       />
                     </Box>
                   )}
@@ -2876,7 +2760,7 @@ export default function App() {
                 <Box
                   sx={{
                     width: "100%",
-                    maxWidth: 1200,
+                    maxWidth: 1320,
                     mx: "auto",
                     px: { xs: 1.5, sm: 2.5, md: 4 },
                     pt: { xs: 1, md: 1.5 },
@@ -2911,7 +2795,7 @@ export default function App() {
                 <Box
                   sx={{
                     width: "100%",
-                    maxWidth: 1200,
+                    maxWidth: 1320,
                     mx: "auto",
                     px: { xs: 1.5, sm: 2.5, md: 4 },
                     pt: { xs: 1, md: 1.5 },
@@ -2951,7 +2835,7 @@ export default function App() {
                 <Box
                   sx={{
                     width: "100%",
-                    maxWidth: 1200,
+                    maxWidth: 1320,
                     mx: "auto",
                     px: { xs: 1.5, sm: 2.5, md: 4 },
                     pt: { xs: 1, md: 1.5 },
@@ -2990,7 +2874,7 @@ export default function App() {
                 sx={{
                   flex: 1,
                   width: "100%",
-                  maxWidth: 1200,
+                  maxWidth: 1320,
                   mx: "auto",
                   px: { xs: 1.5, sm: 2.5, md: 4 },
                   py: { xs: 1, md: 2 },

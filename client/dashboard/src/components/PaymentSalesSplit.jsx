@@ -65,7 +65,7 @@ export default function PaymentSalesSplit({ query }) {
       {
         data: [convertedCodSales, convertedPrepaidSales, convertedPartialSales],
         // Darken partial slice slightly for better contrast (emerald-300)
-        backgroundColor: ['#f59e0b', '#10b981', '#6ee7b7'],
+        backgroundColor: ['#eb6834', '#2a78d6', '#1baf7a'],
         borderWidth: 0,
       },
     ],

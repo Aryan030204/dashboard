@@ -1,3 +1,4 @@
+import { PageHeader, FilterBar } from "../../components/datum/index.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -620,18 +621,32 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
 
   return (
     <Stack spacing={1.5}>
-      <Stack direction="row" alignItems="center" spacing={0.5}>
-        <Typography variant="h6" sx={{ fontWeight: 700, color: "text.primary" }}>NDD / SLA Report</Typography>
-        {run ? (
-          <Tooltip title="Report details">
-            <IconButton size="small" aria-label="Report details" onClick={(e) => setInfoAnchor(e.currentTarget)}>
-              <InfoOutlinedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        ) : null}
-      </Stack>
+      <PageHeader
+        title="NDD / SLA report"
+        description="Next-day-delivery orders checked against pickup SLA"
+        meta={[
+          run ? (
+            <Tooltip title="Report details">
+              <IconButton size="small" aria-label="Report details" onClick={(e) => setInfoAnchor(e.currentTarget)}>
+                <InfoOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : null,
+        ]}
+        actions={
+          <>
+            <Tooltip title="Refresh">
+              <IconButton size="small" aria-label="Refresh" onClick={() => setTick((t) => t + 1)}><RefreshIcon fontSize="small" /></IconButton>
+            </Tooltip>
+            {canUpload ? (
+              <Button size="small" variant="contained" disableElevation startIcon={<UploadFileIcon />} onClick={() => setUploadOpen(true)}>Upload</Button>
+            ) : null}
+            <IconButton size="small" aria-label="More actions" aria-haspopup="menu" onClick={(e) => setMenuAnchor(e.currentTarget)}><MoreVertIcon fontSize="small" /></IconButton>
+          </>
+        }
+      />
 
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+      <FilterBar ariaLabel="Report filters">
         <FunnelSingleDatePicker date={date} compact onApply={pickDate} />
         {options.length > 1 ? (
           <FormControl size="small" sx={{ minWidth: 220, maxWidth: "100%" }}>
@@ -642,15 +657,7 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
         ) : options.length === 1 ? (
           <Chip size="small" variant="outlined" label={runOptionLabel(options[0])} sx={{ maxWidth: "100%" }} />
         ) : null}
-        <Box sx={{ flex: 1 }} />
-        <Tooltip title="Refresh">
-          <IconButton size="small" aria-label="Refresh" onClick={() => setTick((t) => t + 1)}><RefreshIcon fontSize="small" /></IconButton>
-        </Tooltip>
-        {canUpload ? (
-          <Button size="small" variant="contained" disableElevation startIcon={<UploadFileIcon />} onClick={() => setUploadOpen(true)}>Upload</Button>
-        ) : null}
-        <IconButton size="small" aria-label="More actions" aria-haspopup="menu" onClick={(e) => setMenuAnchor(e.currentTarget)}><MoreVertIcon fontSize="small" /></IconButton>
-      </Stack>
+      </FilterBar>
 
       <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
         <MenuItem disabled={!canExport} onClick={() => handleExport("orders")}>

@@ -1,0 +1,84 @@
+/*
+ * Datum design tokens (light + dark).
+ * Source of truth for the visual system; mirrored in src/design/tokens.js
+ * (parity enforced by src/design/tokens.parity.node.test.js).
+ * Prefixed "--dz-" so they never collide with the shadcn/Tailwind variables in index.css.
+ * Dark mode is driven by the existing `dark` class on <html> (and body[data-theme="dark"]).
+ */
+:root {
+  --dz-bg: #F5F6F5;
+  --dz-side: #FBFCFB;
+  --dz-panel: #FFFFFF;
+  --dz-sunk: #F1F3F2;
+  --dz-hover: #F4F6F5;
+  --dz-line: #E3E7E5;
+  --dz-line-2: #D1D8D4;
+  --dz-text: #0E1712;
+  --dz-text-2: #3A4741;
+  --dz-muted: #5D6B64;
+  --dz-accent: #0F7A50;
+  --dz-accent-hi: #0B6341;
+  --dz-accent-soft: #E6F2EC;
+  --dz-accent-ink: #FFFFFF;
+  --dz-accent-line: #9FCDB7;
+  --dz-good: #127A4A;
+  --dz-bad: #C0392B;
+  --dz-warn: #8F5E00;
+  --dz-info: #1F5FC4;
+  --dz-good-bg: #E5F3EB;
+  --dz-bad-bg: #FBEAE7;
+  --dz-warn-bg: #FBF1DD;
+  --dz-info-bg: #E8EFFB;
+  --dz-c1: #2a78d6;
+  --dz-c2: #eb6834;
+  --dz-c3: #1baf7a;
+  --dz-c4: #eda100;
+  --dz-c5: #e87ba4;
+  --dz-c6: #008300;
+  --dz-prev: #B5BFBA;
+  --dz-grid: #EDF0EE;
+  --dz-scrim: rgba(14, 23, 18, 0.42);
+  --dz-shadow: 0 1px 2px rgba(14, 23, 18, 0.05);
+  --dz-font: "Geist", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --dz-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --dz-r-panel: 12px;
+  --dz-r-control: 8px;
+  --dz-r-tag: 6px;
+}
+
+:root.dark,
+body[data-theme="dark"] {
+  --dz-bg: #0A0D0B;
+  --dz-side: #0D110F;
+  --dz-panel: #111614;
+  --dz-sunk: #0C100E;
+  --dz-hover: #161D19;
+  --dz-line: #1E2823;
+  --dz-line-2: #2B3731;
+  --dz-text: #E8EEEA;
+  --dz-text-2: #B5C1BA;
+  --dz-muted: #8E9C95;
+  --dz-accent: #3FB68B;
+  --dz-accent-hi: #5CC9A0;
+  --dz-accent-soft: rgba(63, 182, 139, 0.13);
+  --dz-accent-ink: #04130C;
+  --dz-accent-line: rgba(63, 182, 139, 0.45);
+  --dz-good: #4CC38A;
+  --dz-bad: #F07A6E;
+  --dz-warn: #E5B04B;
+  --dz-info: #6EA8FE;
+  --dz-good-bg: rgba(76, 195, 138, 0.13);
+  --dz-bad-bg: rgba(240, 122, 110, 0.13);
+  --dz-warn-bg: rgba(229, 176, 75, 0.13);
+  --dz-info-bg: rgba(110, 168, 254, 0.13);
+  --dz-c1: #3987e5;
+  --dz-c2: #d95926;
+  --dz-c3: #199e70;
+  --dz-c4: #c98500;
+  --dz-c5: #d55181;
+  --dz-c6: #0ca30c;
+  --dz-prev: #4F5E56;
+  --dz-grid: #19221E;
+  --dz-scrim: rgba(0, 0, 0, 0.6);
+  --dz-shadow: none;
+}

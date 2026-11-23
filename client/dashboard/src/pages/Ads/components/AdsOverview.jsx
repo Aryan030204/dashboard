@@ -1,3 +1,4 @@
+import { Panel, DataTable, Tag } from "../../../components/datum/index.js";
 import { Box, Card, Skeleton, Stack, Typography, useTheme } from "@mui/material";
 import {
   Bar,
@@ -20,8 +21,8 @@ import {
   isMissing,
 } from "../adsFormat.js";
 
-const GOOD_COLOR = "#10b981";
-const BAD_COLOR = "#ef4444";
+const GOOD_COLOR = "var(--dz-good)";
+const BAD_COLOR = "var(--dz-bad)";
 
 function Delta({ value, higherIsBetter = true }) {
   const label = formatSignedPct(value);
@@ -42,14 +43,14 @@ function Delta({ value, higherIsBetter = true }) {
 
 function Kpi({ label, value, hint, delta, higherIsBetter, loading }) {
   return (
-    <Card variant="outlined" sx={{ p: 2, display: "flex", flexDirection: "column", gap: 0.5 }}>
+    <Card variant="outlined" sx={{ p: 2, display: "flex", flexDirection: "column", gap: 0.5, border: 0, borderRadius: 0, boxShadow: "none" }}>
       <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
         {label}
       </Typography>
       {loading ? (
         <Skeleton variant="text" width={100} height={40} />
       ) : (
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>
+        <Typography variant="h5" sx={{ fontSize: 24, fontWeight: 620, letterSpacing: "-0.025em" }}>
           {value}
         </Typography>
       )}
@@ -63,51 +64,67 @@ function Kpi({ label, value, hint, delta, higherIsBetter, loading }) {
   );
 }
 
-function ChannelCard({ channel, label, data, color, formatAmount }) {
+// "By platform" table: same figures and formatters the channel cards used, shown as Metric | Meta | Google.
+// Rows a platform does not report are shown as MISSING, as in the design.
+function platformRows(meta, google, formatAmount) {
+  const amount = (data, key) => (data && !isMissing(data[key]) ? formatAmount(data[key]) : MISSING);
+  return [
+    ["Spend", meta ? formatAmount(meta.spend) : MISSING, google ? formatAmount(google.spend) : MISSING],
+    ["ROAS (platform)", formatRoas(meta?.roas), formatRoas(google?.roas)],
+    ["ROAS (Shopify)", formatRoas(meta?.shopifyRoas), formatRoas(google?.shopifyRoas)],
+    ["Clicks", formatCount(meta?.clicks), formatCount(google?.clicks)],
+    ["CTR", formatPct(meta?.ctr, 2), formatPct(google?.ctr, 2)],
+    ["CPC", amount(meta, "cpc"), amount(google, "cpc")],
+    ["Link clicks", formatCount(meta?.linkClicks), MISSING],
+    ["Landing page views", formatCount(meta?.landingPageViews), MISSING],
+    ["LC → LPV", formatPct(meta?.lpvRate), MISSING],
+    ["Conversions", MISSING, formatCount(google?.platformPurchases)],
+    ["Conv. value", MISSING, google ? formatAmount(google.platformPurchaseValue) : MISSING],
+    ["CPA", MISSING, amount(google, "cpa")],
+  ];
+}
+
+function PlatformTable({ meta, google, colors, formatAmount }) {
+  const rows = platformRows(meta, google, formatAmount);
+  const status = (data) => (
+    <Tag tone={data?.hasData ? "good" : "warn"} dot={Boolean(data?.hasData)}>
+      {data?.hasData ? "Synced" : "Nothing synced"}
+    </Tag>
+  );
+  const columns = [
+    { key: "metric", header: "Metric", render: (r) => r.metric },
+    {
+      key: "meta",
+      header: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <i className="dz-sw" style={{ background: colors.meta }} />
+          Meta
+        </span>
+      ),
+      align: "right",
+      render: (r) => r.meta,
+    },
+    {
+      key: "google",
+      header: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <i className="dz-sw" style={{ background: colors.google }} />
+          Google
+        </span>
+      ),
+      align: "right",
+      render: (r) => r.google,
+    },
+  ];
+  const data = [
+    { metric: "Status", meta: status(meta), google: status(google) },
+    ...rows.map(([metric, m, g]) => ({ metric, meta: m, google: g })),
+  ];
   return (
-    <Card variant="outlined" sx={{ p: 2, flex: 1, minWidth: 260 }}>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
-        <Box sx={{ width: 10, height: 10, borderRadius: "2px", bgcolor: color }} />
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-          {label}
-        </Typography>
-        {!data?.hasData ? (
-          <Typography variant="caption" color="text.secondary">
-            · nothing synced in this range
-          </Typography>
-        ) : null}
-      </Stack>
-      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", rowGap: 1.5, columnGap: 2 }}>
-        {[
-          ["Spend", data ? formatAmount(data.spend) : MISSING],
-          ["ROAS (platform)", formatRoas(data?.roas)],
-          ["ROAS (Shopify)", formatRoas(data?.shopifyRoas)],
-          ["Clicks", formatCount(data?.clicks)],
-          ["CTR", formatPct(data?.ctr, 2)],
-          ["CPC", isMissing(data?.cpc) ? MISSING : formatAmount(data.cpc)],
-          ...(channel === "meta"
-            ? [
-                ["Link clicks", formatCount(data?.linkClicks)],
-                ["Landing page views", formatCount(data?.landingPageViews)],
-                ["LC → LPV", formatPct(data?.lpvRate)],
-              ]
-            : [
-                ["Conversions", formatCount(data?.platformPurchases)],
-                ["Conv. value", data ? formatAmount(data.platformPurchaseValue) : MISSING],
-                ["CPA", isMissing(data?.cpa) ? MISSING : formatAmount(data.cpa)],
-              ]),
-        ].map(([name, value]) => (
-          <Box key={name}>
-            <Typography variant="caption" color="text.secondary">
-              {name}
-            </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {value}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-    </Card>
+    <>
+      <DataTable ariaLabel="By platform" columns={columns} rows={data} getRowKey={(r) => r.metric} dense />
+      <div className="dz-pf" style={{ justifyContent: "flex-start" }}>{MISSING} = no value for this platform in this range</div>
+    </>
   );
 }
 
@@ -151,7 +168,12 @@ export default function AdsOverview({ overview, loading, formatAmount }) {
         sx={{
           display: "grid",
           gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)", md: "repeat(6, 1fr)" },
-          gap: 1.5,
+          gap: "1px",
+          bgcolor: "divider",
+          border: "1px solid",
+          borderColor: "divider",
+          borderRadius: "12px",
+          overflow: "hidden",
         }}
       >
         <Kpi label="Ad spend" value={total ? formatAmount(total.spend) : MISSING} delta={total?.change?.spend} higherIsBetter={false} loading={loading} />
@@ -162,19 +184,9 @@ export default function AdsOverview({ overview, loading, formatAmount }) {
         <Kpi label="CPC" value={isMissing(total?.cpc) ? MISSING : formatAmount(total.cpc)} hint={total ? `CTR ${formatPct(total.ctr, 2)}` : null} loading={loading} />
       </Box>
 
-      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-        <ChannelCard channel="meta" label="Meta" data={overview?.channels?.meta} color={colors.meta} formatAmount={formatAmount} />
-        <ChannelCard channel="google" label="Google" data={overview?.channels?.google} color={colors.google} formatAmount={formatAmount} />
-      </Stack>
-
-      <Card variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-          Daily ad spend
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Hover a day for its blended ROAS.
-        </Typography>
-        <Box sx={{ height: 260, mt: 1 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 2fr) minmax(0, 1fr)" }, gap: 2.5 }}>
+        <Panel title="Daily ad spend" subtitle="Hover a day for its blended ROAS" flush>
+        <Box sx={{ height: 300, p: 2 }}>
           {trend.length === 0 ? (
             <Stack alignItems="center" justifyContent="center" sx={{ height: "100%" }}>
               <Typography variant="body2" color="text.secondary">
@@ -208,7 +220,11 @@ export default function AdsOverview({ overview, loading, formatAmount }) {
             </ResponsiveContainer>
           )}
         </Box>
-      </Card>
+        </Panel>
+        <Panel title="By platform" subtitle="Meta and Google for the selected range" flush>
+          <PlatformTable meta={overview?.channels?.meta} google={overview?.channels?.google} colors={colors} formatAmount={formatAmount} />
+        </Panel>
+      </Box>
     </Stack>
   );
 }
