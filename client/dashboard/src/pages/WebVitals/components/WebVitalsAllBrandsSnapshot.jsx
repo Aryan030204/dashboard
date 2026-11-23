@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Box, Card, IconButton, Skeleton, Stack, Typography } from "@mui/material";
+import { Box, Card, IconButton, Skeleton, Stack, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
@@ -102,6 +102,8 @@ export default function WebVitalsAllBrandsSnapshot({
   onSelectBrand,
 }) {
   const [pageIndex, setPageIndex] = useState(0);
+  const muiTheme = useTheme();
+  const isPhone = useMediaQuery(muiTheme.breakpoints.down("md"));
 
   const pages = useMemo(() => {
     const chunks = [];
@@ -116,6 +118,104 @@ export default function WebVitalsAllBrandsSnapshot({
   }, [pageIndex, pages.length]);
 
   const currentPage = pages[pageIndex] || [];
+
+  if (isPhone) {
+    return (
+      <section className="dz-panel">
+        <div className="dz-ph">
+          <div style={{ minWidth: 0 }}>
+            <h2 className="dz-pt">All brands</h2>
+            <p className="dz-ps">Performance score today</p>
+          </div>
+          {pages.length > 1 ? (
+            <Stack direction="row" spacing={0.25} alignItems="center">
+              <IconButton
+                size="small"
+                aria-label="Previous brands"
+                onClick={() => setPageIndex((current) => current - 1)}
+                disabled={pageIndex === 0}
+                sx={{ color: "text.secondary", border: "1px solid", borderColor: "divider" }}
+              >
+                <ChevronLeftRoundedIcon fontSize="small" />
+              </IconButton>
+              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32, textAlign: "center" }}>
+                {pageIndex + 1}/{pages.length}
+              </Typography>
+              <IconButton
+                size="small"
+                aria-label="Next brands"
+                onClick={() => setPageIndex((current) => current + 1)}
+                disabled={pageIndex === pages.length - 1}
+                sx={{ color: "text.secondary", border: "1px solid", borderColor: "divider" }}
+              >
+                <ChevronRightRoundedIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+          ) : null}
+        </div>
+        {loading ? (
+          <Box sx={{ p: 2 }}>
+            <Skeleton variant="text" width="60%" />
+            <Skeleton variant="text" width="80%" />
+            <Skeleton variant="text" width="70%" />
+          </Box>
+        ) : brands.length === 0 ? (
+          <div className="dz-tbl-empty">No web vitals data for this date across any brand.</div>
+        ) : (
+          currentPage.map((brand) => {
+            const value = brand.metrics?.performance?.value ?? null;
+            const statusMeta = getStatusMeta(brand.metrics?.performance?.status, "performance");
+            const selected = typeof onSelectBrand === "function" && brand.brand_key === selectedBrandKey;
+            const clickable = typeof onSelectBrand === "function";
+            const pct = Math.max(0, Math.min(100, Number(value) || 0));
+            return (
+              <div
+                key={brand.brand_key}
+                className="dz-mrow"
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                aria-pressed={clickable ? selected : undefined}
+                onClick={clickable ? () => onSelectBrand(brand.brand_key) : undefined}
+                onKeyDown={
+                  clickable
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectBrand(brand.brand_key);
+                        }
+                      }
+                    : undefined
+                }
+                style={{ cursor: clickable ? "pointer" : "default", background: selected ? "var(--dz-accent-soft)" : undefined, alignItems: "center" }}
+              >
+                <div className="dz-mrow-l">
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                    <b style={{ fontWeight: 600, fontSize: 13 }}>{brand.brand_name || brand.brand_key}</b>
+                    {statusMeta ? (
+                      <span
+                        className="dz-tag has-dot"
+                        style={{ color: statusMeta.color, background: `color-mix(in srgb, ${statusMeta.color} 14%, transparent)` }}
+                      >
+                        {statusMeta.label}
+                      </span>
+                    ) : (
+                      <span className="dz-muted" style={{ fontSize: 12 }}>No data</span>
+                    )}
+                  </div>
+                  <span className="dz-track" aria-hidden="true" style={{ height: 5 }}>
+                    <i style={{ width: `${pct}%`, background: statusMeta ? statusMeta.color : "var(--dz-line-2)" }} />
+                  </span>
+                </div>
+                <div className="dz-mrow-r">
+                  <div className="dz-mrow-v" style={{ fontSize: 16 }}>{PERFORMANCE_DEF.format(value)}</div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </section>
+    );
+  }
 
   return (
     <Box>

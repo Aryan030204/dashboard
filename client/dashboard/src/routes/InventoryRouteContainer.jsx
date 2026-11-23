@@ -1,5 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { Stack } from "@mui/material";
 import { EmptyStateCard, SectionFallback } from "./shared/RouteUi.jsx";
+import { PageHeader } from "../components/datum/index.js";
 
 const InventoryTable = lazy(() => import("../components/InventoryTable.jsx"));
 const InventoryOosTrend = lazy(() => import("../components/InventoryOosTrend.jsx"));
@@ -32,7 +34,11 @@ export default function InventoryRouteContainer({
   }
 
   return (
-    <>
+    <Stack spacing={2.5}>
+      <PageHeader
+        title="Inventory"
+        description="Stock-outs, sales velocity and days on hand per SKU"
+      />
       <Suspense fallback={<SectionFallback count={1} height={280} />}>
         <InventoryTable
           brandKey={activeBrandKey}
@@ -50,6 +56,6 @@ export default function InventoryRouteContainer({
           onClearProduct={() => setSelectedProduct(null)}
         />
       </Suspense>
-    </>
+    </Stack>
   );
 }

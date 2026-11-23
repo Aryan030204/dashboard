@@ -1,5 +1,6 @@
+import { PageHeader, Panel } from "../../components/datum/index.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Stack, Typography } from "@mui/material";
+import { Alert, Box, Stack } from "@mui/material";
 import dayjs from "dayjs";
 import {
   getWebVitalsAllBrandsSnapshot,
@@ -164,65 +165,60 @@ export default function WebVitalsPage({ brandKey, canViewAllBrandsSnapshot = fal
 
   return (
     <Stack spacing={2.5} sx={{ p: { xs: 1.5, md: 2 } }}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        alignItems={{ xs: "flex-start", sm: "center" }}
-        justifyContent="space-between"
-        spacing={1.5}
-      >
-        <Stack spacing={0.25}>
-          <Typography variant="h4" sx={{ fontWeight: 600 }} color="text.primary">
-            Web Vitals
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Track real-user performance metrics for your brand
-          </Typography>
-        </Stack>
-        <FunnelSingleDatePicker
-          date={snapshotDate}
-          onApply={(next) => setSnapshotDate(formatDate(next))}
-        />
-      </Stack>
+      <PageHeader
+        title="Web Vitals"
+        description="Track real-user performance metrics for your brand"
+        actions={
+          <FunnelSingleDatePicker
+            date={snapshotDate}
+            onApply={(next) => setSnapshotDate(formatDate(next))}
+          />
+        }
+      />
 
       {snapshotError ? <Alert severity="error">{snapshotError}</Alert> : null}
 
-      {canViewAllBrandsSnapshot ? (
-        <Stack spacing={1}>
-          <Typography variant="subtitle2" color="text.secondary">
-            Overall Snapshot
-          </Typography>
+      <Panel title={`Core vitals · ${selectedBrandKey}`} subtitle="Compared with yesterday" flush>
+        <WebVitalsKpiRow
+          bare
+          snapshot={snapshot}
+          loading={snapshotLoading}
+          selectedMetric={selectedMetric}
+          onSelectMetric={setSelectedMetric}
+        />
+      </Panel>
+
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "minmax(0, 1fr)",
+            md: canViewAllBrandsSnapshot ? "minmax(0, 2fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
+          },
+          gap: 2.5,
+          alignItems: "start",
+        }}
+      >
+        <WebVitalsTrendChart
+          points={trendPoints}
+          loading={trendLoading}
+          rangeStart={trendStart}
+          rangeEnd={trendEnd}
+          onRangeChange={handleTrendRangeChange}
+          metricId={selectedMetric}
+          pageOptions={pageOptions}
+          selectedPageUrl={selectedPageUrl}
+          onSelectPage={setSelectedPageUrl}
+        />
+        {canViewAllBrandsSnapshot ? (
           <WebVitalsAllBrandsSnapshot
             brands={allBrandsSnapshot}
             loading={allBrandsLoading}
             selectedBrandKey={selectedBrandKey}
             onSelectBrand={setSelectedBrandKey}
           />
-        </Stack>
-      ) : null}
-
-      <Stack spacing={1}>
-        <Typography variant="subtitle2" color="text.secondary">
-          Summary
-        </Typography>
-        <WebVitalsKpiRow
-          snapshot={snapshot}
-          loading={snapshotLoading}
-          selectedMetric={selectedMetric}
-          onSelectMetric={setSelectedMetric}
-        />
-      </Stack>
-
-      <WebVitalsTrendChart
-        points={trendPoints}
-        loading={trendLoading}
-        rangeStart={trendStart}
-        rangeEnd={trendEnd}
-        onRangeChange={handleTrendRangeChange}
-        metricId={selectedMetric}
-        pageOptions={pageOptions}
-        selectedPageUrl={selectedPageUrl}
-        onSelectPage={setSelectedPageUrl}
-      />
+        ) : null}
+      </Box>
 
       <WebVitalsPageTable
         rows={pageRows}

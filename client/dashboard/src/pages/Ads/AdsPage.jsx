@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Stack, Tab, Tabs, Typography } from "@mui/material";
+import { Alert, Button, Stack, Tab, Tabs } from "@mui/material";
 import SyncIcon from "@mui/icons-material/Sync";
 import dayjs from "dayjs";
 import {
@@ -16,6 +16,7 @@ import AdsCampaignTable from "./components/AdsCampaignTable.jsx";
 import AdsProductTable from "./components/AdsProductTable.jsx";
 import AdsLandingPagesPanel from "./components/AdsLandingPagesPanel.jsx";
 import AdsAlertsPanel from "./components/AdsAlertsPanel.jsx";
+import { PageHeader } from "../../components/datum/index.js";
 
 const TABS = [
   { id: "overview", label: "Overview" },
@@ -87,33 +88,31 @@ export default function AdsPage({ brandKey }) {
 
   return (
     <Stack spacing={2.5} sx={{ p: { xs: 1.5, md: 2 } }}>
-      <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between" spacing={1.5}>
-        <Stack spacing={0.25}>
-          <Typography variant="h4" sx={{ fontWeight: 600 }} color="text.primary">
-            Ads
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Meta &amp; Google performance by campaign, product and landing page
-            {overview.data?.coverage?.lastSyncedDate
-              ? ` · synced through ${dayjs(overview.data.coverage.lastSyncedDate).format("D MMM YYYY")}`
-              : ""}
-          </Typography>
-        </Stack>
-        <Stack direction="row" spacing={1.25} alignItems="center" flexWrap="wrap" useFlexGap>
-          <FunnelRangeOrDatePicker
-            startDate={rangeStart}
-            endDate={rangeEnd}
-            onApply={(nextStart, nextEnd) => {
-              setRangeStart(nextStart);
-              setRangeEnd(nextEnd);
-            }}
-            compact
-          />
-          <Button size="small" variant="outlined" startIcon={<SyncIcon />} onClick={handleSync} disabled={syncing || !brandKey}>
-            {syncing ? "Starting…" : "Sync now"}
-          </Button>
-        </Stack>
-      </Stack>
+      <PageHeader
+        title="Ads"
+        description="Meta & Google performance by campaign, product and landing page"
+        meta={[
+          overview.data?.coverage?.lastSyncedDate
+            ? `Synced through ${dayjs(overview.data.coverage.lastSyncedDate).format("D MMM YYYY")}`
+            : null,
+        ]}
+        actions={
+          <>
+            <FunnelRangeOrDatePicker
+              startDate={rangeStart}
+              endDate={rangeEnd}
+              onApply={(nextStart, nextEnd) => {
+                setRangeStart(nextStart);
+                setRangeEnd(nextEnd);
+              }}
+              compact
+            />
+            <Button size="small" variant="outlined" startIcon={<SyncIcon />} onClick={handleSync} disabled={syncing || !brandKey}>
+              {syncing ? "Starting…" : "Sync now"}
+            </Button>
+          </>
+        }
+      />
 
       {syncNote ? (
         <Alert severity={syncNote.severity} onClose={() => setSyncNote(null)}>

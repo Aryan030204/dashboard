@@ -1,3 +1,4 @@
+import { Segmented } from "./datum/index.js";
 import { memo, useEffect, useMemo, useState } from "react";
 import {
   Card,
@@ -502,7 +503,7 @@ export default memo(function PaymentSplitTrend({ query }) {
     <Card
       elevation={0}
       sx={{
-        borderRadius: isMobile ? 2 : 3,
+        borderRadius: "12px",
         minHeight: isMobile ? 320 : 310,
         overflow: "visible",
         position: "relative",
@@ -534,8 +535,8 @@ export default memo(function PaymentSplitTrend({ query }) {
           <Stack spacing={1}>
             <Typography
               variant="subtitle2"
-              color="text.secondary"
-              sx={{ fontWeight: 500 }}
+              color="text.primary"
+              sx={{ fontWeight: 600, fontSize: "14.5px", letterSpacing: "-0.01em" }}
             >
               {viewMode === "hourly" ? "Hour-wise trend" : "Day-wise trend"} - Mode of Payment {config.label}
             </Typography>
@@ -673,65 +674,34 @@ export default memo(function PaymentSplitTrend({ query }) {
             </Stack>
           </Stack>
 
-          <Stack direction="row" spacing={1}>
-            <FormControl size="small" sx={{ minWidth: 110 }}>
-              <Select
-                value={viewMode}
-                onChange={(e) => setViewMode(e.target.value)}
-                inputProps={{ "aria-label": "Payment split view mode" }}
-                sx={{
-                  borderRadius: 2,
-                  height: 30,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  bgcolor: alpha(theme.palette.action.active, 0.04),
-                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
-                }}
-              >
-                <MenuItem value="hourly" disabled={!canUseHourly}>
-                  Hourly
-                </MenuItem>
-                <MenuItem value="daily">Daily</MenuItem>
-              </Select>
-            </FormControl>
-
-            <FormControl size="small" sx={{ minWidth: 110 }}>
-              <Select
-                value={chartMode}
-                onChange={(e) => setChartMode(e.target.value)}
-                inputProps={{ "aria-label": "Payment split chart mode" }}
-                sx={{
-                  borderRadius: 2,
-                  height: 30,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  bgcolor: alpha(theme.palette.action.active, 0.04),
-                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
-                }}
-              >
-                <MenuItem value="line">Line</MenuItem>
-                <MenuItem value="bar">Bar</MenuItem>
-              </Select>
-            </FormControl>
-
-            <FormControl size="small" sx={{ minWidth: 140 }}>
-              <Select
-                value={metric}
-                onChange={(e) => setMetric(e.target.value)}
-                inputProps={{ "aria-label": "Payment split metric" }}
-                sx={{
-                  borderRadius: 2,
-                  height: 30,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  bgcolor: alpha(theme.palette.action.active, 0.04),
-                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
-                }}
-              >
-                <MenuItem value="orders">Order count</MenuItem>
-                <MenuItem value="sales">Sales</MenuItem>
-              </Select>
-            </FormControl>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Segmented
+              ariaLabel="Payment split view mode"
+              value={viewMode}
+              onChange={setViewMode}
+              options={[
+                { value: "hourly", label: "Hourly", disabled: !canUseHourly },
+                { value: "daily", label: "Daily" },
+              ]}
+            />
+            <Segmented
+              ariaLabel="Payment split chart mode"
+              value={chartMode}
+              onChange={setChartMode}
+              options={[
+                { value: "line", label: "Line" },
+                { value: "bar", label: "Bar" },
+              ]}
+            />
+            <Segmented
+              ariaLabel="Payment split metric"
+              value={metric}
+              onChange={setMetric}
+              options={[
+                { value: "orders", label: "Order count" },
+                { value: "sales", label: "Sales" },
+              ]}
+            />
           </Stack>
         </Box>
 

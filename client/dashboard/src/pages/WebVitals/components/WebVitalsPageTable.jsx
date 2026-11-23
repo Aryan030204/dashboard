@@ -57,6 +57,7 @@ function formatCellValue(columnId, row) {
 export default function WebVitalsPageTable({ rows, loading, brandKey, date, selectedPageUrl = null, onSelectPage = null }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const isPhone = useMediaQuery(theme.breakpoints.down("md"));
 
   const [visibleColumnIds, setVisibleColumnIds] = useState(
     isMobile ? MOBILE_DEFAULT_COLUMNS : DESKTOP_DEFAULT_COLUMNS,
@@ -172,6 +173,43 @@ export default function WebVitalsPageTable({ rows, loading, brandKey, date, sele
         <Skeleton variant="rounded" width="100%" height={280} />
       ) : (
         <>
+          {isPhone ? (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }} aria-label="Page-level breakdown">
+              {pagedRows.length === 0 ? (
+                <li className="dz-tbl-empty">No page data for this date.</li>
+              ) : (
+                pagedRows.map((row, index) => {
+                  const statusMeta = getStatusMeta(row.performance_status, "performance");
+                  const selected = Boolean(onSelectPage) && row.url === selectedPageUrl;
+                  return (
+                    <li
+                      key={`${row.page_name}-${row.url}-${index}`}
+                      className="dz-mrow"
+                      onClick={onSelectPage ? () => onSelectPage(row.url === selectedPageUrl ? null : row.url) : undefined}
+                      style={{ cursor: onSelectPage ? "pointer" : "default", background: selected ? "var(--dz-accent-soft)" : undefined }}
+                    >
+                      <div className="dz-mrow-l">
+                        <div className="dz-mrow-t">{formatCellValue("page_name", row)}</div>
+                        <div className="dz-mrow-s">
+                          <span>FCP {formatCellValue("fcp", row)}</span>
+                          <span>LCP {formatCellValue("lcp", row)}</span>
+                          <span>TTFB {formatCellValue("ttfb", row)}</span>
+                          <span>INP {formatCellValue("inp", row)}</span>
+                          <span>CLS {formatCellValue("cls", row)}</span>
+                        </div>
+                      </div>
+                      <div className="dz-mrow-r">
+                        <div className="dz-mrow-v" style={{ color: statusMeta ? statusMeta.color : undefined }}>
+                          {formatCellValue("performance", row)}
+                        </div>
+                        <div className="dz-muted" style={{ fontSize: 12 }}>score</div>
+                      </div>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          ) : (
           <TableContainer sx={{ overflowX: "auto" }}>
             <Table size="small">
               <TableHead>
@@ -241,6 +279,7 @@ export default function WebVitalsPageTable({ rows, loading, brandKey, date, sele
               </TableBody>
             </Table>
           </TableContainer>
+          )}
           <TablePagination
             component="div"
             count={rows.length}

@@ -66,7 +66,7 @@ export default function OrderSplit({ query }) {
       {
         label: 'COD',
         data: [data.cod_percent],
-        backgroundColor: '#f59e0b',
+        backgroundColor: '#eb6834',
         borderRadius: 8,
         barThickness: 28,
         stack: 'percent',
@@ -74,7 +74,7 @@ export default function OrderSplit({ query }) {
       {
         label: 'Prepaid',
         data: [data.prepaid_percent],
-        backgroundColor: '#10b981',
+        backgroundColor: '#2a78d6',
         borderRadius: 8,
         barThickness: 28,
         stack: 'percent',
@@ -82,7 +82,7 @@ export default function OrderSplit({ query }) {
       {
         label: 'Partially paid',
         data: [data.partially_paid_percent],
-        backgroundColor: '#6ee7b7',
+        backgroundColor: '#1baf7a',
         borderRadius: 8,
         barThickness: 28,
         stack: 'percent',

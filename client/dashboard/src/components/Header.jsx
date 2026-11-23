@@ -8,7 +8,6 @@ import {
   useMediaQuery,
   Tooltip,
   Typography,
-  Card,
   ButtonBase,
 } from "@mui/material";
 import { useEffect, useState } from "react";
@@ -40,6 +39,7 @@ export default function Header({
   onCustomizeLayoutClick,
   isAdmin = false,
   brandKey = "",
+  pageTitle = "", // breadcrumb = current page title only
 }) {
   dayjs.extend(relativeTime);
   dayjs.extend(customParseFormat);
@@ -105,10 +105,19 @@ export default function Header({
     };
   }, [brandKey]);
 
-  // Extract first name for the greeting
-  const firstName = user?.name
-    ? user.name.split(" ")[0]
-    : user?.email?.split("@")[0] || "User";
+  // "Updated ..." indicator: same states and same data as before (loading / timestamp / unavailable).
+  const updatedNode = last.loading ? (
+    <span className="dz-live is-idle">Updating…</span>
+  ) : last.ts ? (
+    <Tooltip
+      title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""}`}
+      arrow
+    >
+      <span className="dz-live">Updated {last.ts.fromNow()}</span>
+    </Tooltip>
+  ) : (
+    <span className="dz-live is-idle">Updated: unavailable</span>
+  );
 
   return (
     <AppBar
@@ -117,12 +126,10 @@ export default function Header({
       elevation={0}
       sx={{
         bgcolor: "transparent",
-        borderBottom: isMobile ? "1px solid" : "none",
-        borderBottomColor: darkMode
-          ? "rgba(255,255,255,0.1)"
-          : "rgba(0,0,0,0.1)",
+        borderBottom: "1px solid",
+        borderBottomColor: "var(--dz-line)",
         px: { xs: 1, md: 4 },
-        py: { xs: 0, md: 1 },
+        py: 0,
       }}
     >
       <Toolbar
@@ -130,7 +137,7 @@ export default function Header({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          minHeight: { xs: 56, md: 72 },
+          minHeight: { xs: 56, md: 56 },
           p: 0,
           position: "relative",
         }}
@@ -151,14 +158,10 @@ export default function Header({
                   onClick={onMenuClick}
                   size="small"
                   sx={{
-                    color: darkMode ? "#f0f0f0" : "inherit",
-                    bgcolor: darkMode
-                      ? "rgba(255,255,255,0.05)"
-                      : "rgba(0,0,0,0.05)",
+                    color: "var(--dz-text)",
+                    bgcolor: "var(--dz-panel)",
                     border: "1px solid",
-                    borderColor: darkMode
-                      ? "rgba(255,255,255,0.1)"
-                      : "rgba(0,0,0,0.1)",
+                    borderColor: "var(--dz-line-2)",
                     borderRadius: "8px",
                     p: 0.8,
                   }}
@@ -166,18 +169,27 @@ export default function Header({
                   <Menu size={18} />
                 </IconButton>
               ) : null}
-              <Box
-                component="img"
-                src="/brand-logo-dark.png"
-                alt="Brand"
-                sx={{
-                  height: 48,
-                  width: "auto",
-                  filter: darkMode
-                    ? "invert(1) hue-rotate(180deg) brightness(1.2)"
-                    : "none",
-                }}
-              />
+              {pageTitle ? (
+                <Typography
+                  component="span"
+                  sx={{ fontSize: 15, fontWeight: 600, color: "var(--dz-text)" }}
+                >
+                  {pageTitle}
+                </Typography>
+              ) : (
+                <Box
+                  component="img"
+                  src="/brand-logo-dark.png"
+                  alt="Brand"
+                  sx={{
+                    height: 48,
+                    width: "auto",
+                    filter: darkMode
+                      ? "invert(1) hue-rotate(180deg) brightness(1.2)"
+                      : "none",
+                  }}
+                />
+              )}
             </Box>
 
             <Box
@@ -201,14 +213,10 @@ export default function Header({
                   onClick={onFilterClick}
                   size="small"
                   sx={{
-                    color: darkMode ? "#f0f0f0" : "inherit",
-                    bgcolor: darkMode
-                      ? "rgba(255,255,255,0.05)"
-                      : "rgba(0,0,0,0.05)",
+                    color: "var(--dz-text)",
+                    bgcolor: "var(--dz-panel)",
                     border: "1px solid",
-                    borderColor: darkMode
-                      ? "rgba(255,255,255,0.1)"
-                      : "rgba(0,0,0,0.1)",
+                    borderColor: "var(--dz-line-2)",
                     borderRadius: "8px",
                     p: 0.8,
                   }}
@@ -229,14 +237,10 @@ export default function Header({
                       width: 34,
                       height: 34,
                       borderRadius: "8px",
-                      color: darkMode ? "#f0f0f0" : "inherit",
-                      bgcolor: darkMode
-                        ? "rgba(255,255,255,0.05)"
-                        : "rgba(0,0,0,0.05)",
+                      color: "var(--dz-text)",
+                      bgcolor: "var(--dz-panel)",
                       border: "1px solid",
-                      borderColor: darkMode
-                        ? "rgba(255,255,255,0.1)"
-                        : "rgba(0,0,0,0.1)",
+                      borderColor: "var(--dz-line-2)",
                     }}
                   >
                     <LayoutPanelsIcon size={18} />
@@ -248,7 +252,7 @@ export default function Header({
               <IconButton
                 onClick={onLogout}
                 size="small"
-                sx={{ color: "#d32f2f" }}
+                sx={{ color: "var(--dz-bad)" }}
               >
                 <LogOut size={20} />
               </IconButton>
@@ -256,102 +260,13 @@ export default function Header({
           </>
         ) : (
           <>
-            <Box sx={{ display: "flex", flexDirection: "column" }}>
+            <Box component="nav" aria-label="Breadcrumb" sx={{ minWidth: 0 }}>
               <Typography
-                variant="h5"
-                sx={{
-                  fontWeight: 700,
-                  color: darkMode ? "#fff" : "#111",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 2,
-                }}
+                component="span"
+                aria-current="page"
+                sx={{ fontSize: 14, fontWeight: 600, color: "var(--dz-text)" }}
               >
-                Welcome, {firstName}{" "}
-                <span style={{ fontSize: "1.2rem" }}>👋</span>
-                {!isMobile && (
-                  <>
-                    {last.loading ? (
-                      <Card
-                        elevation={0}
-                        sx={{
-                          px: 1.5,
-                          height: 28,
-                          display: "flex",
-                          alignItems: "center",
-                          bgcolor: darkMode
-                            ? "rgba(255,255,255,0.05)"
-                            : "rgba(0,0,0,0.03)",
-                          fontSize: 11,
-                          color: "text.secondary",
-                          borderRadius: "6px",
-                          border: "1px solid",
-                          borderColor: darkMode
-                            ? "rgba(255,255,255,0.1)"
-                            : "rgba(0,0,0,0.08)",
-                        }}
-                      >
-                        Updating…
-                      </Card>
-                    ) : last.ts ? (
-                      <Tooltip
-                        title={`${last.ts.format("YYYY-MM-DD HH:mm:ss")}${last.tz ? ` ${last.tz}` : ""}`}
-                        arrow
-                      >
-                        <Card
-                          elevation={0}
-                          sx={{
-                            px: 1.5,
-                            height: 28,
-                            display: "flex",
-                            alignItems: "center",
-                            fontSize: 11,
-                            fontWeight: 600,
-                            color: "text.secondary",
-                            bgcolor: darkMode
-                              ? "rgba(255,255,255,0.05)"
-                              : "rgba(0,0,0,0.03)",
-                            borderRadius: "6px",
-                            border: "1px solid",
-                            borderColor: darkMode
-                              ? "rgba(255,255,255,0.1)"
-                              : "rgba(0,0,0,0.08)",
-                          }}
-                        >
-                          Updated {last.ts.fromNow()}
-                        </Card>
-                      </Tooltip>
-                    ) : (
-                      <Card
-                        elevation={0}
-                        sx={{
-                          px: 1.5,
-                          height: 28,
-                          display: "flex",
-                          alignItems: "center",
-                          fontSize: 11,
-                          color: "text.secondary",
-                          bgcolor: darkMode
-                            ? "rgba(255,255,255,0.05)"
-                            : "rgba(0,0,0,0.03)",
-                          borderRadius: "6px",
-                          border: "1px solid",
-                          borderColor: darkMode
-                            ? "rgba(255,255,255,0.1)"
-                            : "rgba(0,0,0,0.08)",
-                        }}
-                      >
-                        Updated: unavailable
-                      </Card>
-                    )}
-                  </>
-                )}
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{ color: "text.secondary", fontWeight: 500 }}
-              >
-                Your store at a glance
+                {pageTitle}
               </Typography>
             </Box>
             <Box
@@ -361,6 +276,8 @@ export default function Header({
                 gap: { xs: 1, md: 1.5 },
               }}
             >
+              {updatedNode}
+
               {/* Notifications - Only for admins */}
               {isAdmin && (
                 <NotificationsMenu
@@ -379,17 +296,11 @@ export default function Header({
                     onClick={onLogout}
                     size="small"
                     sx={{
-                      bgcolor: darkMode
-                        ? "rgba(211, 47, 47, 0.1)"
-                        : "rgba(211, 47, 47, 0.05)",
+                      bgcolor: "var(--dz-bad-bg)",
                       borderRadius: "10px",
                       p: 1.2,
-                      color: "#d32f2f", // Red color
-                      "&:hover": {
-                        bgcolor: darkMode
-                          ? "rgba(211, 47, 47, 0.2)"
-                          : "rgba(211, 47, 47, 0.1)",
-                      },
+                      color: "var(--dz-bad)",
+                      "&:hover": { bgcolor: "var(--dz-bad-bg)", opacity: 0.85 },
                     }}
                   >
                     <LogOut size={20} />
@@ -397,7 +308,7 @@ export default function Header({
                 </Tooltip>
               )}
 
-              {/* Customize Widget Button - Only for admins */}
+              {/* Brand logo - Only for admins (unchanged) */}
               {isAdmin && (
                 <Box sx={{ ml: 1 }}>
                   <img

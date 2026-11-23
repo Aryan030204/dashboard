@@ -438,7 +438,7 @@ export default function UnifiedFilterBar({
 
   const utmButtonSx = {
     px: 1.5,
-    height: 40,
+    height: 32,
     maxWidth: { xs: 132, sm: 168, md: 220 },
     minWidth: 0,
     color: "text.secondary",
@@ -517,6 +517,7 @@ export default function UnifiedFilterBar({
       {/* The Unified Bar */}
       <Paper
         elevation={0}
+        className="dz-ufb"
         sx={{
           display: "flex",
           alignItems: "center",
@@ -525,7 +526,7 @@ export default function UnifiedFilterBar({
           borderRadius: "12px",
           bgcolor: isDark ? "rgba(255,255,255,0.05)" : "#fff",
           overflow: "hidden",
-          height: 40,
+          height: 32,
         }}
       >
         {children}
@@ -628,7 +629,7 @@ export default function UnifiedFilterBar({
                   alignItems: "center",
                   gap: 0.75,
                   px: 2,
-                  height: 40,
+                  height: 32,
                   whiteSpace: "nowrap",
                   bgcolor: isDark
                     ? "rgba(255, 152, 0, 0.08)"
@@ -798,7 +799,7 @@ export default function UnifiedFilterBar({
                   }
                   sx={{
                     px: 1.5,
-                    height: 40,
+                    height: 32,
                     color: "error.main",
                     textTransform: "none",
                     fontWeight: 600,
@@ -1061,29 +1062,6 @@ export default function UnifiedFilterBar({
           </Button>
         )}
       </Paper>
-
-      {/* Download Button (Separate) - ONLY FOR ADMINS */}
-      {isAuthor && !hideAllExceptDate && (
-        <IconButton
-          onClick={onDownload}
-          sx={{
-            border: "1px solid",
-            borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
-            borderRadius: "10px",
-            bgcolor: isDark ? "rgba(255,255,255,0.05)" : "#fff",
-            height: 40,
-            width: 40,
-            color: "text.secondary",
-            "&:hover": {
-              bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
-              color: "text.primary",
-            },
-          }}
-        >
-          <Download size={18} />
-        </IconButton>
-      )}
-
 
       {/* --- Popovers --- */}
 

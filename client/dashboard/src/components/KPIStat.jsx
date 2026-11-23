@@ -27,6 +27,7 @@ export default function KPIStat({
   invertDeltaColor = false,
   unavailable = false,
   showSelectionIndicator,
+  variant = "card", // "cell" = flat metric cell for the connected KPI grid (visual only)
 }) {
   const theme = useTheme();
   const clickable = typeof onSelect === "function" && !unavailable;
@@ -52,8 +53,9 @@ export default function KPIStat({
     onSelectionToggle();
   };
 
-  const goodColor = "#10b981"; // Green
-  const badColor = "#ef4444"; // Red
+  const isCell = variant === "cell";
+  const goodColor = isCell ? "var(--dz-good)" : "#10b981"; // Green
+  const badColor = isCell ? "var(--dz-bad)" : "#ef4444"; // Red
 
   return (
     <Card
@@ -87,6 +89,32 @@ export default function KPIStat({
         "&:focus-visible": clickable
           ? { borderColor: "primary.main" }
           : undefined,
+        ...(isCell
+          ? {
+              border: 0,
+              borderRadius: 0,
+              boxShadow: "none",
+              bgcolor: selected ? "var(--dz-accent-soft)" : "var(--dz-panel)",
+              transition: "background-color 0.15s ease",
+              "&:hover": clickable
+                ? { bgcolor: selected ? "var(--dz-accent-soft)" : "var(--dz-hover)" }
+                : {},
+              "&::after": selected
+                ? {
+                    content: '""',
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 2,
+                    bgcolor: "var(--dz-accent)",
+                  }
+                : undefined,
+              "&:focus-visible": clickable
+                ? { outline: "2px solid var(--dz-accent)", outlineOffset: -2 }
+                : undefined,
+            }
+          : {}),
         ...sx,
       }}
     >
@@ -120,6 +148,7 @@ export default function KPIStat({
             sx={{
               lineHeight: 1.2,
               pr: action && !centerOnMobile ? { xs: "46px", md: "46px" } : 0,
+              ...(isCell ? { fontSize: 12.5, fontWeight: 500 } : {}),
             }}
           >
             {label}
@@ -215,7 +244,14 @@ export default function KPIStat({
                   : "flex-start",
               }}
             >
-              <Typography variant="h5" sx={{ fontWeight: 700 }}>
+              <Typography
+                variant="h5"
+                sx={
+                  isCell
+                    ? { fontSize: 24, fontWeight: 620, letterSpacing: "-0.025em", fontVariantNumeric: "tabular-nums" }
+                    : { fontWeight: 700 }
+                }
+              >
                 {unavailable ? "-" : formatter ? formatter(value) : value}
               </Typography>
               {!unavailable && compareValue != null && (

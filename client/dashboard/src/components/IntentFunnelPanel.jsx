@@ -1,3 +1,4 @@
+import { PageHeader } from "./datum/index.js";
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { Box, Button, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
@@ -274,19 +275,10 @@ export default function IntentFunnelPanel({ brandKey, start, end }) {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: { xs: 2, md: 2.5 }, minWidth: 0, maxWidth: "100%" }}>
-      <Box>
-        <Typography
-          variant="h4"
-          sx={{ fontWeight: 600, fontSize: { xs: "1.5rem", sm: "2rem", md: "2.125rem" } }}
-          color="text.primary"
-        >
-          Intent Funnel
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Understand user intent and conversion behavior across the customer
-          journey.
-        </Typography>
-      </Box>
+      <PageHeader
+        title="Intent Funnel"
+        description="Understand user intent and conversion behaviour across the customer journey"
+      />
       {body}
     </Box>
   );

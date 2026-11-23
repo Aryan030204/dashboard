@@ -6,7 +6,9 @@ import {
   Suspense,
   lazy,
 } from "react";
-import { Box, Skeleton, Stack, Typography } from "@mui/material";
+import { Box, Button, Skeleton, Stack, Typography } from "@mui/material";
+import { Download } from "lucide-react";
+import LayoutPanelsIcon from "../components/ui/LayoutPanelsIcon.jsx";
 import Grid from "@mui/material/Grid2";
 import InlineDashboardLayoutEditor from "../components/InlineDashboardLayoutEditor.jsx";
 import DashboardUnavailableCard from "../components/DashboardUnavailableCard.jsx";
@@ -30,6 +32,7 @@ import {
 } from "../lib/api.js";
 import { DashboardDataProvider } from "../features/dashboard/DashboardDataProvider.jsx";
 import { EmptyStateCard, SectionFallback } from "./shared/RouteUi.jsx";
+import { PageHeader } from "../components/datum/index.js";
 
 const KPIs = lazy(() => import("../components/KPIs.jsx"));
 const OverallSnapshotWidget = lazy(
@@ -1381,14 +1384,30 @@ export default function DashboardRouteContainer({
       <Suspense fallback={<SectionFallback count={5} />}>
         <Stack spacing={{ xs: 1, md: 1.25 }}>
           {!isMobile ? (
-            <Typography
-              variant="subtitle2"
-              color="text.secondary"
-              sx={{ px: 0.5 }}
-            >
-              Scope: {dashboardScopeLabel}
-            </Typography>
-          ) : null}
+            <PageHeader
+              title="Dashboard"
+              description="Your store at a glance"
+              meta={[`Scope: ${dashboardScopeLabel}`]}
+              actions={
+                <>
+                  {canCustomizeDashboardLayout ? (
+                    <Button size="small" variant="outlined" startIcon={<LayoutPanelsIcon size={16} />} onClick={handleOpenLayoutEditor}>
+                      Customize
+                    </Button>
+                  ) : null}
+                  {isAuthor ? (
+                    <Button size="small" variant="outlined" startIcon={<Download size={16} />} onClick={handleDownloadSnapshot}>
+                      Download
+                    </Button>
+                  ) : null}
+                </>
+              }
+            />
+          ) : (
+            <div className="dz-meta" style={{ margin: "0 2px 2px" }}>
+              <span>Scope: {dashboardScopeLabel}</span>
+            </div>
+          )}
           <InlineDashboardLayoutEditor
             isEditing={layoutEditMode}
             itemIds={activeWidgetIds}

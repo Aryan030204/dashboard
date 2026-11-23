@@ -301,22 +301,24 @@ function InventoryTable({ brandKey, startDate, endDate, selectedProductId = null
     <Stack spacing={2}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 600,
-              color: theme.palette.mode === "dark" ? "text.primary" : "text.secondary",
-            }}
-          >
-            Inventory Info
-          </Typography>
+          <Box>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 600, fontSize: "14.5px", letterSpacing: "-0.01em", color: "text.primary" }}
+            >
+              Inventory info
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              DRR = daily run rate, DOH = days on hand · both 7-day
+            </Typography>
+          </Box>
           <Tooltip title={INVENTORY_INFO_TOOLTIP} arrow>
             <Box
               component="span"
               sx={{
                 display: "inline-flex",
                 alignItems: "center",
-                color: "rgba(255,255,255,0.58)",
+                color: "text.secondary",
                 cursor: "default",
                 mt: "1px",
               }}
@@ -330,9 +332,10 @@ function InventoryTable({ brandKey, startDate, endDate, selectedProductId = null
               size="small"
               sx={{
                 height: 26,
-                color: "rgba(255,255,255,0.82)",
-                bgcolor: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.08)",
+                color: "text.primary",
+                bgcolor: "action.hover",
+                border: "1px solid",
+                borderColor: "divider",
                 "& .MuiChip-label": {
                   px: 1.1,
                   fontSize: 12,

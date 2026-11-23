@@ -1,3 +1,4 @@
+import { Segmented } from "./datum/index.js";
 import { Fragment, useEffect, useMemo, useRef, useState, memo } from "react";
 import {
   Card,
@@ -1636,7 +1637,7 @@ export default memo(function HourlySalesCompare({
     <Card
       elevation={0}
       sx={{
-        borderRadius: isMobile ? 2 : 3,
+        borderRadius: "12px",
         height: isMobile ? "auto" : "380px",
         minHeight: isMobile ? "340px" : "380px",
       }}
@@ -1662,8 +1663,8 @@ export default memo(function HourlySalesCompare({
           <Stack spacing={1}>
             <Typography
               variant="subtitle2"
-              color="text.secondary"
-              sx={{ fontWeight: 500 }}
+              color="text.primary"
+              sx={{ fontWeight: 600, fontSize: "14.5px", letterSpacing: "-0.01em" }}
             >
               {multiChartTitle}
             </Typography>
@@ -1799,58 +1800,34 @@ export default memo(function HourlySalesCompare({
           </Stack>
 
           <Stack direction="row" spacing={1}>
-            <FormControl size="small" sx={{ minWidth: 110 }}>
-              <Select
-                value={viewMode}
-                onChange={(event) => setViewMode(event.target.value)}
-                displayEmpty
-                inputProps={{ "aria-label": "View mode" }}
-                sx={{
-                  borderRadius: 2,
-                  height: 30,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  bgcolor: alpha(theme.palette.action.active, 0.04),
-                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
-                }}
-              >
-                <MenuItem
-                  value="hourly"
-                  disabled={
+            <Segmented
+              ariaLabel="View mode"
+              value={viewMode}
+              onChange={setViewMode}
+              options={[
+                {
+                  value: "hourly",
+                  label: "Hourly",
+                  disabled:
                     isLongRange ||
                     hasPerformanceSelected ||
                     hasActiveProductTypeFilter ||
                     hasIntentSelected ||
-                    (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend)
-                  }
-                >
-                  Hourly
-                </MenuItem>
-                <MenuItem value="daily">Daily</MenuItem>
-                {daysInRange >= 30 && <MenuItem value="monthly">Monthly</MenuItem>}
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: 100 }}>
-              <Select
-                value={chartMode}
-                onChange={(event) => setChartMode(event.target.value)}
-                displayEmpty
-                inputProps={{ "aria-label": "Chart mode" }}
-                sx={{
-                  borderRadius: 2,
-                  height: 30,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  bgcolor: alpha(theme.palette.action.active, 0.04),
-                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
-                }}
-              >
-                <MenuItem value="line">Line</MenuItem>
-                <MenuItem value="bar" disabled={!canUseBarChart}>
-                  Bar
-                </MenuItem>
-              </Select>
-            </FormControl>
+                    (hasPaymentCompositeSelected && !canUseHourlyPaymentTrend),
+                },
+                { value: "daily", label: "Daily" },
+                ...(daysInRange >= 30 ? [{ value: "monthly", label: "Monthly" }] : []),
+              ]}
+            />
+            <Segmented
+              ariaLabel="Chart mode"
+              value={chartMode}
+              onChange={setChartMode}
+              options={[
+                { value: "line", label: "Line" },
+                { value: "bar", label: "Bar", disabled: !canUseBarChart },
+              ]}
+            />
           </Stack>
         </Box>
 
