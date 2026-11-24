@@ -82,6 +82,7 @@ export default function LegalPageLayout({ title, lastUpdated, children }) {
               © {new Date().getFullYear()} Datum by TechIt ·{" "}
               <Link href="/privacy-policy">Privacy Policy</Link> ·{" "}
               <Link href="/terms-of-service">Terms of Service</Link> ·{" "}
+              <Link href="/data-deletion">Data Deletion</Link> ·{" "}
               <Link href="/">Back to Datum</Link>
             </Typography>
           </Stack>
