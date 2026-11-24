@@ -7,6 +7,7 @@ import './styles/datum.css';
 import App from './App.jsx';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx';
 import TermsOfServicePage from './pages/TermsOfServicePage.jsx';
+import DataDeletionPage from './pages/DataDeletionPage.jsx';
 import { Provider } from 'react-redux';
 import { store } from './state/store.js';
 import { ToastContainer } from 'react-toastify';
@@ -21,6 +22,7 @@ initFrontendObservability();
 const PUBLIC_PAGES = {
   '/privacy-policy': PrivacyPolicyPage,
   '/terms-of-service': TermsOfServicePage,
+  '/data-deletion': DataDeletionPage,
 };
 const PublicPage =
   PUBLIC_PAGES[window.location.pathname.replace(/\/+$/, '').toLowerCase()];
