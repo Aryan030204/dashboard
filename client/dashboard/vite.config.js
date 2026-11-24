@@ -24,8 +24,19 @@ export default defineConfig({
       includeAssets: ['favicon.png', 'brand-logo-final.png'],
       workbox: {
         importScripts: ['/firebase-messaging-sw.js'],
-        navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
+        // Never answer page loads from a precached index.html: that kept users
+        // on the previous deploy until a second reload. HTML is left out of the
+        // precache and fetched network-first (cache only used when offline);
+        // hashed JS/CSS stay precached since every deploy renames them.
+        globPatterns: ['**/*.{js,css}'],
+        navigateFallback: null,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: { cacheName: 'pages', networkTimeoutSeconds: 5 },
+          },
           {
             urlPattern: /^\/api\//,
             handler: 'NetworkOnly',
