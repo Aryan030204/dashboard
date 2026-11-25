@@ -33,31 +33,31 @@
   }
 
   .dark {
-    /* Aligned to the Datum design tokens, dark */
-    --background: 140 15% 4%;
-    --foreground: 140 15% 92%;
-    --card: 150 12% 7%;
-    --card-foreground: 140 15% 92%;
-    --popover: 150 12% 7%;
-    --popover-foreground: 140 15% 92%;
-    --primary: 158 48% 49%;
-    --primary-foreground: 150 60% 5%;
-    --secondary: 150 12% 10%;
-    --secondary-foreground: 140 15% 92%;
-    --muted: 150 12% 10%;
-    --muted-foreground: 150 6% 59%;
-    --accent: 150 12% 10%;
-    --accent-foreground: 140 15% 92%;
-    --destructive: 6 82% 69%;
-    --destructive-foreground: 150 60% 5%;
-    --border: 150 13% 13%;
-    --input: 150 13% 13%;
-    --ring: 158 48% 49%;
-    --chart-1: 214 77% 55%;
-    --chart-2: 18 70% 50%;
-    --chart-3: 163 78% 36%;
-    --chart-4: 39 100% 40%;
-    --chart-5: 335 60% 56%;
+    /* Aligned to the Datum design tokens, dark (slate + periwinkle) */
+    --background: 225 21% 7%;
+    --foreground: 225 20% 92%;
+    --card: 224 19% 11%;
+    --card-foreground: 225 20% 92%;
+    --popover: 224 19% 11%;
+    --popover-foreground: 225 20% 92%;
+    --primary: 224 60% 73%;
+    --primary-foreground: 227 39% 9%;
+    --secondary: 224 18% 14%;
+    --secondary-foreground: 225 20% 92%;
+    --muted: 224 18% 14%;
+    --muted-foreground: 222 13% 60%;
+    --accent: 224 18% 14%;
+    --accent-foreground: 225 20% 92%;
+    --destructive: 2 68% 72%;
+    --destructive-foreground: 227 39% 9%;
+    --border: 222 17% 18%;
+    --input: 222 17% 18%;
+    --ring: 224 60% 73%;
+    --chart-1: 217 64% 66%;
+    --chart-2: 22 66% 65%;
+    --chart-3: 167 38% 55%;
+    --chart-4: 41 57% 61%;
+    --chart-5: 320 36% 67%;
   }
 }
 

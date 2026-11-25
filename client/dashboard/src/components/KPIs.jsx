@@ -37,6 +37,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { AnimatePresence, motion } from "framer-motion";
 import { GlassChip } from "./ui/GlassChip.jsx";
 import KPIStat from "./KPIStat.jsx";
+import { WebPerformanceCard } from "./WebPerformancePanel.jsx";
 import { useInrCurrency } from "../lib/currency.js";
 import { useDashboardKpiData } from "../features/dashboard/widgetDataHooks.js";
 import {
@@ -273,9 +274,18 @@ function MobileKpiPages({
     return nextPages;
   }, [activeOrder]);
 
+  // Phone grid placement (view only; the saved KPI order is not touched):
+  // Cancellation + Checkout complete page 1 as a 4th row, RTO sits on page 2.
+  const extraCard = (id) => footerCards.find((card) => card.id === id);
+  const extrasByPage = [
+    [extraCard("returns"), extraCard("checkout")].filter(Boolean),
+    [extraCard("rto")].filter(Boolean),
+  ];
+  const pageCount = Math.max(pages.length, extrasByPage[1].length ? 2 : 1);
+
   useEffect(() => {
-    setPageIndex((current) => Math.min(current, Math.max(pages.length - 1, 0)));
-  }, [pages.length]);
+    setPageIndex((current) => Math.min(current, Math.max(pageCount - 1, 0)));
+  }, [pageCount]);
 
   useEffect(() => {
     setEditingOrder(derivedOrder);
@@ -322,7 +332,7 @@ function MobileKpiPages({
   };
 
   const handlePageChange = (nextIndex) => {
-    if (nextIndex < 0 || nextIndex >= pages.length || nextIndex === pageIndex) return;
+    if (nextIndex < 0 || nextIndex >= pageCount || nextIndex === pageIndex) return;
     setPageDirection(nextIndex > pageIndex ? 1 : -1);
     setPageIndex(nextIndex);
   };
@@ -360,9 +370,10 @@ function MobileKpiPages({
   };
 
   const currentPage = pages[pageIndex] || [];
+  const currentExtras = extrasByPage[pageIndex] || [];
   const currentPageSlots = Array.from(
-    { length: MOBILE_KPI_PAGE_SIZE },
-    (_, index) => currentPage[index] || null,
+    { length: Math.max(0, MOBILE_KPI_PAGE_SIZE + 2 - currentPage.length - currentExtras.length) },
+    () => null,
   );
 
   return (
@@ -373,11 +384,11 @@ function MobileKpiPages({
           <h2 className="dz-pt">Performance</h2>
           {pinMessage ? (
             <p className="dz-ps" style={{ color: "var(--dz-warn)" }}>{pinMessage}</p>
-          ) : pages.length > 1 ? (
-            <p className="dz-ps">vs previous period · page {pageIndex + 1} of {pages.length}</p>
+          ) : pageCount > 1 ? (
+            <p className="dz-ps">vs previous period · page {pageIndex + 1} of {pageCount}</p>
           ) : null}
         </div>
-        {pages.length > 1 ? (
+        {pageCount > 1 ? (
           <Stack direction="row" spacing={0.25} alignItems="center">
             <IconButton
               size="small"
@@ -392,7 +403,7 @@ function MobileKpiPages({
               size="small"
               aria-label="Next metrics"
               onClick={() => handlePageChange(pageIndex + 1)}
-              disabled={pageIndex === pages.length - 1}
+              disabled={pageIndex === pageCount - 1}
               sx={{ color: "text.secondary", border: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}
             >
               <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />
@@ -508,34 +519,38 @@ function MobileKpiPages({
                   bgcolor: "divider",
                 }}
               >
-                {currentPageSlots.map((metricId, index) =>
-                  metricId ? (
-                    <Box key={metricId} sx={{ bgcolor: "background.paper", minWidth: 0 }}>
-                      {cloneElement(cardsById.get(metricId)?.node, {
-                        variant: "cell",
-                        bottomRightAccessory: buildPinAccessory(
-                          pinnedSet.has(metricId),
-                          () => handleTogglePin(metricId),
-                        ),
-                      })}
-                    </Box>
-                  ) : (
-                    <Box
-                      key={`empty-mobile-kpi-slot-${pageIndex}-${index}`}
-                      aria-hidden="true"
-                      sx={{ minHeight: MOBILE_KPI_SLOT_PLACEHOLDER_HEIGHT, bgcolor: "background.paper" }}
-                    />
-                  ),
-                )}
+                {currentPage.map((metricId) => (
+                  <Box key={metricId} sx={{ bgcolor: "background.paper", minWidth: 0 }}>
+                    {cloneElement(cardsById.get(metricId)?.node, {
+                      variant: "cell",
+                      bottomRightAccessory: buildPinAccessory(
+                        pinnedSet.has(metricId),
+                        () => handleTogglePin(metricId),
+                      ),
+                    })}
+                  </Box>
+                ))}
+                {currentExtras.map((card) => (
+                  <Box key={card.id} sx={{ bgcolor: "background.paper", minWidth: 0 }}>
+                    {cloneElement(card.node, { variant: "cell", centerOnMobile: false })}
+                  </Box>
+                ))}
+                {currentPageSlots.map((_, index) => (
+                  <Box
+                    key={`empty-mobile-kpi-slot-${pageIndex}-${index}`}
+                    aria-hidden="true"
+                    sx={{ minHeight: MOBILE_KPI_SLOT_PLACEHOLDER_HEIGHT, bgcolor: "background.paper" }}
+                  />
+                ))}
               </Box>
             </motion.div>
           </AnimatePresence>
         </Box>
       )}
-      {footerCards.length > 0 ? (
+      {isEditing && footerCards.some((card) => card.id !== "performance") ? (
         <div className="dz-pb">
           <Grid container spacing={2} columns={12}>
-            {footerCards.map((card) => (
+            {footerCards.filter((card) => card.id !== "performance").map((card) => (
               <Grid key={card.id} size={card.size} sx={card.sx}>
                 {card.node}
               </Grid>
@@ -544,6 +559,12 @@ function MobileKpiPages({
         </div>
       ) : null}
     </div>
+    {/* Web performance is its own panel on phones, as on desktop */}
+    {footerCards.filter((card) => card.id === "performance").map((card) => (
+      <div key={card.id} className="dz-phone-only" style={{ marginTop: 10 }}>
+        {card.node}
+      </div>
+    ))}
     </>
   );
 }
@@ -963,7 +984,7 @@ function buildDesktopMetrics({
         rightActive: checkoutMode === "R",
         rightLabel: "R",
         leftColor: "primary.main",
-        rightColor: "#10b981",
+        rightColor: "var(--dz-series)",
         onClick: onCheckoutModeToggle,
       }),
       value:
@@ -1722,33 +1743,14 @@ function KPIs({
         id: "performance",
         size: { xs: 12, sm: 12, md: 3 },
         node: (
-          <KPIStat
-            label="Web Performance(Avg)"
-            value={webVitalsData.performanceAvg ?? 0}
+          <WebPerformanceCard
+            average={webVitalsData.performanceAvg}
+            change={webVitalsData.performanceChange}
             loading={webVitalsData.loading}
-            deltaLoading={webVitalsData.loading}
-            formatter={(value) => nfFloat.format(value)}
-            delta={
-              typeof webVitalsData.performanceChange === "number"
-                ? {
-                    value: webVitalsData.performanceChange,
-                    direction:
-                      webVitalsData.performanceChange > 0
-                        ? "up"
-                        : webVitalsData.performanceChange < 0
-                          ? "down"
-                          : "flat",
-                  }
-                : undefined
-            }
-            centerOnMobile
-            activeColor="#06b6d4"
-            onSelect={onSelectMetric ? () => onSelectMetric("performance") : undefined}
-            onSelectionToggle={
-              onToggleMetric ? () => onToggleMetric("performance") : undefined
-            }
             selected={activeMetric === "performance"}
-            selectionIndicatorSelected={selectedMetrics.includes("performance")}
+            radioSelected={selectedMetrics.includes("performance")}
+            onSelect={onSelectMetric ? () => onSelectMetric("performance") : undefined}
+            onToggle={onToggleMetric ? () => onToggleMetric("performance") : undefined}
           />
         ),
       });
@@ -2199,7 +2201,7 @@ function KPIs({
                     rightActive: checkoutMode === "R",
                     rightLabel: "R",
                     leftColor: "primary.main",
-                    rightColor: "#10b981",
+                    rightColor: "var(--dz-series)",
                     onClick: () =>
                       setCheckoutMode((prev) => (prev === "R" ? "C" : "R")),
                   })}

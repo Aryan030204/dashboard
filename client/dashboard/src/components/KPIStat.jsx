@@ -3,7 +3,7 @@ import { useTheme, alpha } from "@mui/material/styles";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 
-const SELECTED_CARD_COLOR = "#10b981";
+import { getTokens } from "../design/tokens.js";
 
 export default function KPIStat({
   label,
@@ -30,6 +30,10 @@ export default function KPIStat({
   variant = "card", // "cell" = flat metric cell for the connected KPI grid (visual only)
 }) {
   const theme = useTheme();
+  // Today's green stays in light mode; dark mode follows the accent (real hex, because alpha() needs one).
+  const seriesColor = getTokens(theme.palette.mode).series;
+  const accentColor = activeColor === "#10b981" ? seriesColor : activeColor;
+  const selectedColor = seriesColor;
   const clickable = typeof onSelect === "function" && !unavailable;
   const selectionClickable =
     typeof onSelectionToggle === "function" && !unavailable;
@@ -72,16 +76,16 @@ export default function KPIStat({
         cursor: clickable ? "pointer" : "default",
         position: "relative",
         border: "1px solid",
-        borderColor: selected ? SELECTED_CARD_COLOR : "divider",
+        borderColor: selected ? selectedColor : "divider",
         bgcolor: "background.paper",
         boxShadow: selected
-          ? `0 0 0 1px ${SELECTED_CARD_COLOR}, 0 10px 20px ${alpha(SELECTED_CARD_COLOR, 0.2)}, 0 6px 6px ${alpha(SELECTED_CARD_COLOR, 0.1)}`
+          ? `0 0 0 1px ${selectedColor}, 0 10px 20px ${alpha(selectedColor, 0.2)}, 0 6px 6px ${alpha(selectedColor, 0.1)}`
           : "0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)",
         "&:hover": clickable
           ? {
-              borderColor: selected ? SELECTED_CARD_COLOR : "divider",
+              borderColor: selected ? selectedColor : "divider",
               boxShadow: selected
-                ? `0 0 0 1.5px ${SELECTED_CARD_COLOR}, 0 14px 28px ${alpha(SELECTED_CARD_COLOR, 0.25)}, 0 10px 10px ${alpha(SELECTED_CARD_COLOR, 0.15)}`
+                ? `0 0 0 1.5px ${selectedColor}, 0 14px 28px ${alpha(selectedColor, 0.25)}, 0 10px 10px ${alpha(selectedColor, 0.15)}`
                 : "0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23)",
               transform: "translateY(-4px)",
             }
@@ -196,15 +200,15 @@ export default function KPIStat({
               borderRadius: "50%",
               border: "1.5px solid",
               borderColor: selectionIndicatorSelected
-                ? activeColor
+                ? accentColor
                 : alpha(theme.palette.text.secondary, 0.35),
-              bgcolor: selectionIndicatorSelected ? activeColor : "transparent",
+              bgcolor: selectionIndicatorSelected ? accentColor : "transparent",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               transition: "all 0.18s ease",
               boxShadow: selectionIndicatorSelected
-                ? `0 2px 6px ${alpha(activeColor, 0.35)}`
+                ? `0 2px 6px ${alpha(accentColor, 0.35)}`
                 : "none",
               cursor: selectionClickable ? "pointer" : "default",
               p: 0,
@@ -212,7 +216,7 @@ export default function KPIStat({
               appearance: "none",
               WebkitAppearance: "none",
               "&:focus-visible": {
-                boxShadow: `0 0 0 2px ${alpha(activeColor, 0.28)}`,
+                boxShadow: `0 0 0 2px ${alpha(accentColor, 0.28)}`,
               },
             }}
           >
