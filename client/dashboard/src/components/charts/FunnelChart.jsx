@@ -98,7 +98,7 @@ const FunnelChart = React.memo(function FunnelChart({
   // Generate gradient stops for segmented look
   const gradientStops = useMemo(() => {
     const colors = [
-      "#10b981", // emerald-500 (Primary sync)
+      "var(--dz-series)", // emerald-500 (Primary sync)
       "#34d399", // emerald-400
       "#6ee7b7", // emerald-300
       "#a7f3d0", // emerald-200
@@ -272,7 +272,7 @@ const FunnelChart = React.memo(function FunnelChart({
                         dx="0"
                         dy="-8"
                         stdDeviation="12"
-                        floodColor="#10b981"
+                        floodColor="var(--dz-series)"
                         floodOpacity="0.3"
                         result="shadowUp"
                       />
