@@ -30,7 +30,10 @@
     { "source": "/terms-of-service", "destination": "/" },
     { "source": "/data-deletion", "destination": "/" },
     { "source": "/login", "destination": "/" },
-    { "source": "/unauthorized", "destination": "/" }
+    { "source": "/unauthorized", "destination": "/" },
+    { "source": "/pnl", "destination": "/" },
+    { "source": "/pnl/(.*)", "destination": "/" },
+    { "source": "/ads", "destination": "/" }
   ],
 
   "headers": [
