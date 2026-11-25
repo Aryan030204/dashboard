@@ -174,7 +174,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       label: "Total Revenue",
       unitKind: "currency",
       axisGroup: "currency",
-      color: "#10b981",
+      color: "var(--dz-series)",
       strokeDasharray: "2 0",
       accessor: (metrics) => convertAmount(metrics?.sales ?? 0),
       formatter: (value) =>
@@ -190,7 +190,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
       label: "Gross Revenue",
       unitKind: "currency",
       axisGroup: "currency",
-      color: "#10b981",
+      color: "var(--dz-series)",
       strokeDasharray: "2 0",
       accessor: (metrics) => convertAmount(metrics?.sales ?? 0),
       formatter: (value) =>
@@ -394,7 +394,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
           label: "Prepaid Orders",
           unitKind: "count",
           axisGroup: "count",
-          color: "#2cc995",
+          color: "var(--dz-pay1)",
           strokeDasharray: "2 0",
           accessor: (metrics) => Number(metrics?.payment_orders_prepaid || 0),
           formatter: (value) => nfInt0.format(value || 0),
@@ -406,7 +406,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
           label: "COD Orders",
           unitKind: "count",
           axisGroup: "count",
-          color: "#1f5748",
+          color: "var(--dz-pay2)",
           strokeDasharray: "4 3",
           accessor: (metrics) => Number(metrics?.payment_orders_cod || 0),
           formatter: (value) => nfInt0.format(value || 0),
@@ -418,7 +418,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
           label: "Partially Paid Orders",
           unitKind: "count",
           axisGroup: "count",
-          color: "#8da399",
+          color: "var(--dz-pay3)",
           strokeDasharray: "6 3",
           accessor: (metrics) => Number(metrics?.payment_orders_partial || 0),
           formatter: (value) => nfInt0.format(value || 0),
@@ -436,7 +436,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
           label: "Prepaid Sales",
           unitKind: "currency",
           axisGroup: "currency",
-          color: "#2cc995",
+          color: "var(--dz-pay1)",
           strokeDasharray: "2 0",
           accessor: (metrics) => Number(metrics?.payment_sales_prepaid || 0),
           formatter: (value) =>
@@ -453,7 +453,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
           label: "COD Sales",
           unitKind: "currency",
           axisGroup: "currency",
-          color: "#1f5748",
+          color: "var(--dz-pay2)",
           strokeDasharray: "4 3",
           accessor: (metrics) => Number(metrics?.payment_sales_cod || 0),
           formatter: (value) =>
@@ -470,7 +470,7 @@ function buildMetricConfig(convertAmount, formatConvertedAmount) {
           label: "Partially Paid Sales",
           unitKind: "currency",
           axisGroup: "currency",
-          color: "#8da399",
+          color: "var(--dz-pay3)",
           strokeDasharray: "6 3",
           accessor: (metrics) => Number(metrics?.payment_sales_partial || 0),
           formatter: (value) =>
@@ -664,7 +664,7 @@ function CustomTooltip({
                   width: 8,
                   height: 8,
                   borderRadius: "50%",
-                  bgcolor: "#10b981",
+                  bgcolor: "var(--dz-series)",
                 }}
               />
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -684,7 +684,7 @@ function CustomTooltip({
                     width: 8,
                     height: 8,
                     borderRadius: "50%",
-                    bgcolor: alpha("#10b981", 0.5),
+                    bgcolor: "color-mix(in srgb, var(--dz-series) 50%, transparent)",
                   }}
                 />
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -703,7 +703,7 @@ function CustomTooltip({
               if (!delta) return null;
               const color =
                 delta.direction > 0
-                  ? "#10b981"
+                  ? "var(--dz-series)"
                   : delta.direction < 0
                     ? "#ef4444"
                     : "text.secondary";
@@ -1656,6 +1656,7 @@ export default memo(function HourlySalesCompare({
             display: "flex",
             alignItems: "flex-start",
             justifyContent: "space-between",
+            flexDirection: isMobile ? "column" : "row",
             mb: 3,
             gap: 2,
           }}
@@ -1672,9 +1673,9 @@ export default memo(function HourlySalesCompare({
             {shouldShowCompare ? (
               <Stack
                 direction="row"
-                spacing={isMobile ? 1.5 : 3}
+                spacing={isMobile ? 0 : 3}
                 alignItems="center"
-                sx={{ flexWrap: "wrap", gap: isMobile ? 1 : 0 }}
+                sx={{ flexWrap: isMobile ? "nowrap" : "wrap", gap: isMobile ? 2.5 : 0 }}
               >
                 <Stack
                   direction="row"
@@ -1695,10 +1696,10 @@ export default memo(function HourlySalesCompare({
                       height: 14,
                       borderRadius: "3px",
                       bgcolor: visibleRangeLines.includes("primary")
-                        ? "#10b981"
+                        ? "var(--dz-series)"
                         : "transparent",
                       border: "1px solid",
-                      borderColor: "#10b981",
+                      borderColor: "var(--dz-series)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -1748,9 +1749,9 @@ export default memo(function HourlySalesCompare({
                         height: 14,
                         borderRadius: "3px",
                         border: "1px solid",
-                        borderColor: "#10b981",
+                        borderColor: "var(--dz-series)",
                         bgcolor: visibleRangeLines.includes("comparison")
-                          ? "#10b981"
+                          ? "var(--dz-series)"
                           : "transparent",
                         display: "flex",
                         alignItems: "center",
@@ -1966,7 +1967,7 @@ export default memo(function HourlySalesCompare({
                         hide={!visibleRangeLines.includes("comparison")}
                         dataKey="comparisonValue"
                         name={rangeLabels.previous || "Previous"}
-                        fill={alpha("#10b981", 0.45)}
+                        fill={"color-mix(in srgb, var(--dz-series) 45%, transparent)"}
                         radius={[4, 4, 0, 0]}
                         maxBarSize={26}
                         onMouseEnter={() => setHoveredMetric("previous")}
@@ -1976,7 +1977,7 @@ export default memo(function HourlySalesCompare({
                         hide={!visibleRangeLines.includes("primary")}
                         dataKey="currentValue"
                         name={rangeLabels.current || "Current"}
-                        fill="#10b981"
+                        fill="var(--dz-series)"
                         radius={[4, 4, 0, 0]}
                         maxBarSize={26}
                         onMouseEnter={() => setHoveredMetric("current")}
@@ -2118,7 +2119,7 @@ export default memo(function HourlySalesCompare({
                       hide={!visibleRangeLines.includes("comparison")}
                       dataKey="comparisonValue"
                       name={rangeLabels.previous || "Previous"}
-                      stroke={alpha("#10b981", 0.55)}
+                      stroke={"color-mix(in srgb, var(--dz-series) 55%, transparent)"}
                       strokeWidth={2}
                       strokeDasharray="6 4"
                       strokeLinecap="round"
@@ -2134,7 +2135,7 @@ export default memo(function HourlySalesCompare({
                       hide={!visibleRangeLines.includes("primary")}
                       dataKey="currentPrimaryValue"
                       name={rangeLabels.current || "Current"}
-                      stroke="#10b981"
+                      stroke="var(--dz-series)"
                       strokeWidth={3}
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -2151,7 +2152,7 @@ export default memo(function HourlySalesCompare({
                       }
                       dataKey="currentTailValue"
                       name={`${rangeLabels.current || "Current"} (In progress)`}
-                      stroke="#10b981"
+                      stroke="var(--dz-series)"
                       strokeDasharray="4 4"
                       strokeWidth={3}
                       strokeLinecap="round"

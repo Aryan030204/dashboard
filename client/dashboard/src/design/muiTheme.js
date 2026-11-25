@@ -17,7 +17,7 @@ export function createDatumTheme(mode = "light") {
       warning: { main: t.warn },
       info: { main: t.info },
       background: { default: t.bg, paper: t.panel },
-      text: { primary: t.text, secondary: t.muted, disabled: isDark ? "#5d6b64" : "#9aa6a0" },
+      text: { primary: t.text, secondary: t.muted, disabled: isDark ? "#626A7B" : "#9aa6a0" },
       divider: t.line,
       action: { hover: t.hover, selected: t["accent-soft"] },
     },

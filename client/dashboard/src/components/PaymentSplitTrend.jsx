@@ -29,11 +29,15 @@ import {
 import { useInrCurrency } from "../lib/currency.js";
 import { useDashboardPaymentSplitTrendData } from "../features/dashboard/widgetDataHooks.js";
 
-const MAIN_COLOR = "#10b981";
+// Series colors are CSS variables (they change with light/dark), which MUI's alpha() cannot parse.
+// color-mix gives the same transparency and works with variables and hex alike.
+const tint = (color, opacity) => `color-mix(in srgb, ${color} ${Math.round(opacity * 100)}%, transparent)`;
+
+const MAIN_COLOR = "var(--dz-series)";
 const COLORS = {
-  prepaid: "#2cc995",
-  cod: "#1f5748",
-  partial: "#8da399",
+  prepaid: "var(--dz-pay1)",
+  cod: "var(--dz-pay2)",
+  partial: "var(--dz-pay3)",
 };
 const TOOLTIP_VALUE_COLORS = [
   "#ff6b6b",
@@ -609,7 +613,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                       border: "1px solid",
                       borderColor: MAIN_COLOR,
                       bgcolor: visibleBars.includes("comparison")
-                        ? alpha(MAIN_COLOR, 0.45)
+                        ? "color-mix(in srgb, var(--dz-series) 45%, transparent)"
                         : "transparent",
                       display: "flex",
                       alignItems: "center",
@@ -658,7 +662,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                     size="small"
                     onClick={(e) => e.stopPropagation()}
                     sx={{
-                      color: alpha(series.color, 0.7),
+                      color: tint(series.color, 0.7),
                       "&.Mui-checked": {
                         color: series.color,
                       },
@@ -778,11 +782,11 @@ export default memo(function PaymentSplitTrend({ query }) {
                       hide={!visibleBars.includes("comparison")}
                       dataKey={series.comparisonPctKey}
                       name={series.key}
-                      stroke={alpha(series.color, 0.6)}
+                      stroke={tint(series.color, 0.6)}
                       strokeDasharray="5 5"
                       strokeWidth={2}
-                      dot={{ r: 3, fill: "white", stroke: alpha(series.color, 0.7), strokeWidth: 1.5 }}
-                      activeDot={{ r: 5, fill: alpha(series.color, 0.7), stroke: "white", strokeWidth: 2 }}
+                      dot={{ r: 3, fill: "white", stroke: tint(series.color, 0.7), strokeWidth: 1.5 }}
+                      activeDot={{ r: 5, fill: tint(series.color, 0.7), stroke: "white", strokeWidth: 2 }}
                     />
                   ))}
                   {selectedSeries.map((series) => (
@@ -846,7 +850,7 @@ export default memo(function PaymentSplitTrend({ query }) {
                       hide={!visibleBars.includes("comparison")}
                       dataKey={series.comparisonPctKey}
                       name={series.key}
-                      fill={alpha(series.color, 0.45)}
+                      fill={tint(series.color, 0.45)}
                       radius={[4, 4, 0, 0]}
                       maxBarSize={28}
                     >
