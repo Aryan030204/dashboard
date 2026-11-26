@@ -14,7 +14,7 @@ function cell(value) {
 }
 const line = (cells) => `${cells.map(cell).join(",")}\r\n`;
 
-const ORDER_HEADER = ["Reference Code", "Client Location", "Order Date", "Order Hour", "Courier Name", "NDD", "Shipment Picked At", "SLA Status"];
+const ORDER_HEADER = ["Reference Code", "Client Location", "Order Date", "Order Hour", "Courier Name", "NDD", "Shipment Picked At", "SLA Status", "Marketplace"];
 const SUMMARY_HEADER = ["Client Location", "Order Date", "Order Hour", "SLA Met", "SLA Breached", "Total", "Met %", "Breached %"];
 
 // write(chunk) must return a promise that resolves when the sink accepts more (handles backpressure).
@@ -28,7 +28,7 @@ async function writeOrdersCsv({ repo, run, filters = {}, write }) {
     if (batch.length) {
       await write(batch.map((o) => line([
         o.reference_code, LABELS[o.client_location] || o.client_location, o.order_at, Number(o.order_hour), o.courier,
-        Number(o.is_ndd) ? "Yes" : "No", o.shipment_picked_at || "", o.sla_status === "MET" ? "Met" : "Breached",
+        Number(o.is_ndd) ? "Yes" : "No", o.shipment_picked_at || "", o.sla_status === "MET" ? "Met" : "Breached", o.marketplace || "",
       ])).join(""));
       rows += batch.length;
     }
@@ -39,10 +39,10 @@ async function writeOrdersCsv({ repo, run, filters = {}, write }) {
   return rows;
 }
 
-async function writeSummaryCsv({ repo, run, write }) {
+async function writeSummaryCsv({ repo, run, filters = {}, write }) {
   const { percentages } = require("./processor");
   await write(`﻿${line(SUMMARY_HEADER)}`);
-  const rows = await repo.getSummary(run.id, Number(run.active_generation)); // at most locations x 2 dates x 24
+  const rows = await repo.getSummary(run.id, Number(run.active_generation), filters); // at most locations x dates x 24
   await write(rows.map((r) => {
     const met = Number(r.met_count);
     const breached = Number(r.breached_count);
@@ -52,4 +52,47 @@ async function writeSummaryCsv({ repo, run, write }) {
   return rows.length;
 }
 
-module.exports = { writeOrdersCsv, writeSummaryCsv, cell, ORDER_HEADER };
+// ---- pivot: the layout of the manual Excel report ----------------------------------------------------------------
+// One block per client location side by side (a blank column between them), then a "Full" block for all locations.
+// Rows are order dates, columns are SLA Breached / SLA Met / Grand Total. As in Excel, a zero is left blank.
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dayLabel = (date) => `${date.slice(8, 10)}-${MONTHS[Number(date.slice(5, 7)) - 1]}`;
+const BLOCK_WIDTH = 4;
+
+// summary rows (location, date, hour) -> [Row Labels | Breached | Met | Total] lines for the given dates.
+function pivotBlock(rows, dates) {
+  const sum = (subset) => {
+    const breached = subset.reduce((n, r) => n + Number(r.breached_count), 0);
+    const met = subset.reduce((n, r) => n + Number(r.met_count), 0);
+    return [breached || "", met || "", breached + met || ""];
+  };
+  return [
+    ["Count of Reference Code", "Column Labels", "", ""],
+    ["Row Labels", "SLA Breached", "SLA Met", "Grand Total"],
+    ...dates.map((d) => [dayLabel(d), ...sum(rows.filter((r) => r.order_date === d))]),
+    ["Grand Total", ...sum(rows)],
+  ];
+}
+
+function pivotLines(summary) {
+  const dates = [...new Set(summary.map((r) => r.order_date))].sort();
+  const locations = Object.keys(LABELS).filter((key) => summary.some((r) => r.client_location === key));
+  const blocks = locations.map((key) => [
+    ["Client Location", LABELS[key], "", ""],
+    ["", "", "", ""],
+    ...pivotBlock(summary.filter((r) => r.client_location === key), dates),
+  ]);
+  const sideBySide = blocks.length ? blocks[0].map((_, i) => blocks.flatMap((block, n) => (n ? ["", ...block[i]] : block[i]))) : [];
+  const blank = Array(BLOCK_WIDTH).fill("");
+  return [...sideBySide, blank, blank, ["Full", "", "", ""], blank, blank, ...pivotBlock(summary, dates)];
+}
+
+async function writePivotCsv({ repo, run, filters = {}, write }) {
+  const summary = await repo.getSummary(run.id, Number(run.active_generation), filters);
+  const lines = pivotLines(summary);
+  await write(`﻿${lines.map(line).join("")}`);
+  return lines.length;
+}
+
+module.exports = { writeOrdersCsv, writeSummaryCsv, writePivotCsv, cell, ORDER_HEADER };

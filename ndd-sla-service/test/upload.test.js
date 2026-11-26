@@ -52,13 +52,16 @@ test("manual golden 19-Nov: plain GoKwik CSV + gzipped EasyCom export give the e
   assert.equal(run.status, "COMPLETED");
   assert.deepEqual([run.source_mode, run.source_filename, run.easycom_source_filename, run.uploaded_by], ["MANUAL", "gokwik_19nov.csv", "easycom_19nov.csv.gz", "uploader-1"]);
   assert.match(run.source_sha256, /^[0-9a-f]{64}$/);
+  // An upload applies no time window: the fixture's "outside the window" orders are counted too.
+  const total = 1063 + golden.noise.out_of_window;
   assert.deepEqual([run.rows_kept, run.rows_wrong_client, run.rows_wrong_status, run.rows_out_of_window, run.rows_duplicate, run.rows_invalid],
-    [1063, golden.noise.wrong_client, golden.noise.wrong_status, golden.noise.out_of_window, golden.noise.duplicate, golden.noise.invalid]);
+    [total, golden.noise.wrong_client, golden.noise.wrong_status, 0, golden.noise.duplicate, golden.noise.invalid]);
 
   const stored = repo._orders.filter((o) => o.run_id === run.id && o.generation === run.active_generation);
-  assert.equal(stored.length, 1063);
-  assert.equal(stored.filter((o) => o.client_location === "AJMAL_SONS").length, EXPECTED_TOTAL.AJMAL_SONS);
-  assert.equal(stored.filter((o) => o.client_location === "EMIZA_GGN").length, EXPECTED_TOTAL.EMIZA_GGN);
+  assert.equal(stored.length, total);
+  const inGolden = stored.filter((o) => !o.reference_code.startsWith("OUT-"));
+  assert.equal(inGolden.filter((o) => o.client_location === "AJMAL_SONS").length, EXPECTED_TOTAL.AJMAL_SONS);
+  assert.equal(inGolden.filter((o) => o.client_location === "EMIZA_GGN").length, EXPECTED_TOTAL.EMIZA_GGN);
   const byRef = new Map(stored.map((o) => [o.reference_code, o]));
   for (const want of golden.kept) {
     const got = byRef.get(want.reference);
@@ -70,7 +73,7 @@ test("manual golden 19-Nov: plain GoKwik CSV + gzipped EasyCom export give the e
   assert.deepEqual([view.body.totals.total, view.body.run.source.mode, view.body.run.source.easycomFilename], [1063, "MANUAL", "easycom_19nov.csv.gz"]);
 });
 
-test("auto and manual produce the same report from the same data (one core, two ways in)", async () => {
+test("auto and manual agree on every windowed order; manual also counts the orders outside the windows", async () => {
   const golden = buildGolden();
   const { repo, app } = setup();
   await upload(app, { gokwik: { data: zlib.gzipSync(golden.csv), name: "g.csv.gz" }, easycom: { data: Buffer.from(easycomCsv(golden.pages)), name: "e.csv" } }).expect(202);
@@ -86,8 +89,8 @@ test("auto and manual produce the same report from the same data (one core, two 
   const auto = autoRepo._runs.find((r) => r.report_date === REPORT_DATE);
   assert.equal(auto.status, "COMPLETED");
   const autoRows = autoRepo._orders.filter((o) => o.run_id === auto.id).map((o) => [o.reference_code, o.order_at, o.shipment_picked_at, o.sla_status]).sort();
-  assert.deepEqual(manualRows, autoRows);
-  assert.deepEqual([manual.sla_met, manual.sla_breached], [auto.sla_met, auto.sla_breached]);
+  assert.deepEqual(manualRows.filter(([ref]) => !ref.startsWith("OUT-")), autoRows);
+  assert.equal(manualRows.length - autoRows.length, golden.noise.out_of_window);
 });
 
 test("upload RBAC: needs BOTH ndd_sla_panel (view) and ndd_sla_upload; authors pass; nothing is stored on refusal", async () => {
@@ -103,7 +106,7 @@ test("upload RBAC: needs BOTH ndd_sla_panel (view) and ndd_sla_upload; authors p
   assert.deepEqual(leftovers(), []);
 });
 
-test("upload validation: both files, non-empty, CSV names, date shape, window already closed, size limit", async () => {
+test("upload validation: both files, non-empty, CSV names, date shape, size limit", async () => {
   const { app, repo } = setup({ envOver: { NDD_SLA_MAX_UPLOAD_BYTES: "2000" } });
   const ok = { data: Buffer.from("Reference Code,Shipment Picked At\n"), name: "e.csv" };
   const small = { data: Buffer.from("a,b\n1,2\n"), name: "g.csv" };
@@ -111,7 +114,6 @@ test("upload validation: both files, non-empty, CSV names, date shape, window al
   assert.equal((await upload(app, { gokwik: { data: Buffer.alloc(0), name: "g.csv" }, easycom: ok }).expect(400)).body.code, "EMPTY_FILE");
   assert.equal((await upload(app, { gokwik: { data: Buffer.from("x"), name: "g.xlsx" }, easycom: ok }).expect(400)).body.code, "UNSUPPORTED_FILE");
   assert.equal((await upload(app, { gokwik: small, easycom: ok }, H(), "not-a-date").expect(400)).body.code, "VALIDATION_ERROR");
-  assert.equal((await upload(app, { gokwik: small, easycom: ok }, H(), "2026-11-20").expect(400)).body.code, "WINDOW_OPEN", "20-Nov windows close later today");
   assert.equal((await upload(app, { gokwik: { data: Buffer.alloc(5000, "a"), name: "g.csv" }, easycom: ok }).expect(413)).body.code, "FILE_TOO_LARGE");
   assert.equal(repo._runs.length, 0, "no run is created for a refused upload");
   assert.deepEqual(leftovers(), [], "refused uploads leave no temp files");
@@ -197,4 +199,33 @@ test("the worker never claims a manual run; a manual run whose uploader died fai
   assert.deepEqual([repo._runs[0].status, repo._runs[0].error_code, repo._runs[0].next_attempt_at], ["PROCESSING_FAILED", "UPLOAD_INTERRUPTED", null]);
   assert.deepEqual(await repo.requeue("AJMAL", REPORT_DATE), { requeued: true, id: repo._runs[0].id });
   assert.equal(repo._runs[0].source_mode, "AUTO", "a requeue hands the date back to the automated flow");
+});
+
+test("the report date is only a label: the same files under an unrelated date give the same report", async () => {
+  const golden = buildGolden();
+  const { app, repo } = setup();
+  const files = { gokwik: { data: Buffer.from(golden.csv), name: "g.csv" }, easycom: { data: Buffer.from(easycomCsv(golden.pages)), name: "e.csv" } };
+  await upload(app, files, H(), "2025-01-01").expect(202);
+  const run = await waitFor(() => repo._runs[0] && !repo._runs[0].locked_at && repo._runs[0].status === "COMPLETED" && repo._runs[0]);
+  assert.equal(run.report_date, "2025-01-01");
+  assert.deepEqual([run.rows_kept, run.rows_out_of_window], [1063 + golden.noise.out_of_window, 0]);
+  // The window view comes from the files' newest order date (19 Nov here), not from the unrelated label date.
+  const view = await request(app).get("/ndd-sla/reports/2025-01-01").set(H()).expect(200);
+  assert.deepEqual([view.body.totals.total, view.body.run.windows.other.end], [1063, "2026-11-19 15:00:00"]);
+});
+
+test("the report counts the window in the files; each order date can be picked and they add up", async () => {
+  const golden = buildGolden();
+  const { app, repo } = setup();
+  const files = { gokwik: { data: Buffer.from(golden.csv), name: "g.csv" }, easycom: { data: Buffer.from(easycomCsv(golden.pages)), name: "e.csv" } };
+  await upload(app, files).expect(202);
+  await finished(repo);
+  const get = async (query) => (await request(app).get(`/ndd-sla/reports/${REPORT_DATE}${query}`).set(H()).expect(200)).body;
+  const both = await get("");
+  assert.equal(both.totals.total, 1063);
+  assert.deepEqual(both.days.map((d) => d.date), ["2026-11-18", "2026-11-19"]);
+  for (const d of both.days) assert.equal((await get(`?day=${d.date}`)).totals.total, d.total);
+  assert.equal(both.days[0].total + both.days[1].total, 1063);
+  const orders = await request(app).get(`/ndd-sla/reports/${REPORT_DATE}/orders?day=2026-11-18&limit=500`).set(H()).expect(200);
+  assert.ok(orders.body.orders.length && orders.body.orders.every((o) => o.orderAt.startsWith("2026-11-18") && !o.referenceCode.startsWith("OUT-")));
 });

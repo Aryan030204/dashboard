@@ -26,10 +26,10 @@ test("insertOrders: ONE multi-row INSERT per batch, NULL (not a date) for a miss
   assert.equal(n, 2);
   assert.equal(pool.log.length, 1);
   const [{ sql, args }] = pool.log;
-  assert.match(sql, /^INSERT INTO ndd_sla_orders \(.*shipment_picked_at, sla_status\) VALUES \?$/);
+  assert.match(sql, /^INSERT INTO ndd_sla_orders \(.*shipment_picked_at, sla_status, marketplace\) VALUES \?$/);
   const [values] = args;
   assert.equal(values.length, 2);
-  assert.deepEqual(values[0], [7, 3, "A", "AJMAL_SONS", "2026-11-19 10:00:00", "2026-11-19", 10, "BlitzNDD", 1, null, "BREACHED"]);
+  assert.deepEqual(values[0], [7, 3, "A", "AJMAL_SONS", "2026-11-19 10:00:00", "2026-11-19", 10, "BlitzNDD", 1, null, "BREACHED", null]);
   assert.equal(values[1][9], "2026-11-19 12:00:00");
   assert.equal(await repo.insertOrders(7, 3, []), 0);
   assert.equal(pool.log.length, 1, "an empty batch issues no SQL");

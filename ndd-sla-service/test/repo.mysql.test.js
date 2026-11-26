@@ -42,6 +42,8 @@ test("setup: apply the real migration to the throwaway database", opts, async ()
   // 001 is documented as safe to run twice.
   await pool.query(fs.readFileSync(path.join(__dirname, "..", "migrations", "001-create-ndd-sla.sql"), "utf8"));
   await pool.query(fs.readFileSync(path.join(__dirname, "..", "migrations", "002-add-manual-upload.sql"), "utf8"));
+  await pool.query(fs.readFileSync(path.join(__dirname, "..", "migrations", "003-multi-report-control.sql"), "utf8"));
+  await pool.query(fs.readFileSync(path.join(__dirname, "..", "migrations", "004-add-marketplace.sql"), "utf8"));
   assert.deepEqual(await repo.checkSchema(), { ok: true, missing: [] });
 });
 
