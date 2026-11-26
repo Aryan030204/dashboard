@@ -1390,6 +1390,7 @@ export async function getDailyFunnel(args = {}) {
       compare_utm_date: args.compareUtmDate,
       compare_utm_end_date: args.compareUtmEndDate || undefined,
       utm_source: args.utmSource || undefined,
+      granularity: args.granularity || undefined,
       include_utm:
         typeof args.includeUtm === "boolean" ? String(args.includeUtm) : undefined,
       include_daily:
@@ -1408,6 +1409,7 @@ export async function getDailyFunnel(args = {}) {
     utmSource: json?.utmSource || null,
     utmCutoffHour: Number.isInteger(json?.utmCutoffHour) ? json.utmCutoffHour : null,
     range: json?.range || null,
+    granularity: json?.granularity || null,
     timezone: json?.timezone || "Asia/Kolkata",
     error: json?.__error,
   };

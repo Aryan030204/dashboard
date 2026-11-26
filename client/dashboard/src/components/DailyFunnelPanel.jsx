@@ -42,6 +42,7 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import DownloadIcon from "@mui/icons-material/Download";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
@@ -49,6 +50,10 @@ import { DatePicker } from "@shopify/polaris";
 import { getDailyFunnel } from "../lib/api.js";
 import { useInrCurrency } from "../lib/currency.js";
 import { validateFilter } from "../lib/filterValidation.js";
+import {
+  defaultMonthRange, isPartialMonth, monthLabel, monthOptions, monthRangeDates, withFrom, withTo,
+} from "../lib/monthRange.js";
+import { completeWeeks, spanLabel, sumRowsByWeek, weekLabel } from "../lib/weekRange.js";
 
 const DATE_PRESETS = [
   {
@@ -794,6 +799,67 @@ export function FunnelRangeOrDatePicker({ startDate, endDate, onApply, compact =
   );
 }
 
+// From / To month selects of the monthly view. The helpers keep the range ordered and at most 6 months long.
+function FunnelMonthRangePicker({ range, today, onChange }) {
+  const options = monthOptions(today);
+  const select = (label, value, apply) => (
+    <Select
+      size="small"
+      value={value}
+      onChange={(event) => onChange(apply(event.target.value))}
+      inputProps={{ "aria-label": label }}
+      renderValue={(month) => `${label} ${monthLabel(month)}`}
+      sx={{ fontSize: "0.8125rem", fontWeight: 600, "& .MuiSelect-select": { py: 0.75 } }}
+    >
+      {options.map((month) => (
+        <MenuItem key={month} value={month} sx={{ fontSize: "0.8125rem" }}>
+          {monthLabel(month)}
+        </MenuItem>
+      ))}
+    </Select>
+  );
+  return (
+    <>
+      {select("From", range.from, (month) => withFrom(range, month, today))}
+      {select("To", range.to, (month) => withTo(range, month))}
+    </>
+  );
+}
+
+function FunnelRowTag({ live, period = "month" }) {
+  return (
+    <Box
+      component="span"
+      title={live ? undefined : `Some days of this ${period} have no data`}
+      sx={{
+        px: 0.75,
+        py: 0.25,
+        borderRadius: 999,
+        fontSize: "0.65rem",
+        fontWeight: 800,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+        color: live ? "#14532d" : "#713f12",
+        bgcolor: live ? "#bbf7d0" : "#fef08a",
+        border: live ? "1px solid #86efac" : "1px solid #fde047",
+        lineHeight: 1.2,
+        ...(live
+          ? {
+              animation: "dailyFunnelLivePulse 1.2s ease-in-out infinite",
+              "@keyframes dailyFunnelLivePulse": {
+                "0%": { opacity: 0.55, transform: "scale(0.98)" },
+                "50%": { opacity: 1, transform: "scale(1)" },
+                "100%": { opacity: 0.55, transform: "scale(0.98)" },
+              },
+            }
+          : {}),
+      }}
+    >
+      {live ? "Live" : "Partial"}
+    </Box>
+  );
+}
+
 export default function DailyFunnelPanel({
   brandKey,
   initialStartDate,
@@ -823,6 +889,19 @@ export default function DailyFunnelPanel({
   const [displayMode, setDisplayMode] = useState("count");
   const [dailyPercentBasis, setDailyPercentBasis] = useState("sessions");
   const [rows, setRows] = useState([]);
+  const today = dayjs().format("YYYY-MM-DD");
+  const [view, setView] = useState("daily"); // "daily" | "weekly" | "monthly"
+  const [weeklyBasis, setWeeklyBasis] = useState("daily"); // the weekly view follows the date range or the month range
+  const isMonthly = view === "monthly";
+  const isWeekly = view === "weekly";
+  const usesMonths = isMonthly || (isWeekly && weeklyBasis === "monthly");
+  const [monthRange, setMonthRange] = useState(() => defaultMonthRange(dayjs().format("YYYY-MM-DD")));
+  const { start: monthStart, end: monthEnd } = monthRangeDates(monthRange, today);
+  // What the month range needs from the server: month totals, or daily rows to add up into weeks.
+  const monthGrain = isMonthly ? "monthly" : isWeekly && weeklyBasis === "monthly" ? "daily" : null;
+  const monthKey = monthGrain && brandKey ? `${brandKey}|${monthGrain}|${monthStart}|${monthEnd}` : "";
+  const [monthData, setMonthData] = useState({ key: "", rows: [], error: "" });
+  const monthCache = useRef(new Map()); // switching views does not query the same range again
   const [utmSourceRows, setUtmSourceRows] = useState([]);
   const [utmCampaignRows, setUtmCampaignRows] = useState([]);
   const [utmSourceFilter, setUtmSourceFilter] = useState("");
@@ -849,7 +928,47 @@ export default function DailyFunnelPanel({
   const [utmFilterField, setUtmFilterField] = useState("sessions");
   const [utmFilterOperator, setUtmFilterOperator] = useState("gt");
   const [utmFilterValue, setUtmFilterValue] = useState("");
-  const currency = useInrCurrency(brandKey, endDate);
+  const currency = useInrCurrency(brandKey, usesMonths ? monthEnd : endDate);
+
+  // Rows for the month range are requested only while a view that needs them is open.
+  useEffect(() => {
+    if (!monthKey || !brandKey) return undefined;
+    const cached = monthCache.current.get(monthKey);
+    if (cached) {
+      setMonthData({ key: monthKey, rows: cached, error: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    const fail = () => {
+      if (!cancelled) {
+        setMonthData({ key: monthKey, rows: [], error: `Failed to load ${monthGrain === "monthly" ? "monthly" : "weekly"} funnel rows.` });
+      }
+    };
+    getDailyFunnel({
+      brand_key: brandKey,
+      start: monthStart,
+      end: monthEnd,
+      granularity: monthGrain === "monthly" ? "monthly" : undefined,
+      includeUtm: false,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        // A server that does not know about months would return days: never show those as months.
+        if (result?.error || (monthGrain === "monthly" && result?.granularity !== "monthly")) {
+          fail();
+          return;
+        }
+        const nextRows = Array.isArray(result.rows) ? result.rows : [];
+        monthCache.current.set(monthKey, nextRows);
+        setMonthData({ key: monthKey, rows: nextRows, error: "" });
+      })
+      .catch(fail);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [brandKey, monthEnd, monthGrain, monthKey, monthStart]);
 
   useEffect(() => {
     setStartDate(initialStart);
@@ -1050,9 +1169,36 @@ export default function DailyFunnelPanel({
     );
   }, [utmSourceOptions, utmSourceSearch]);
 
+  // Rows of another range or grain are never shown while the right ones are loading.
+  const monthReady = monthData.key === monthKey;
+  const monthRows = monthReady ? monthData.rows : null;
+  const weekSplit = useMemo(
+    () => (usesMonths ? completeWeeks(monthStart, monthEnd, today) : completeWeeks(startDate, endDate, today)),
+    [endDate, monthEnd, monthStart, startDate, today, usesMonths],
+  );
+  const canShowWeekly = weekSplit.weeks.length > 0;
+
+  const sourceRows = useMemo(() => {
+    if (isMonthly) return monthRows || [];
+    if (!isWeekly) return rows;
+    return sumRowsByWeek(usesMonths ? monthRows || [] : rows, usesMonths && !monthRows ? [] : weekSplit.weeks);
+  }, [isMonthly, isWeekly, monthRows, rows, usesMonths, weekSplit]);
+
+  const showPerformance = sourceRows.some((row) => row?.performance !== undefined);
+  const columns = showPerformance
+    ? [...DAILY_COLUMNS, { id: "performance", label: "Avg Performance", align: "right" }]
+    : DAILY_COLUMNS;
+  const handleViewChange = (next) => {
+    if (next === "weekly" && !isWeekly) setWeeklyBasis(view);
+    setView(next);
+  };
+  const periodName = isMonthly ? "Month" : isWeekly ? "Week" : "Date";
+  const formatPeriod = (date) =>
+    isMonthly ? monthLabel(date.slice(0, 7)) : isWeekly ? weekLabel(date) : formatPanelDate(date);
+
   const normalizedRows = useMemo(
     () =>
-      [...rows]
+      [...sourceRows]
         .map((row) => ({
           date: row?.date || "",
           sales: toSafeNumber(row?.sales),
@@ -1064,9 +1210,12 @@ export default function DailyFunnelPanel({
           prepaid_orders: toSafeNumber(row?.prepaid_orders),
           cod_orders: toSafeNumber(row?.cod_orders),
           partially_paid_orders: toSafeNumber(row?.partially_paid_orders),
+          days_with_data: toSafeNumber(row?.days_with_data),
+          // absent = not permitted; null = no score for that period
+          performance: row?.performance == null ? row?.performance : Number(row.performance),
         }))
         .sort((left, right) => right.date.localeCompare(left.date)),
-    [rows],
+    [sourceRows],
   );
 
   const tableRows = useMemo(
@@ -1087,6 +1236,7 @@ export default function DailyFunnelPanel({
             : formatCount(row.orders),
         cvr: row.sessions > 0 ? (row.orders / row.sessions) * 100 : 0,
         cvrDisplay: formatPercent(row.orders, row.sessions),
+        performanceDisplay: row.performance == null ? "—" : row.performance.toFixed(1),
         ppDisplay:
           displayMode === "percent"
             ? getDailyPercentDisplay(row, "prepaid_orders", dailyPercentBasis)
@@ -1212,7 +1362,7 @@ export default function DailyFunnelPanel({
 
   useEffect(() => {
     setDailyPage(0);
-  }, [startDate, endDate, dailyRowsPerPage]);
+  }, [startDate, endDate, dailyRowsPerPage, view, monthStart, monthEnd]);
 
   useEffect(() => {
     setUtmPage(0);
@@ -1392,7 +1542,7 @@ export default function DailyFunnelPanel({
     if (!sortedDailyRows.length) return;
 
     const headers = [
-      "Date",
+      periodName,
       "Sessions",
       "ATC Sessions",
       "CI Events",
@@ -1402,13 +1552,14 @@ export default function DailyFunnelPanel({
       "COD Orders",
       "PPCOD Orders",
       "Conversion Rate",
+      ...(showPerformance ? ["Avg Performance"] : []),
     ];
 
     const lines = [
       headers.join(","),
       ...sortedDailyRows.map((row) =>
         [
-          formatPanelDate(row.date),
+          formatPeriod(row.date),
           formatCount(row.sessions),
           row.atcDisplay,
           row.ciDisplay,
@@ -1418,6 +1569,7 @@ export default function DailyFunnelPanel({
           row.codDisplay,
           row.ppcodDisplay,
           row.cvrDisplay,
+          ...(showPerformance ? [row.performanceDisplay] : []),
         ]
           .map(escapeCsvValue)
           .join(","),
@@ -1429,17 +1581,19 @@ export default function DailyFunnelPanel({
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const suffix =
-      startDate && endDate
+    const suffix = usesMonths
+      ? `${monthStart}_to_${monthEnd}`
+      : startDate && endDate
         ? `${startDate}_to_${endDate}`
         : dayjs().format("YYYY-MM-DD");
     link.href = url;
-    link.download = `daily-funnel-${(brandKey || "brand").toLowerCase()}-${suffix}.csv`;
+    link.download = `${view}-funnel-${(brandKey || "brand").toLowerCase()}-${suffix}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }, [brandKey, endDate, sortedDailyRows, startDate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandKey, endDate, view, usesMonths, monthEnd, monthStart, sortedDailyRows, startDate]);
 
   const handleExportUtmCsv = useCallback(() => {
     if (!filteredUtmRows.length) return;
@@ -1498,17 +1652,22 @@ export default function DailyFunnelPanel({
   }, [brandKey, filteredUtmRows, utmDate, utmEndDate, utmSourceFilter]);
 
   const hasRows = sortedDailyRows.length > 0;
+  const tableLoading = monthKey ? !monthReady : loading;
+  const tableError = monthKey ? (monthReady ? monthData.error : "") : error;
+  const viewName = view === "daily" ? "Daily" : view === "weekly" ? "Weekly" : "Monthly";
   const hasUtmRows = filteredUtmRows.length > 0;
 
   return (
     <Stack spacing={{ xs: 2, md: 3 }}>
       <PageHeader
         title="Conversion Funnel"
-        description="Daily funnel and payment split for the selected brand"
+        description={`${viewName} funnel and payment split for the selected brand`}
         meta={[
-          startDate && endDate
-            ? `${dayjs(startDate).format("MMM D")} – ${dayjs(endDate).format("MMM D, YYYY")}`
-            : null,
+          usesMonths
+            ? `${monthLabel(monthRange.from)} – ${monthLabel(monthRange.to)}`
+            : startDate && endDate
+              ? `${dayjs(startDate).format("MMM D")} – ${dayjs(endDate).format("MMM D, YYYY")}`
+              : null,
         ]}
         actions={
           <Button
@@ -1523,14 +1682,18 @@ export default function DailyFunnelPanel({
         }
       />
       <FilterBar ariaLabel="Conversion funnel filters">
-        <FunnelDateRangePicker
-          startDate={startDate}
-          endDate={endDate}
-          onApply={(nextStart, nextEnd) => {
-            setStartDate(nextStart.format("YYYY-MM-DD"));
-            setEndDate(nextEnd.format("YYYY-MM-DD"));
-          }}
-        />
+        {usesMonths ? (
+          <FunnelMonthRangePicker range={monthRange} today={today} onChange={setMonthRange} />
+        ) : (
+          <FunnelDateRangePicker
+            startDate={startDate}
+            endDate={endDate}
+            onApply={(nextStart, nextEnd) => {
+              setStartDate(nextStart.format("YYYY-MM-DD"));
+              setEndDate(nextEnd.format("YYYY-MM-DD"));
+            }}
+          />
+        )}
         <FilterBarSeparator />
         <Segmented
           ariaLabel="Count or percentage"
@@ -1553,23 +1716,62 @@ export default function DailyFunnelPanel({
             ]}
           />
         ) : null}
+        <Box sx={{ ml: "auto" }}>
+          <Segmented
+            ariaLabel="Daily, weekly or monthly"
+            value={view}
+            onChange={handleViewChange}
+            options={[
+              { value: "daily", label: "Daily" },
+              {
+                value: "weekly",
+                label: "Weekly",
+                disabled: !isWeekly && !canShowWeekly,
+                title: canShowWeekly ? undefined : "The selected range has no complete week (Monday to Sunday)",
+              },
+              { value: "monthly", label: "Monthly" },
+            ]}
+          />
+        </Box>
       </FilterBar>
 
       <Card variant="outlined">
         <CardContent sx={{ p: 0 }}>
           <div className="dz-ph">
             <div style={{ minWidth: 0 }}>
-              <h2 className="dz-pt">Daily funnel</h2>
-              <p className="dz-ps">Conversion rate by day</p>
+              <h2 className="dz-pt">
+                {viewName} funnel
+                {isWeekly && weekSplit.excluded.length ? (
+                  <Tooltip
+                    enterTouchDelay={0}
+                    leaveTouchDelay={6000}
+                    title={
+                      <Box>
+                        Only complete weeks (Monday to Sunday) are shown. Left out:
+                        {weekSplit.excluded.map((part) => (
+                          <Box key={part.start}>
+                            {spanLabel(part.start, part.end)} ({part.running ? "week still in progress" : "not a full week"})
+                          </Box>
+                        ))}
+                      </Box>
+                    }
+                  >
+                    <IconButton size="small" aria-label="Days left out of the weekly view" sx={{ ml: 0.5, p: 0.25, verticalAlign: "middle" }}>
+                      <InfoOutlinedIcon sx={{ fontSize: "1rem" }} />
+                    </IconButton>
+                  </Tooltip>
+                ) : null}
+              </h2>
+              <p className="dz-ps">Conversion rate by {isMonthly ? "month" : isWeekly ? "week" : "day"}</p>
             </div>
           </div>
-          {error ? (
+          {tableError ? (
             <Box sx={{ p: 2 }}>
-              <Alert severity="error">{error}</Alert>
+              <Alert severity="error">{tableError}</Alert>
             </Box>
           ) : null}
 
-          {loading ? (
+          {tableLoading ? (
             <Box
               sx={{
                 minHeight: 260,
@@ -1600,7 +1802,7 @@ export default function DailyFunnelPanel({
                 >
                 <TableHead>
                   <TableRow>
-                    {DAILY_COLUMNS.map((column) => (
+                    {columns.map((column) => (
                       <TableCell
                         key={column.id}
                         align={column.align}
@@ -1611,7 +1813,7 @@ export default function DailyFunnelPanel({
                           direction={dailySortBy === column.id ? dailySortDir : "asc"}
                           onClick={() => handleDailySort(column.id)}
                         >
-                          {column.label}
+                          {column.id === "date" ? periodName : column.label}
                         </TableSortLabel>
                       </TableCell>
                     ))}
@@ -1634,41 +1836,13 @@ export default function DailyFunnelPanel({
                               gap: 1,
                             }}
                           >
-                            <span>{formatPanelDate(row.date)}</span>
-                            {dayjs(row.date).isSame(dayjs(), "day") ? (
-                              <Box
-                                component="span"
-                                sx={{
-                                  px: 0.75,
-                                  py: 0.25,
-                                  borderRadius: 999,
-                                  fontSize: "0.65rem",
-                                  fontWeight: 800,
-                                  letterSpacing: "0.04em",
-                                  textTransform: "uppercase",
-                                  color: "#14532d",
-                                  bgcolor: "#bbf7d0",
-                                  border: "1px solid #86efac",
-                                  lineHeight: 1.2,
-                                  animation: "dailyFunnelLivePulse 1.2s ease-in-out infinite",
-                                  "@keyframes dailyFunnelLivePulse": {
-                                    "0%": {
-                                      opacity: 0.55,
-                                      transform: "scale(0.98)",
-                                    },
-                                    "50%": {
-                                      opacity: 1,
-                                      transform: "scale(1)",
-                                    },
-                                    "100%": {
-                                      opacity: 0.55,
-                                      transform: "scale(0.98)",
-                                    },
-                                  },
-                                }}
-                              >
-                                Live
-                              </Box>
+                            <span>{formatPeriod(row.date)}</span>
+                            {!isWeekly && dayjs(row.date).isSame(dayjs(), isMonthly ? "month" : "day") ? (
+                              <FunnelRowTag live />
+                            ) : isMonthly && isPartialMonth(row.date, row.days_with_data, today) ? (
+                              <FunnelRowTag />
+                            ) : isWeekly && row.days_with_data < 7 ? (
+                              <FunnelRowTag period="week" />
                             ) : null}
                           </Box>
                         </TableCell>
@@ -1685,6 +1859,7 @@ export default function DailyFunnelPanel({
                         <TableCell align="right">{row.codDisplay}</TableCell>
                         <TableCell align="right">{row.ppcodDisplay}</TableCell>
                         <TableCell align="right">{row.cvrDisplay}</TableCell>
+                        {showPerformance ? <TableCell align="right">{row.performanceDisplay}</TableCell> : null}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1715,10 +1890,10 @@ export default function DailyFunnelPanel({
             >
               <Stack spacing={1} alignItems="center">
                 <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                  No daily funnel data found
+                  {isWeekly && !canShowWeekly ? "No complete week in this range" : `No ${viewName.toLowerCase()} funnel data found`}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Adjust the local date range to load available rows.
+                  Adjust the {usesMonths ? "month" : "local date"} range to load available rows.
                 </Typography>
               </Stack>
             </Box>

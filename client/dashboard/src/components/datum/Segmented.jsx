@@ -10,6 +10,7 @@ export default function Segmented({ options, value, onChange, ariaLabel, disable
             type="button"
             aria-pressed={value === o.value}
             disabled={disabled || o.disabled}
+            title={o.title}
             onClick={() => onChange?.(o.value)}
           >
             {o.label}
