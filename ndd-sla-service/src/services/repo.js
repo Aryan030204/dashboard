@@ -31,6 +31,10 @@ function setClause(fields) {
   return { sql: keys.map((k) => `${k} = ?`).join(", "), values: keys.map((k) => fields[k]) };
 }
 
+// "Report window" view: only orders placed inside the run's own NDD / non-NDD windows (start included, end excluded).
+const WINDOW_SQL = "((is_ndd = 1 AND order_at >= ? AND order_at < ?) OR (is_ndd = 0 AND order_at >= ? AND order_at < ?))";
+const windowArgs = (w) => [w.ndd.start, w.ndd.end, w.other.start, w.other.end];
+
 function buildRepo(pool, { logger } = {}) {
   const log = ensureLogger(logger, "repo");
 
@@ -85,6 +89,9 @@ function buildRepo(pool, { logger } = {}) {
         } else if (!(await hasColumn("source_mode"))) {
           log.error("schema check FAILED: ndd_sla_runs.source_mode is missing. Apply migrations/002-add-manual-upload.sql");
           return { ok: false, missing: ["ndd_sla_runs.source_mode"] };
+        } else if (!(await pool.query("SHOW COLUMNS FROM ndd_sla_orders LIKE ?", ["marketplace"]))[0].length) {
+          log.error("schema check FAILED: ndd_sla_orders.marketplace is missing. Apply migrations/004-add-marketplace.sql");
+          return { ok: false, missing: ["ndd_sla_orders.marketplace"] };
         } else log.info("schema check ok");
         return { ok: missing.length === 0, missing };
       } catch (err) {
@@ -297,10 +304,11 @@ function buildRepo(pool, { logger } = {}) {
       const values = rows.map((r) => [
         runId, generation, r.reference, r.location, r.orderAt, r.orderDate, r.orderHour, r.courier, r.isNdd ? 1 : 0,
         r.pickedAt, r.sla, // pickedAt is NULL when there was no real pickup, never a placeholder date
+        r.marketplace ?? null,
       ]);
       await pool.query(
         `INSERT INTO ndd_sla_orders (run_id, generation, reference_code, client_location, order_at, order_date, order_hour,
-           courier, is_ndd, shipment_picked_at, sla_status) VALUES ?`,
+           courier, is_ndd, shipment_picked_at, sla_status, marketplace) VALUES ?`,
         [values],
       );
       return rows.length;
@@ -436,7 +444,23 @@ function buildRepo(pool, { logger } = {}) {
       return rows[0] || null;
     },
 
-    async getSummary(runId, generation) {
+    // Unfiltered: the stored hourly summary. With a marketplace or window filter: the same shape, counted from the orders.
+    async getSummary(runId, generation, { marketplace, window, day } = {}) {
+      if (marketplace || window || day) {
+        const where = ["run_id = ?", "generation = ?"];
+        const args = [runId, generation];
+        if (marketplace) { where.push("marketplace = ?"); args.push(marketplace); }
+        if (window) { where.push(WINDOW_SQL); args.push(...windowArgs(window)); }
+        if (day) { where.push("order_date = ?"); args.push(day); }
+        const [filtered] = await pool.query(
+          `SELECT client_location, order_date, order_hour, SUM(sla_status = 'MET') AS met_count,
+             SUM(sla_status = 'BREACHED') AS breached_count, COUNT(*) AS total_count FROM ndd_sla_orders
+            WHERE ${where.join(" AND ")}
+            GROUP BY client_location, order_date, order_hour ORDER BY client_location, order_date, order_hour`,
+          args,
+        );
+        return filtered;
+      }
       const [rows] = await pool.query(
         `SELECT client_location, order_date, order_hour, met_count, breached_count, total_count FROM ndd_sla_summary
           WHERE run_id = ? AND generation = ? ORDER BY client_location, order_date, order_hour`,
@@ -445,16 +469,36 @@ function buildRepo(pool, { logger } = {}) {
       return rows;
     },
 
+    // The marketplaces present in a report (empty for reports built before they were recorded).
+    async listMarketplaces(runId, generation, { window, day } = {}) {
+      const [rows] = await pool.query(
+        `SELECT marketplace AS name, COUNT(*) AS total FROM ndd_sla_orders
+          WHERE run_id = ? AND generation = ? AND marketplace IS NOT NULL${window ? ` AND ${WINDOW_SQL}` : ""}${day ? " AND order_date = ?" : ""}
+          GROUP BY marketplace ORDER BY total DESC, name`,
+        [runId, generation, ...(window ? windowArgs(window) : []), ...(day ? [day] : [])],
+      );
+      return rows.map((r) => ({ name: r.name, total: Number(r.total) }));
+    },
+
+    // The newest order date stored for a report (null when it has no orders).
+    async lastOrderDate(runId, generation) {
+      const [rows] = await pool.query("SELECT MAX(order_date) AS last FROM ndd_sla_orders WHERE run_id = ? AND generation = ?", [runId, generation]);
+      return rows[0]?.last || null;
+    },
+
     // Keyset pagination on (order_at, reference_code): stable and index-backed (idx_list).
-    async listOrders(runId, generation, { location, sla, limit = 100, after } = {}) {
+    async listOrders(runId, generation, { location, sla, marketplace, window, day, limit = 100, after } = {}) {
       const where = ["run_id = ?", "generation = ?"];
       const args = [runId, generation];
       if (location) { where.push("client_location = ?"); args.push(location); }
       if (sla) { where.push("sla_status = ?"); args.push(sla); }
+      if (marketplace) { where.push("marketplace = ?"); args.push(marketplace); }
+      if (window) { where.push(WINDOW_SQL); args.push(...windowArgs(window)); }
+      if (day) { where.push("order_date = ?"); args.push(day); }
       if (after) { where.push("(order_at > ? OR (order_at = ? AND reference_code > ?))"); args.push(after.orderAt, after.orderAt, after.reference); }
       args.push(Number(limit) + 1);
       const [rows] = await pool.query(
-        `SELECT reference_code, client_location, order_at, order_date, order_hour, courier, is_ndd, shipment_picked_at, sla_status
+        `SELECT reference_code, client_location, order_at, order_date, order_hour, courier, is_ndd, shipment_picked_at, sla_status, marketplace
            FROM ndd_sla_orders WHERE ${where.join(" AND ")} ORDER BY order_at, reference_code LIMIT ?`,
         args,
       );

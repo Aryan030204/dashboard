@@ -29,6 +29,7 @@ const LOCATION_BY_SOURCE = Object.freeze({
 const EXCLUDED_STATUSES = Object.freeze(new Set(["cancelled", "on hold", "returned"]));
 
 const SLA = Object.freeze({ MET: "MET", BREACHED: "BREACHED" });
+const NO_MARKETPLACE = "Not specified"; // the file has the column but this order leaves it blank
 
 class ProcessingError extends Error {
   constructor(code, message) {
@@ -152,8 +153,6 @@ function normalizeReference(value) {
   return String(value ?? "").replace(/^[\s`'��"=]+|[\s`'��"]+$/g, "");
 }
 
-const canonName = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-
 function normalizeLocation(value) {
   const key = String(value ?? "").trim().replace(/\s+/g, " ").toUpperCase();
   return LOCATION_BY_SOURCE[key] || null;
@@ -189,9 +188,9 @@ function emptyCounts() {
 // Returns { kept: Map<referenceCode, compactRow>, counts }. Only surviving rows are retained, and only the fields the
 // report needs (never the raw row), which is what keeps memory proportional to |F|.
 // Duplicate Reference Codes: the first occurrence wins (the tie-break is an open question, plan K2.4).
-async function filterOrders(rows, { windows, columns, maxKeptRows = null, marketplaceColumn = null, marketplaces = [] }) {
+// windows = null applies no time limit: every order that passes the other rules is kept, whatever its date.
+async function filterOrders(rows, { windows, columns, maxKeptRows = null, marketplaceColumn = null }) {
   const kept = new Map();
-  const allowedChannels = new Set(marketplaces.map(canonName).filter(Boolean));
   const counts = emptyCounts();
 
   for await (const row of rows) {
@@ -201,14 +200,6 @@ async function filterOrders(rows, { windows, columns, maxKeptRows = null, market
     if (!location) {
       counts.rows_wrong_client += 1;
       continue;
-    }
-    // Sales channel (MP Name), only when the file has that column and a channel list is configured. A blank channel is kept.
-    if (allowedChannels.size && marketplaceColumn && row[marketplaceColumn] !== undefined) {
-      const channel = canonName(row[marketplaceColumn]);
-      if (channel && !allowedChannels.has(channel)) {
-        counts.rows_wrong_client += 1;
-        continue;
-      }
     }
     if (isExcludedStatus(row[columns.orderStatus])) {
       counts.rows_wrong_status += 1;
@@ -224,7 +215,7 @@ async function filterOrders(rows, { windows, columns, maxKeptRows = null, market
 
     const courier = String(row[columns.courier] ?? "").trim();
     const ndd = isNdd(courier);
-    if (!inWindow(orderAt.text, ndd ? windows.ndd : windows.other)) {
+    if (windows && !inWindow(orderAt.text, ndd ? windows.ndd : windows.other)) {
       counts.rows_out_of_window += 1;
       continue;
     }
@@ -248,6 +239,10 @@ async function filterOrders(rows, { windows, columns, maxKeptRows = null, market
       orderHour: orderAt.hour,
       courier,
       isNdd: ndd,
+      // Every marketplace is counted and recorded so the report can be filtered. null = the file has no such column.
+      marketplace: marketplaceColumn && row[marketplaceColumn] !== undefined
+        ? String(row[marketplaceColumn]).trim().slice(0, 64) || NO_MARKETPLACE
+        : null,
     });
   }
 
@@ -323,6 +318,7 @@ function* joinOrders(kept, picked, stats = {}) {
       orderHour: order.orderHour,
       courier: order.courier,
       isNdd: order.isNdd,
+      marketplace: order.marketplace,
       pickedAt,
       sla: slaStatus(pickedAt),
     };

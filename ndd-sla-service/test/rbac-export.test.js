@@ -72,10 +72,10 @@ test("export: streams the persisted active generation as CSV with headers, filte
   assert.match(res.headers["content-disposition"], /attachment; filename="ndd-sla-orders-2026-11-19\.csv"/);
   assert.equal(res.headers["cache-control"], "no-store");
   const lines = res.body.replace(/^﻿/, "").trim().split("\r\n");
-  assert.equal(lines[0], "Reference Code,Client Location,Order Date,Order Hour,Courier Name,NDD,Shipment Picked At,SLA Status");
+  assert.equal(lines[0], "Reference Code,Client Location,Order Date,Order Hour,Courier Name,NDD,Shipment Picked At,SLA Status,Marketplace");
   assert.equal(lines.length, 4, "header + 3 orders; the old generation is not exported");
-  assert.equal(lines[1], "A,AJMAL & SONS,2026-11-18 13:00:00,13,BlitzNDD,Yes,2026-11-18 14:00:00,Met");
-  assert.equal(lines[2], "B,AJMAL & SONS,2026-11-18 16:00:00,16,Delhivery,No,,Breached", "no pickup is an empty cell, never a date");
+  assert.equal(lines[1], "A,AJMAL & SONS,2026-11-18 13:00:00,13,BlitzNDD,Yes,2026-11-18 14:00:00,Met,");
+  assert.equal(lines[2], "B,AJMAL & SONS,2026-11-18 16:00:00,16,Delhivery,No,,Breached,", "no pickup is an empty cell, never a date");
   assert.ok(!res.body.includes("OLD") && !res.body.includes("1900"));
 
   const only = await get("/ndd-sla/reports/2026-11-19/export?sla=BREACHED&location=EMIZA_GGN").expect(200);

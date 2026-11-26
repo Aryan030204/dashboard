@@ -26,17 +26,20 @@ If your real files use different names, set `NDD_SLA_COL_*` and `NDD_SLA_EASYCOM
 
 ## Expected result for 2026-11-19
 
-Windows: NDD orders 18 Nov 12:00 PM to 19 Nov 12:00 PM, all other orders 18 Nov 3:00 PM to 19 Nov 3:00 PM
-(start included, end excluded).
+An upload saves every order in the file, whatever its date. The report page counts the orders inside the 12 PM / 3 PM
+windows ending on the newest order date in the file (the report date picked on upload does not change it), with a filter
+for each order date. So for these samples the page shows the windowed result, not the whole-file counts.
+
+The whole-file counts (what is saved) are:
 
 | | Orders | SLA Met | SLA Breached |
 | --- | --- | --- | --- |
-| **Total** | **8** | **5** | **3** |
-| AJMAL & SONS | 5 | 3 (AJM-1001, AJM-1003, AJM-1005) | 2 (AJM-1002, AJM-1004) |
+| **Total** | **11** | **5** | **6** |
+| AJMAL & SONS | 8 | 3 | 5 |
 | Emiza Gurgaon | 3 | 2 (EMZ-2001, EMZ-2002) | 1 (EMZ-2003) |
 
-Row counts: 17 read, 8 kept, 1 other client, 3 excluded statuses, 3 outside their window,
-1 duplicate, 1 invalid date. EMZ-2003 is also counted as "not found in EasyCom".
+Row counts: 17 read, 11 kept, 1 other client, 3 excluded statuses, 1 duplicate, 1 invalid date. 4 kept orders are not in
+the EasyCom file. Rows remarked as outside the window are saved but not shown on the page.
 
 Each excluded row says why in its `Remarks` column. Missing, empty or `00-01-1900` pickup values are stored as
 no pickup (NULL) and count as SLA Breached.
@@ -60,16 +63,16 @@ What is in them:
 - Everything the rules must reject: other clients (including `ajmal and sons`, which is not an exact match), cancelled / on hold / returned in several spellings, orders outside their window, duplicate Reference Codes, unreadable order dates, and rows with no Reference Code.
 - EasyCom pickups that are blank, the Excel `00-01-1900` placeholder, the text `pending`, in `DD-MM-YYYY` format, re-scan rows with an empty pickup before the real one, shipments for unknown orders, and about 4% of orders missing entirely.
 
-Expected result (also in the JSON, together with the hourly breakdown):
+Saved by an upload (whole file):
 
 | | Orders | SLA Met | SLA Breached |
 | --- | --- | --- | --- |
-| **Total** | **646** | **507** | **139** |
-| AJMAL & SONS | 450 | 355 | 95 |
-| Emiza Gurgaon | 196 | 152 | 44 |
+| **Total** | **674** | **507** | **167** |
+| AJMAL & SONS | 462 | 355 | 107 |
+| Emiza Gurgaon | 212 | 152 | 60 |
 
-Rows excluded: 35 other client, 40 excluded status, 28 outside their window, 15 duplicates, 14 invalid.
-27 kept orders are not in the EasyCom file (counted as breached and shown as "not found in EasyCom").
+Rows excluded: 35 other client, 40 excluded status, 15 duplicates, 14 invalid. 55 kept orders are not in the EasyCom
+file (counted as breached and shown as "not found in EasyCom"). The JSON file holds the result the page shows (646 orders).
 
 Regenerate (same seed gives the same files) or change the data with `--seed`:
 

@@ -2161,14 +2161,14 @@ export async function listNddSlaRuns({ brandKey, limit = 60, from, to, signal } 
   return { error: false, data: Array.isArray(res.data?.runs) ? res.data.runs : [] };
 }
 
-export async function getNddSlaReport({ brandKey, runId, date, signal } = {}) {
-  return doGet(`/ndd-sla${nddRunBase({ runId, date })}`, { brand_key: normalizeBrandKey(brandKey) }, { signal });
+export async function getNddSlaReport({ brandKey, runId, date, marketplace, day, signal } = {}) {
+  return doGet(`/ndd-sla${nddRunBase({ runId, date })}`, { brand_key: normalizeBrandKey(brandKey), marketplace: marketplace || undefined, day: day || undefined }, { signal });
 }
 
-export async function listNddSlaOrders({ brandKey, runId, date, location, sla, cursor, limit = 50, signal } = {}) {
+export async function listNddSlaOrders({ brandKey, runId, date, location, sla, marketplace, day, cursor, limit = 50, signal } = {}) {
   return doGet(
     `/ndd-sla${nddRunBase({ runId, date })}/orders`,
-    { brand_key: normalizeBrandKey(brandKey), location, sla, cursor, limit: String(limit) },
+    { brand_key: normalizeBrandKey(brandKey), location, sla, marketplace: marketplace || undefined, day: day || undefined, cursor, limit: String(limit) },
     { signal },
   );
 }
@@ -2187,8 +2187,8 @@ export async function controlNddSlaRun({ brandKey, runId, action }) {
 }
 
 // Downloads the persisted snapshot as CSV (type: "orders" | "summary"). Never triggers Gmail/EasyCom.
-export async function downloadNddSlaExport({ brandKey, runId, date, type = "orders", location, sla } = {}) {
-  const url = `${API_BASE}${nddSlaPath(`${nddRunBase({ runId, date })}/export`, brandKey, { type, location, sla })}`;
+export async function downloadNddSlaExport({ brandKey, runId, date, type = "orders", location, sla, marketplace, day } = {}) {
+  const url = `${API_BASE}${nddSlaPath(`${nddRunBase({ runId, date })}/export`, brandKey, { type, location, sla, marketplace: marketplace || undefined, day: day || undefined })}`;
   try {
     const res = await fetchWithAuth(url);
     if (!res.ok) {
