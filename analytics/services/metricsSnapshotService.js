@@ -1482,6 +1482,56 @@ function monthBucket(dateStr) {
   return `${dateStr.slice(0, 7)}-01`;
 }
 
+// Web performance score per day (the same per-day average the dashboard's performance meter uses). A brand without
+// this data must still get its funnel, so a failure only leaves the column empty.
+async function queryDailyPerformanceRows(conn, start, end) {
+  try {
+    const rows = await conn.query(
+      `
+        SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, AVG(avg_performance) AS performance
+        FROM daily_web_vitals_summary
+        WHERE date >= ? AND date <= ?
+        GROUP BY date
+        ORDER BY date ASC
+      `,
+      { type: QueryTypes.SELECT, replacements: [start, end] },
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    console.error("[daily-funnel] performance query failed", { start, end, message: error?.message || error });
+    return [];
+  }
+}
+
+// Daily funnel rows summed per calendar month (newest first). Months are totals of the very same daily rows, so a month
+// always equals the sum of its days. days_with_data lets the UI flag a month with gaps.
+// Performance is a score, not a count: it is averaged over the days that have one.
+function sumDailyFunnelByMonth(dailyRows) {
+  const months = new Map();
+  const scores = new Map();
+  for (const row of dailyRows) {
+    const date = monthBucket(row.date);
+    let month = months.get(date);
+    if (!month) {
+      month = { date, days_with_data: 0 };
+      months.set(date, month);
+    }
+    if (row.sessions > 0 || row.orders > 0) month.days_with_data += 1;
+    for (const [key, value] of Object.entries(row)) {
+      if (key !== "date" && key !== "performance") month[key] = (month[key] || 0) + value;
+    }
+    if (row.performance !== undefined) {
+      const list = scores.get(date) || [];
+      if (row.performance !== null) list.push(row.performance);
+      scores.set(date, list);
+    }
+  }
+  for (const [date, list] of scores) {
+    months.get(date).performance = list.length ? list.reduce((sum, score) => sum + score, 0) / list.length : null;
+  }
+  return [...months.values()].sort((left, right) => right.date.localeCompare(left.date));
+}
+
 function buildSeriesBuckets(start, end) {
   const list = [];
   for (let ts = parseIsoDate(start).getTime(); ts <= parseIsoDate(end).getTime(); ts += DAY_MS) {
@@ -2753,7 +2803,8 @@ function buildMetricsSnapshotService(deps = {}) {
           timezone,
         )
       : null;
-    const [baseRows, paymentRows, discountRows, utmRows] = await Promise.all([
+    const includePerformance = includeDaily && spec.includePerformance === true;
+    const [baseRows, paymentRows, discountRows, utmRows, performanceRows] = await Promise.all([
       includeDaily
         ? fetchDailyRows(spec.conn, spec.start, spec.end, {}, spec.brandKey)
         : Promise.resolve([]),
@@ -2811,8 +2862,16 @@ function buildMetricsSnapshotService(deps = {}) {
                 { endDate: utmEndDateResolved, compareEndDate: spec.compareUtmEndDate },
               ))
         : Promise.resolve([]),
+      includePerformance
+        ? queryDailyPerformanceRows(spec.conn, spec.start, spec.end)
+        : Promise.resolve([]),
     ]);
 
+    const performanceMap = new Map(
+      performanceRows
+        .filter((row) => row.performance !== null && row.performance !== undefined)
+        .map((row) => [String(row.date), Number(row.performance)]),
+    );
     const baseMap = new Map(
       (Array.isArray(baseRows) ? baseRows : []).map((row) => [String(row.date), row]),
     );
@@ -2841,6 +2900,7 @@ function buildMetricsSnapshotService(deps = {}) {
               prepaid_orders: Number(payment.prepaid_orders || 0),
               cod_orders: Number(payment.cod_orders || 0),
               partially_paid_orders: Number(payment.partially_paid_orders || 0),
+              ...(includePerformance ? { performance: performanceMap.get(date) ?? null } : {}),
             };
           })
           .sort((left, right) => right.date.localeCompare(left.date))
@@ -2854,10 +2914,13 @@ function buildMetricsSnapshotService(deps = {}) {
       utmEndDateResolved === utmCutoffCtx.today &&
       Number.isInteger(utmCutoffCtx?.cutoffHour);
 
+    const monthly = spec.granularity === "monthly";
+
     return {
       timezone,
       range: { start: spec.start, end: spec.end },
-      rows,
+      granularity: monthly ? "monthly" : "daily",
+      rows: monthly ? sumDailyFunnelByMonth(rows) : rows,
       utmDate: includeUtm ? utmDateResolved : null,
       utmEndDate: includeUtm ? utmEndDateResolved : null,
       utmSource: includeUtm ? (spec.utmSource || null) : null,
