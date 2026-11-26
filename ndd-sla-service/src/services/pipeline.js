@@ -1,7 +1,8 @@
 // Orchestrates one report run end to end. All I/O is injected (repo, gmail, easycom, clock), so the same code runs in
 // production and in tests against in-memory fakes. The business rules live in processor.js and stay pure.
 //
-// TWO WAYS IN, ONE CORE.  Both end in the same ingest() below, so a report is identical whichever way it arrived:
+// TWO WAYS IN, ONE CORE.  Both end in the same execute() below. They differ in one rule: AUTO keeps only the orders
+// inside the report date's windows, MANUAL keeps every order in the uploaded file.
 //   AUTO    processRun(run)         worker: find the GoKwik email, download it, page through the EasyCom API
 //   MANUAL  processUpload(run, ..)  API: an author uploaded the GoKwik CSV and the EasyCom export; both are streamed from disk
 //
@@ -145,8 +146,9 @@ function buildPipeline({ config, repo, gmail, easycom, logger, now = () => Date.
       const aliases = { ...aliasesByName(config.columns, config.columnAliases), ...(mp ? { [mp]: config.optionalColumnAliases?.marketplace || [] } : {}) };
       const rows = withHeartbeat(parseCsv(csvStream, { required, optional: mp ? [mp] : [], project: true, aliases }), 5000, beat);
       const { kept, counts } = await filterOrders(rows, {
-        windows, columns: config.columns, maxKeptRows: maxKeptRows ?? config.limits.maxKeptRows,
-        marketplaceColumn: mp, marketplaces: config.marketplaces || [],
+        // An uploaded report counts every order in the file; its report date is only the label it is filed under.
+        windows: manual ? null : windows, columns: config.columns, maxKeptRows: maxKeptRows ?? config.limits.maxKeptRows,
+        marketplaceColumn: mp,
       });
       log.info("csv filtered", { run: run.id, ...counts });
 

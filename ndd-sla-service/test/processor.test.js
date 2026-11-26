@@ -357,16 +357,17 @@ test("US-style slash dates, AM/PM and backtick-prefixed reference codes (real ex
   assert.equal(P.normalizeReference(" '634774 "), "634774");
 });
 
-test("marketplace filter: only listed channels count (blank channel kept); no MP Name column or empty list = no filtering", async () => {
+test("every marketplace is counted and recorded; blank = Not specified, no MP Name column = null", async () => {
   const { filterOrders, computeWindows } = require("../src/services/processor");
   const windows = computeWindows("2026-11-22", RULES_END);
   const columns = { reference: "Reference Code", clientLocation: "Client Location", orderStatus: "Order Status", courier: "Courier", orderDate: "Order Date" };
   const row = (ref, mp) => ({ "Reference Code": ref, "Client Location": "AJMAL & SONS", "Order Status": "Shipped", Courier: "Delhivery", "Order Date": "2026-11-22 10:00:00", ...(mp === undefined ? {} : { "MP Name": mp }) });
   const run = (rows, opts) => filterOrders((async function* () { yield* rows; })(), { windows, columns, ...opts });
   const rows = [row("A", "Shopify"), row("B", "Flipkart"), row("C", "Firstcry"), row("D", ""), row("E", "shopify ")];
-  const on = await run(rows, { marketplaceColumn: "MP Name", marketplaces: ["Shopify"] });
-  assert.deepEqual([...on.kept.keys()], ["A", "D", "E"]);
-  assert.equal(on.counts.rows_wrong_client, 2);
-  assert.equal((await run(rows, { marketplaceColumn: "MP Name", marketplaces: [] })).kept.size, 5);
-  assert.equal((await run([row("X"), row("Y")], { marketplaceColumn: "MP Name", marketplaces: ["Shopify"] })).kept.size, 2);
+  const all = await run(rows, { marketplaceColumn: "MP Name" });
+  assert.equal(all.kept.size, 5);
+  const seen = [...all.kept.values()].map((o) => o.marketplace);
+  assert.ok(seen.includes("Shopify") && seen.includes("Not specified"));
+  const without = await run([row("X"), row("Y")], { marketplaceColumn: "MP Name" });
+  assert.deepEqual([...without.kept.values()].map((o) => o.marketplace), [null, null]);
 });

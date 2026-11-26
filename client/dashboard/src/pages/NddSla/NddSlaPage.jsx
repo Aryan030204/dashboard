@@ -103,9 +103,9 @@ function SlaChip({ sla }) {
 }
 
 // Totals in one strip instead of three cards, with a slim met/breached bar underneath.
-function StatStrip({ totals, reportDate }) {
+function StatStrip({ totals, counted }) {
   const items = [
-    { label: "Total orders", value: totals.total, hint: formatReportDate(reportDate) },
+    { label: "Total orders", value: totals.total, hint: counted },
     { label: "SLA Met", value: totals.met, hint: formatPct(totals.metPct), color: "success.main" },
     { label: "SLA Breached", value: totals.breached, hint: formatPct(totals.breachedPct), color: "error.main" },
   ];
@@ -144,7 +144,7 @@ function RunDetails({ run }) {
   const c = run.counts || {};
   const source = run.source;
   const excluded = [
-    ["Other client / channel", c.wrongClient],
+    ["Other client", c.wrongClient],
     ["Excluded status", c.wrongStatus],
     ["Outside its window", c.outOfWindow],
     ["Duplicate reference", c.duplicate],
@@ -155,8 +155,8 @@ function RunDetails({ run }) {
       <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>Report details</Typography>
       <DetailRow label="Report date">{formatReportDate(run.reportDate)} · #{run.reportSeq || 1}</DetailRow>
       <DetailRow label="Status">{run.paused ? "Paused" : statusInfo(run.status).label}</DetailRow>
-      <DetailRow label="NDD orders">{formatWall(run.windows.ndd.start)} → {formatWall(run.windows.ndd.end)}</DetailRow>
-      <DetailRow label="Other orders">{formatWall(run.windows.other.start)} → {formatWall(run.windows.other.end)}</DetailRow>
+      <DetailRow label="NDD window">{formatWall(run.windows.ndd.start)} → {formatWall(run.windows.ndd.end)}</DetailRow>
+      <DetailRow label="Other window">{formatWall(run.windows.other.start)} → {formatWall(run.windows.other.end)}</DetailRow>
       <DetailRow label="Timezone">{run.windows.timezone}</DetailRow>
       <Divider sx={{ my: 1 }} />
       <DetailRow label="Source">{source ? (source.mode === "MANUAL" ? "Manual upload" : "Automated") : DASH}</DetailRow>
@@ -207,7 +207,7 @@ function UploadDialog({ open, onClose, onSubmit, defaultDate, busy, phase }) {
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            Choose the date the reporting window ends on and add the GoKwik and EasyCom files (.csv or .csv.gz). The upload is added as a new report for that date.
+            Add the GoKwik and EasyCom files (.csv or .csv.gz). The report date is only a label for finding this report later; the calculation uses the order dates inside the files.
           </Typography>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
             <Typography variant="caption" color="text.secondary" sx={{ minWidth: 80 }}>Report date</Typography>
@@ -332,13 +332,13 @@ function HourlyTable({ locations }) {
 }
 
 // Order-level data, one page at a time from the API (keyset cursor). `cursors[i]` is the cursor that fetches page i.
-function OrdersSection({ brandKey, runId, ready }) {
+function OrdersSection({ brandKey, runId, marketplace, day, ready }) {
   const [location, setLocation] = useState("");
   const [sla, setSla] = useState("");
   const [cursors, setCursors] = useState([undefined]);
   const [pageIndex, setPageIndex] = useState(0);
   const [state, setState] = useState({ rows: [], next: null, loading: false, error: "" });
-  const filterKey = `${brandKey}|${runId}|${location}|${sla}`;
+  const filterKey = `${brandKey}|${runId}|${location}|${sla}|${marketplace}|${day}`;
 
   useEffect(() => {
     setCursors([undefined]);
@@ -349,7 +349,7 @@ function OrdersSection({ brandKey, runId, ready }) {
     if (!ready) return undefined;
     const controller = new AbortController();
     setState((prev) => ({ ...prev, loading: true, error: "" }));
-    listNddSlaOrders({ brandKey, runId, location, sla, cursor: cursors[pageIndex], limit: PAGE_SIZE, signal: controller.signal }).then((res) => {
+    listNddSlaOrders({ brandKey, runId, location, sla, marketplace, day, cursor: cursors[pageIndex], limit: PAGE_SIZE, signal: controller.signal }).then((res) => {
       if (res.aborted) return;
       if (res.error) {
         setState({ rows: [], next: null, loading: false, error: nddSlaErrorMessage(res, "Couldn't load orders.") });
@@ -358,7 +358,7 @@ function OrdersSection({ brandKey, runId, ready }) {
       setState({ rows: res.data?.orders || [], next: res.data?.nextCursor || null, loading: false, error: "" });
     });
     return () => controller.abort();
-  }, [brandKey, runId, location, sla, cursors, pageIndex, ready]);
+  }, [brandKey, runId, location, sla, marketplace, day, cursors, pageIndex, ready]);
 
   const goNext = () => {
     if (!state.next) return;
@@ -437,6 +437,10 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
   const [date, setDate] = useState(""); // YYYY-MM-DD, the report date being viewed
   const [day, setDay] = useState({ list: [], loading: false, error: "" }); // every report of that date
   const [runId, setRunId] = useState(null);
+  const [channel, setChannel] = useState({ runId: null, value: "" }); // marketplace filter of one report
+  const marketplace = channel.runId === runId ? channel.value : ""; // another report starts unfiltered
+  const [dayPick, setDayPick] = useState({ runId: null, value: "" }); // one order date of the report, "" = all of them
+  const orderDay = dayPick.runId === runId ? dayPick.value : "";
   const [report, setReport] = useState({ data: null, loading: false, error: "", key: "" });
   const [tick, setTick] = useState(0); // refresh the day's list and the report
   const [liveTick, setLiveTick] = useState(0); // refresh only the report (cheap poll while it is processing)
@@ -499,7 +503,7 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
     const key = `${brandKey}|${runId}`;
     // A refresh of the same report keeps what is on screen (no flicker while polling); another report shows the loader.
     setReport((prev) => (prev.key === key ? { ...prev, error: "" } : { data: null, loading: true, error: "", key }));
-    getNddSlaReport({ brandKey, runId, signal: controller.signal }).then((res) => {
+    getNddSlaReport({ brandKey, runId, marketplace, day: orderDay, signal: controller.signal }).then((res) => {
       if (res.aborted) return;
       if (res.error) {
         setReport({ data: null, loading: false, error: nddSlaErrorMessage(res, "Couldn't load this report."), key });
@@ -508,7 +512,7 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
       setReport({ data: res.data, loading: false, error: "", key });
     });
     return () => controller.abort();
-  }, [brandKey, runId, tick, liveTick]);
+  }, [brandKey, runId, marketplace, orderDay, tick, liveTick]);
 
   const run = report.data?.run;
   const ready = Boolean(run?.ready);
@@ -540,14 +544,14 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
   const handleExport = useCallback(async (type) => {
     setMenuAnchor(null);
     setExporting(type);
-    const res = await downloadNddSlaExport({ brandKey, runId, type });
+    const res = await downloadNddSlaExport({ brandKey, runId, type, marketplace, day: orderDay });
     setExporting("");
     if (res.error) {
       toast.error(nddSlaErrorMessage(res, "Couldn't download this report."));
       return;
     }
     saveBlob(res.blob, exportFilename(type, run?.reportDate || date, run?.reportSeq));
-  }, [brandKey, runId, run, date]);
+  }, [brandKey, runId, run, date, marketplace, orderDay]);
 
   const handleUpload = useCallback(async ({ date: uploadDate, gokwikFile, easycomFile }) => {
     setUploading(true);
@@ -618,6 +622,10 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
   const options = day.list;
   const showReport = run && !report.loading;
   const canExport = ready && !exporting;
+  const days = report.data?.days || []; // order dates inside the report
+  const allDaysLabel = days.length === 2 ? "Both dates" : "All dates";
+  const shown = orderDay ? [orderDay] : days.map((d) => d.date);
+  const counted = shown.length ? `Orders of ${shown.map(formatReportDate).join(" and ")}` : "";
 
   return (
     <Stack spacing={1.5}>
@@ -657,6 +665,24 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
         ) : options.length === 1 ? (
           <Chip size="small" variant="outlined" label={runOptionLabel(options[0])} sx={{ maxWidth: "100%" }} />
         ) : null}
+        {days.length || orderDay ? (
+          <FormControl size="small" sx={{ minWidth: 180, maxWidth: "100%" }}>
+            <Select displayEmpty value={orderDay} onChange={(e) => setDayPick({ runId, value: e.target.value })} inputProps={{ "aria-label": "Order date" }} sx={compactSelect}>
+              <MenuItem value="" sx={compactSelect}>{allDaysLabel}</MenuItem>
+              {days.map((d) => <MenuItem key={d.date} value={d.date} sx={compactSelect}>{formatReportDate(d.date)} ({formatCount(d.total)})</MenuItem>)}
+              {orderDay && !days.some((d) => d.date === orderDay) ? <MenuItem value={orderDay} sx={compactSelect}>{formatReportDate(orderDay)} (0)</MenuItem> : null}
+            </Select>
+          </FormControl>
+        ) : null}
+        {report.data?.marketplaces?.length ? (
+          <FormControl size="small" sx={{ minWidth: 180, maxWidth: "100%" }}>
+            <Select displayEmpty value={marketplace} onChange={(e) => setChannel({ runId, value: e.target.value })} inputProps={{ "aria-label": "Marketplace" }} sx={compactSelect}>
+              <MenuItem value="" sx={compactSelect}>All marketplaces</MenuItem>
+              {report.data.marketplaces.map((m) => <MenuItem key={m.name} value={m.name} sx={compactSelect}>{m.name} ({formatCount(m.total)})</MenuItem>)}
+              {marketplace && !report.data.marketplaces.some((m) => m.name === marketplace) ? <MenuItem value={marketplace} sx={compactSelect}>{marketplace} (0)</MenuItem> : null}
+            </Select>
+          </FormControl>
+        ) : null}
       </FilterBar>
 
       <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
@@ -667,6 +693,10 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
         <MenuItem disabled={!canExport} onClick={() => handleExport("summary")}>
           <ListItemIcon><DownloadIcon fontSize="small" /></ListItemIcon>
           <ListItemText>{exporting === "summary" ? "Preparing…" : "Export summary"}</ListItemText>
+        </MenuItem>
+        <MenuItem disabled={!canExport} onClick={() => handleExport("pivot")}>
+          <ListItemIcon><DownloadIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>{exporting === "pivot" ? "Preparing…" : "Export pivot"}</ListItemText>
         </MenuItem>
         {isManager ? (
           <MenuItem disabled={requeuing || !run || (run.reportSeq || 1) > 1 || live} onClick={handleRequeue}>
@@ -728,7 +758,7 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
 
           {ready && report.data.totals ? (
             <>
-              <StatStrip totals={report.data.totals} reportDate={run.reportDate} />
+              <StatStrip totals={report.data.totals} counted={counted} />
               {report.data.totals.total === 0 ? (
                 <Alert severity="warning">This report contains no qualifying orders.</Alert>
               ) : (
@@ -736,7 +766,7 @@ export default function NddSlaPage({ brandKey, isManager = false, canUpload = fa
                   <BreakdownTable locations={report.data.locations} />
                   <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Hourly breakdown</Typography>
                   <HourlyTable key={run.id} locations={report.data.locations} />
-                  <OrdersSection brandKey={brandKey} runId={run.id} ready={ready} />
+                  <OrdersSection brandKey={brandKey} runId={run.id} marketplace={marketplace} day={orderDay} ready={ready} />
                 </>
               )}
             </>

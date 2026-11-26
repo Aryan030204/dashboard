@@ -17,6 +17,12 @@ function testConfig(extra = {}, env = {}) {
   return { ...cfg, tmpDir: require("os").tmpdir(), ...extra };
 }
 
+const inView = (o, window) => {
+  if (!window) return true;
+  const w = Number(o.is_ndd) ? window.ndd : window.other;
+  return o.order_at >= w.start && o.order_at < w.end;
+};
+
 const emptyRun = (id, brandKey, reportDate, windows) => ({
   id, brand_key: brandKey, report_date: reportDate, report_type: "NDD_SLA", report_seq: 1, control: "NONE", paused_at: null, source_mode: "AUTO", easycom_source_filename: null, uploaded_by: null, status: "SCHEDULED", attempts: 0,
   next_attempt_at: null, locked_at: null, locked_by: null, error_code: null, error_detail: null,
@@ -133,7 +139,7 @@ function fakeRepo({ now = () => Date.now() } = {}) {
       inserts.push(rows.length);
       for (const o of rows) orders.push({ run_id: id, generation, reference_code: o.reference, client_location: o.location,
         order_at: o.orderAt, order_date: o.orderDate, order_hour: o.orderHour, courier: o.courier, is_ndd: o.isNdd ? 1 : 0,
-        shipment_picked_at: o.pickedAt, sla_status: o.sla });
+        shipment_picked_at: o.pickedAt, sla_status: o.sla, marketplace: o.marketplace ?? null });
       return rows.length;
     },
     async insertSummary(id, generation, buckets) {
@@ -200,13 +206,32 @@ function fakeRepo({ now = () => Date.now() } = {}) {
       const r = runs.find((x) => x.id === id && x.brand_key === brandKey);
       return r ? { ...r } : null;
     },
-    async getSummary(id, generation) {
+    async lastOrderDate(id, generation) {
+      return orders.filter((o) => o.run_id === id && o.generation === generation).map((o) => o.order_date).sort().pop() || null;
+    },
+    async listMarketplaces(id, generation, { window, day } = {}) {
+      const totals = new Map();
+      for (const o of orders) if (o.run_id === id && o.generation === generation && o.marketplace && inView(o, window) && (!day || o.order_date === day)) totals.set(o.marketplace, (totals.get(o.marketplace) || 0) + 1);
+      return [...totals].map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    },
+    async getSummary(id, generation, { marketplace, window, day } = {}) {
+      if (marketplace || window || day) {
+        const buckets = new Map();
+        for (const o of orders.filter((x) => x.run_id === id && x.generation === generation && (!marketplace || x.marketplace === marketplace) && inView(x, window) && (!day || x.order_date === day))) {
+          const key = `${o.client_location}|${o.order_date}|${o.order_hour}`;
+          const b = buckets.get(key) || { client_location: o.client_location, order_date: o.order_date, order_hour: o.order_hour, met_count: 0, breached_count: 0, total_count: 0 };
+          if (o.sla_status === "MET") b.met_count += 1; else b.breached_count += 1;
+          b.total_count += 1;
+          buckets.set(key, b);
+        }
+        return [...buckets.values()].sort((a, b) => a.client_location.localeCompare(b.client_location) || a.order_date.localeCompare(b.order_date) || a.order_hour - b.order_hour);
+      }
       return summary.filter((s) => s.run_id === id && s.generation === generation)
         .sort((a, b) => a.client_location.localeCompare(b.client_location) || a.order_date.localeCompare(b.order_date) || a.order_hour - b.order_hour);
     },
-    async listOrders(id, generation, { location, sla, limit = 100, after } = {}) {
+    async listOrders(id, generation, { location, sla, marketplace, window, day, limit = 100, after } = {}) {
       return orders.filter((o) => o.run_id === id && o.generation === generation && (!location || o.client_location === location)
-        && (!sla || o.sla_status === sla)
+        && (!sla || o.sla_status === sla) && (!marketplace || o.marketplace === marketplace) && inView(o, window) && (!day || o.order_date === day)
         && (!after || o.order_at > after.orderAt || (o.order_at === after.orderAt && o.reference_code > after.reference)))
         .sort((a, b) => a.order_at.localeCompare(b.order_at) || a.reference_code.localeCompare(b.reference_code)).slice(0, limit + 1);
     },
