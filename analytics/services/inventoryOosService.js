@@ -333,6 +333,7 @@ function buildInventoryOosService({ now = () => Date.now(), loadNames = loadVari
 }
 
 module.exports = {
+  loadVariantNames,
   buildInventoryOosService,
   normalizeOosTrendRequest,
   normalizeOosOptionsRequest,

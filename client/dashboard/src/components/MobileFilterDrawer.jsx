@@ -40,6 +40,7 @@ import {
   normalizeDataRestrictionConfig,
   isRangeOverDataRestrictionPeriod,
 } from "../lib/dateRange.js";
+import { blockedFilters, changedFilters } from "../lib/mobileFilters.js";
 
 export default function MobileFilterDrawer({
   open,
@@ -50,18 +51,13 @@ export default function MobileFilterDrawer({
   productOptions = [],
   productValue,
   onProductChange,
-  productDisabled = false,
   utm = {},
   onUtmChange,
-  utmDisabled = false,
-  disableUtmMediumCampaign = false,
   allowProductUtmSync = false,
   salesChannel = "",
   onSalesChannelChange,
-  salesChannelDisabled = false,
   city = [],
   onCityChange,
-  cityDisabled = false,
   utmOptions: propUtmOptions,
   dateRange,
   dataRestrictionConfig = DEFAULT_DATA_RESTRICTION_CONFIG,
@@ -74,11 +70,9 @@ export default function MobileFilterDrawer({
 
   deviceType = [],
   onDeviceTypeChange,
-  deviceTypeDisabled = false,
   showDeviceType = true,
   discountCode = "",
   onDiscountCodeChange,
-  discountDisabled = false,
   showDiscountFilter = true,
 
   showProductTypeFilter = false,
@@ -90,7 +84,6 @@ export default function MobileFilterDrawer({
   // is the unrelated client-side product-table type filter.
   divisionProductType = [],
   onDivisionProductTypeChange,
-  divisionProductTypeDisabled = false,
   showDivisionProductType = true,
 }) {
   // Local state for deferred application
@@ -413,18 +406,26 @@ export default function MobileFilterDrawer({
       return !!v;
     })
     .filter(Boolean).length;
-  const hasTempProductFilter = Array.isArray(tempProduct)
-    ? tempProduct.some((p) => p?.id)
-    : !!tempProduct?.id;
-  const isProductBlocked = productDisabled;
-  const isUtmBlocked = utmDisabled;
-  const areUtmMediumCampaignBlocked =
-    utmDisabled || disableUtmMediumCampaign || hasTempProductFilter;
-  const isChannelBlocked = salesChannelDisabled;
-  const isDeviceTypeBlocked = deviceTypeDisabled;
-  const isCityBlocked = cityDisabled;
-  const isDiscountBlocked = discountDisabled;
-  const isDivisionProductTypeBlocked = divisionProductTypeDisabled;
+  const blocked = blockedFilters(
+    {
+      product: tempProduct,
+      utm: tempUtm,
+      salesChannel: tempSalesChannel,
+      city: tempCity,
+      deviceType: tempDeviceType,
+      productType: tempDivisionProductType,
+      discountCode: tempDiscountCode,
+    },
+    { canSync: allowProductUtmSync },
+  );
+  const isProductBlocked = blocked.product;
+  const isUtmBlocked = blocked.utm;
+  const areUtmMediumCampaignBlocked = blocked.utmMediumCampaign;
+  const isChannelBlocked = blocked.salesChannel;
+  const isDeviceTypeBlocked = blocked.deviceType;
+  const isCityBlocked = blocked.city;
+  const isDiscountBlocked = blocked.discountCode;
+  const isDivisionProductTypeBlocked = blocked.productType;
 
   const handleClearAll = () => {
     if (onUtmChange) onUtmChange({ source: "", medium: "", campaign: "" });
@@ -440,14 +441,36 @@ export default function MobileFilterDrawer({
 
   const handleApply = () => {
     if (onBrandChange && tempBrand !== brandKey) onBrandChange(tempBrand);
-    if (onProductChange) onProductChange(tempProduct);
-    if (onUtmChange) onUtmChange(tempUtm);
-    if (onSalesChannelChange) onSalesChannelChange(tempSalesChannel);
-    if (onCityChange) onCityChange(tempCity);
-    if (onDeviceTypeChange) onDeviceTypeChange(tempDeviceType);
-    if (onDiscountCodeChange) onDiscountCodeChange(tempDiscountCode);
+    // Only what changed: applying a filter can clear others, so re-sending untouched ones would undo the new choice.
+    const next = {
+      product: tempProduct,
+      utm: tempUtm,
+      salesChannel: tempSalesChannel,
+      city: tempCity,
+      deviceType: tempDeviceType,
+      productType: tempDivisionProductType,
+      discountCode: tempDiscountCode,
+    };
+    const apply = {
+      product: onProductChange,
+      utm: onUtmChange,
+      salesChannel: onSalesChannelChange,
+      city: onCityChange,
+      deviceType: onDeviceTypeChange,
+      productType: onDivisionProductTypeChange,
+      discountCode: onDiscountCodeChange,
+    };
+    const current = {
+      product: productValue,
+      utm,
+      salesChannel,
+      city,
+      deviceType,
+      productType: divisionProductType,
+      discountCode,
+    };
+    changedFilters(next, current).forEach((key) => apply[key]?.(next[key]));
     if (onProductTypeChange) onProductTypeChange(tempProductTypes);
-    if (onDivisionProductTypeChange) onDivisionProductTypeChange(tempDivisionProductType);
     onClose();
   };
 
@@ -521,6 +544,7 @@ export default function MobileFilterDrawer({
           : salesChannel) ||
         (Array.isArray(city) ? city.length > 0 : city) ||
         (Array.isArray(deviceType) ? deviceType.length > 0 : deviceType) ||
+        divisionProductType?.length > 0 ||
         discountCode) && (
         <Fade in={true} timeout={500}>
           <Box
@@ -668,6 +692,23 @@ export default function MobileFilterDrawer({
                   </div>
                 </Grow>
               )}
+              {/* Division Product Type Chip */}
+              {divisionProductType?.length > 0 && (
+                <Grow in={true}>
+                  <div>
+                    <GlassChip
+                      label={`Product type: ${[].concat(divisionProductType).join(", ")}`}
+                      onDelete={() => {
+                        if (onDivisionProductTypeChange) onDivisionProductTypeChange([]);
+                        setTempDivisionProductType([]);
+                      }}
+                      size="small"
+                      isDark={isDark}
+                      sx={{ borderRadius: "9999px" }}
+                    />
+                  </div>
+                </Grow>
+              )}
               {/* Discount Chip */}
               {discountCode && (
                 <Grow in={true}>
@@ -785,7 +826,7 @@ export default function MobileFilterDrawer({
                     </Typography>
                     <Typography variant="body1" fontSize={14} fontWeight={500}>
                       {isProductBlocked
-                        ? "Clear discount filter first"
+                        ? "Clear other filters first"
                         : Array.isArray(tempProduct)
                         ? tempProduct.length > 1
                           ? `${tempProduct.length} Products`
@@ -863,9 +904,7 @@ export default function MobileFilterDrawer({
                       {isDateRangeOver30Days
                         ? dataRestrictionDescription
                         : isUtmBlocked
-                          ? discountCode
-                            ? "Clear discount filter first"
-                            : "Clear product filter first"
+                          ? "Clear other filters first"
                           : activeUtmCount > 0
                           ? `${activeUtmCount} Active`
                           : "All"}
@@ -1459,11 +1498,11 @@ export default function MobileFilterDrawer({
                   setTempSalesChannel("");
                   handleBack();
                 }}
-                selected={!tempSalesChannel}
+                selected={!tempSalesChannel?.length}
                 sx={{ py: 1.5 }}
               >
                 <ListItemText primary="All" />
-                {!tempSalesChannel && (
+                {!tempSalesChannel?.length && (
                   <CheckIcon fontSize="small" color="primary" />
                 )}
               </ListItemButton>

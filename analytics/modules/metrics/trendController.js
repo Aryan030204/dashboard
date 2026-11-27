@@ -105,12 +105,8 @@ function buildTrendController({ metricsService }) {
           !!req.user?.isAuthor ||
           permissions.includes('all') ||
           permissions.includes('utm_funnel_table:utm_campaign_grain');
-        // Same rule as the dashboard's performance meter.
-        const canSeePerformance =
-          !!req.user?.isAuthor ||
-          permissions.includes('all') ||
-          permissions.includes('web_vitals') ||
-          permissions.includes('web_vitals_panel');
+        // Admins only (author, admin, super admin); no permission grants it to anyone else.
+        const canSeePerformance = !!req.user?.isAuthor;
         const utmDate = req.query.utm_date ? String(req.query.utm_date) : normalized.spec.end;
         const utmEndDate = req.query.utm_end_date ? String(req.query.utm_end_date) : utmDate;
         const compareUtmDate = req.query.compare_utm_date ? String(req.query.compare_utm_date) : null;

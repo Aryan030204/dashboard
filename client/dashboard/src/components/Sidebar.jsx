@@ -138,12 +138,12 @@ export default function Sidebar({
       ) : null}
 
       {/* Navigation Items */}
-      <nav aria-label="Main" className="flex-1 px-3 space-y-6 overflow-y-auto pt-2">
-        {filteredNavItems.map((section, sIdx) => (
-          <div key={section.group} className="space-y-0.5">
-            {sIdx > 0 && (
-              <div className="my-4 border-t border-[var(--dz-line)]" />
-            )}
+      <nav aria-label="Main" className="flex-1 px-3 space-y-5 overflow-y-auto pt-2">
+        {filteredNavItems.map((section) => (
+          <div key={section.group} role="group" aria-label={section.label} className="space-y-0.5">
+            <p className="px-2.5 pb-1 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--dz-muted)]">
+              {section.label}
+            </p>
             {section.items.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;

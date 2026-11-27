@@ -8,10 +8,15 @@ const {
   normalizeOosTrendRequest,
   normalizeOosOptionsRequest,
 } = require('../../services/inventoryOosService');
+const {
+  buildInventorySnapshotService,
+  normalizeSnapshotRequest,
+} = require('../../services/inventorySnapshotService');
 
 function buildProductConversionController() {
   const productConversionService = buildProductConversionService();
   const inventoryOosService = buildInventoryOosService();
+  const inventorySnapshotService = buildInventorySnapshotService();
 
   return {
     // Out-of-stock trend for the Inventory panel (inventory_oos_history of the brand database).
@@ -55,6 +60,28 @@ function buildProductConversionController() {
         );
       } catch (e) {
         return handleControllerError(res, e, 'oos-options failed');
+      }
+    },
+
+    // Per-SKU DRR of two months and daily units of the later one (daily_inventory_summary of the brand database).
+    inventorySnapshot: async (req, res) => {
+      try {
+        const normalized = normalizeSnapshotRequest(req.query, { timezone: req.tenantRoute?.timezone });
+        if (!normalized.ok) return res.status(normalized.status).json(normalized.body);
+
+        const conn = req.brandDb?.sequelize;
+        if (!conn) return res.status(500).json({ error: 'Brand DB connection unavailable' });
+
+        return res.json(
+          await inventorySnapshotService.getSnapshot({
+            ...normalized.spec,
+            conn,
+            brandKey: req.brandKey,
+            resolveShopSubdomain,
+          }),
+        );
+      } catch (e) {
+        return handleControllerError(res, e, 'inventory-snapshot failed');
       }
     },
 
