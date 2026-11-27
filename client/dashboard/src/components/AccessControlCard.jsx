@@ -55,6 +55,21 @@ import {
   updateCustomRole,
   deleteCustomRole,
 } from "../lib/api";
+import {
+  ALL_OPTIONS,
+  CATEGORIES,
+  RETIRED,
+  addOption,
+  categoryOf,
+  isGroup,
+  optionHint,
+  optionLabel,
+  optionState,
+  permissionNames,
+  removeOption,
+  selectedOptions,
+  toggleOption,
+} from "../lib/permissionCatalog";
 
 const GlassChip = ({ label, size = "small", isDark }) => (
   <Chip
@@ -74,150 +89,78 @@ const GlassChip = ({ label, size = "small", isDark }) => (
   />
 );
 
-const PERMISSION_OPTIONS = [
-  "all",
-  "overall_snapshot",
-  "requests_panel",
-  "requests_timeline",
-  "bundles_panel",
-  "inventory_panel",
-  "daily_funnel_panel",
-  "intent_funnel_panel",
-  "utm_funnel_table",
-  "utm_funnel_table:utm_campaign_grain",
-  "product_filter",
-  "utm_filter",
-  "product_utm_filter_sync",
-  "discount_filter",
-  "intent_metrics",
-  "ci_events",
-  "rto_kpi",
-  "web_vitals",
-  "payment_split_order",
-  "payment_split_sales",
-  "traffic_split",
-  "dashboard_layout_customize",
-  "session_analytics",
-  "sales_channel_filter",
-  "device_type_filter",
-  "product_type_filter",
-  "city_filter",
-  "sessions_drop_off_funnel",
-  "product_conversion",
-  "compare_mode",
-  "multiselectable_kpi_cards",
-  "product_conversion:landing_page_path",
-  "product_conversion:sessions",
-  "product_conversion:atc",
-  "product_conversion:atc_rate",
-  "product_conversion:orders",
-  "product_conversion:sales",
-  "product_conversion:cvr",
-  "product_conversion:drr",
-  "product_conversion:doh",
-  "product_table_filters",
-  "product_table_filters:inventory",
-  "product_table_filters:page_type",
-  "product_table_filters:product_types",
-  "product_table_filters:sort_filter",
-  "daily_insight_view",
-  "health_monitor_panel",
-  "web_vitals_panel",
-  "pnl_panel",
-  "ads_panel",
-  "weekly_report_preview",
-  "ndd_sla_panel",
-  "ndd_sla_upload",
-];
+// Read-only chips: ids shown under their names, a group of ids as one chip.
+function PermissionChips({ permissions = [], size, isDark }) {
+  return selectedOptions(permissions).map((option) => {
+    const chip = <GlassChip label={optionLabel(option, permissions)} size={size} isDark={isDark} />;
+    return isGroup(option) ? (
+      <Tooltip key={option} title={optionHint(option, permissions)} arrow>
+        <span>{chip}</span>
+      </Tooltip>
+    ) : (
+      <span key={option}>{chip}</span>
+    );
+  });
+}
 
-const COLUMN_PERMISSIONS = [
-  { id: "product_conversion:landing_page_path", label: "Landing Page" },
-  { id: "product_conversion:sessions", label: "Sessions" },
-  { id: "product_conversion:atc", label: "ATC" },
-  { id: "product_conversion:atc_rate", label: "ATC Rate" },
-  { id: "product_conversion:orders", label: "Orders" },
-  { id: "product_conversion:sales", label: "Sales" },
-  { id: "product_conversion:cvr", label: "CVR" },
-  { id: "product_conversion:drr", label: "DRR" },
-  { id: "product_conversion:doh", label: "DOH" },
-];
+// Dropdown of permissions by name. `permissions` and `onChange` deal in stored ids.
+function PermissionPicker({ label, permissions, onChange }) {
+  const value = selectedOptions(permissions);
+  // options already held but no longer offered (retired or unknown) must stay listed so they can be removed
+  const options = [...ALL_OPTIONS, ...value.filter((option) => !ALL_OPTIONS.includes(option))];
 
-const FILTER_PANEL_PERMISSIONS = [
-  { id: "product_table_filters:inventory", label: "Inventory Analysis" },
-  { id: "product_table_filters:page_type", label: "Page Type" },
-  { id: "product_table_filters:product_types", label: "Product Types" },
-  { id: "product_table_filters:sort_filter", label: "Sort Filter" },
-];
+  const handleChange = (event, next, reason, details) => {
+    if (reason === "clear") return onChange([]);
+    const option = details?.option;
+    if (!option) return undefined;
+    if (reason === "selectOption") return onChange(addOption(option, permissions));
+    // Picking a partly held group from the list completes it; its chip's delete button removes it.
+    const fromList = event.key === "Enter" || event.currentTarget?.getAttribute?.("role") === "option";
+    if (fromList && optionState(option, permissions) === "partial") return onChange(addOption(option, permissions));
+    return onChange(removeOption(option, permissions));
+  };
 
-// UI-only grouping for the Custom Role permission picker — organizational
-// metadata only, does not change what any permission string means anywhere
-// else in the app.
-const PERMISSION_CATEGORIES = [
-  {
-    label: "Dashboard",
-    permissions: [
-      "overall_snapshot",
-      "requests_panel",
-      "requests_timeline",
-      "bundles_panel",
-      "inventory_panel",
-      "daily_funnel_panel",
-      "intent_funnel_panel",
-      "dashboard_layout_customize",
-      "session_analytics",
-      "sessions_drop_off_funnel",
-      "intent_metrics",
-      "rto_kpi",
-      "web_vitals",
-      "health_monitor_panel",
-      "web_vitals_panel",
-      "pnl_panel",
-      "ads_panel",
-      "weekly_report_preview",
-      "ndd_sla_panel",
-      "ndd_sla_upload",
-      "daily_insight_view",
-      "compare_mode",
-      "multiselectable_kpi_cards",
-      "product_conversion",
-    ],
-  },
-  {
-    label: "Filters",
-    permissions: [
-      "product_filter",
-      "utm_filter",
-      "product_utm_filter_sync",
-      "discount_filter",
-      "sales_channel_filter",
-      "device_type_filter",
-      "product_type_filter",
-      "city_filter",
-      "utm_funnel_table",
-      "utm_funnel_table:utm_campaign_grain",
-    ],
-  },
-  {
-    label: "Payment",
-    permissions: ["payment_split_order", "payment_split_sales"],
-  },
-  {
-    label: "Traffic & Events",
-    permissions: ["traffic_split", "ci_events"],
-  },
-  {
-    label: "Product Table Columns",
-    permissions: COLUMN_PERMISSIONS.map((p) => p.id),
-  },
-  {
-    label: "Product Table Filters",
-    permissions: FILTER_PANEL_PERMISSIONS.map((p) => p.id),
-  },
-  {
-    label: "Other",
-    permissions: ["all"],
-  },
-];
+  return (
+    <Autocomplete
+      multiple
+      options={options}
+      value={value}
+      onChange={handleChange}
+      groupBy={categoryOf}
+      getOptionLabel={(option) => optionLabel(option)}
+      renderOption={({ key, ...props }, option) => (
+        <li key={key} {...props} title={optionHint(option, permissions)}>
+          {optionLabel(option, permissions)}
+        </li>
+      )}
+      slotProps={{
+        popper: {
+          sx: { zIndex: 1400 },
+          placement: "bottom-start",
+          modifiers: [{ name: "flip", enabled: false }],
+        },
+      }}
+      ListboxProps={{ sx: { maxHeight: 250 } }}
+      renderTags={(tags, getTagProps) =>
+        tags.map((option, index) => {
+          const { key, ...tagProps } = getTagProps({ index });
+          const partial = optionState(option, permissions) === "partial";
+          return (
+            <Tooltip key={key} title={optionHint(option, permissions)} arrow>
+              <Chip
+                {...tagProps}
+                variant="outlined"
+                label={optionLabel(option, permissions)}
+                onClick={partial ? () => onChange(addOption(option, permissions)) : undefined}
+              />
+            </Tooltip>
+          );
+        })
+      }
+      renderInput={(params) => <TextField {...params} label={label} fullWidth />}
+    />
+  );
+}
 
 const ROLE_OPTIONS = [
   { value: "author", label: "Author" },
@@ -487,9 +430,7 @@ const UserMobileCard = ({ user, onEdit, onDelete, onStatusToggle, isDark, roles 
                 isDark={isDark}
               />
             ) : user.brand_memberships?.[0]?.permissions?.length > 0 ? (
-              user.brand_memberships[0].permissions.map((p) => (
-                <GlassChip key={p} label={p} size="small" isDark={isDark} />
-              ))
+              <PermissionChips permissions={user.brand_memberships[0].permissions} size="small" isDark={isDark} />
             ) : (
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
                 {summarizePermissions(user.role, user.brand_memberships?.[0]?.permissions || [])}
@@ -925,7 +866,7 @@ export default function AccessControlCard() {
         all_brands: isElevatedRole(user.role)
           ? Array.from(new Set([...brandIds, "ALL"])).join(" | ")
           : brandIds.join(" | "),
-        permissions: permissions.join(" | "),
+        permissions: permissionNames(permissions).join(" | "),
         status: user.status || "",
       };
     });
@@ -1219,16 +1160,8 @@ export default function AccessControlCard() {
     setRoleDialogOpen(true);
   }
 
-  function toggleRolePermission(permissionId) {
-    setRoleForm((prev) => {
-      const has = prev.permissions.includes(permissionId);
-      return {
-        ...prev,
-        permissions: has
-          ? prev.permissions.filter((p) => p !== permissionId)
-          : [...prev.permissions, permissionId],
-      };
-    });
+  function toggleRolePermission(option) {
+    setRoleForm((prev) => ({ ...prev, permissions: toggleOption(option, prev.permissions) }));
   }
 
   async function persistRole() {
@@ -2401,141 +2334,20 @@ export default function AccessControlCard() {
                         managed by the assigned custom role.
                       </Typography>
                       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                        {(roles.find((r) => r._id === form.custom_role_id)?.permissions || []).map((p) => (
-                          <GlassChip key={p} label={p} isDark={isDark} />
-                        ))}
+                        <PermissionChips
+                          permissions={roles.find((r) => r._id === form.custom_role_id)?.permissions || []}
+                          isDark={isDark}
+                        />
                       </Box>
                     </Box>
                   </>
                 ) : (
                   <>
-                    <Autocomplete
-                      multiple
-                      options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                      value={form.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                      onChange={(_, val) => {
-                        const nestedPerms = form.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
-                        handleFormChange("permissions", [...val, ...nestedPerms]);
-                      }}
-                      slotProps={{
-                        popper: {
-                          sx: { zIndex: 1400 },
-                          placement: "bottom-start",
-                          modifiers: [
-                            {
-                              name: "flip",
-                              enabled: false,
-                            },
-                          ],
-                        },
-                      }}
-                      ListboxProps={{
-                        sx: { maxHeight: 250 },
-                      }}
-                      renderTags={(value, getTagProps) =>
-                        value.map((option, index) => (
-                          <Chip
-                            variant="outlined"
-                            label={option}
-                            {...getTagProps({ index })}
-                          />
-                        ))
-                      }
-                      renderInput={(params) => (
-                        <TextField {...params} label="General Permissions" fullWidth />
-                      )}
+                    <PermissionPicker
+                      label="Permissions"
+                      permissions={form.permissions}
+                      onChange={(next) => handleFormChange("permissions", next)}
                     />
-
-                    {form.permissions.includes("product_conversion") && (
-                      <Box sx={{
-                        p: 2,
-                        borderRadius: "12px",
-                        bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
-                        border: "1px dashed",
-                        borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
-                      }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
-                          PRODUCT TABLE COLUMNS
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          {COLUMN_PERMISSIONS.map((col) => {
-                            const active = form.permissions.includes(col.id);
-                            return (
-                              <Chip
-                                key={col.id}
-                                label={col.label}
-                                onClick={() => {
-                                  let next = active
-                                    ? form.permissions.filter(p => p !== col.id)
-                                    : [...form.permissions, col.id];
-
-                                  // Enforcement: If removing DRR/DOH results in none being selected,
-                                  // auto-remove Inventory Analysis filter scope.
-                                  const hasDrrDoh = next.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
-                                  if (!hasDrrDoh) {
-                                    next = next.filter(p => p !== "product_table_filters:inventory");
-                                  }
-
-                                  handleFormChange("permissions", next);
-                                }}
-                                color={active ? "primary" : "default"}
-                                variant={active ? "filled" : "outlined"}
-                                size="small"
-                                sx={{ borderRadius: '8px' }}
-                              />
-                            );
-                          })}
-                        </Box>
-                      </Box>
-                    )}
-
-                    {form.permissions.includes("product_table_filters") && (
-                      <Box sx={{
-                        p: 2,
-                        borderRadius: "12px",
-                        bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
-                        border: "1px dashed",
-                        borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
-                      }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
-                          PRODUCT TABLE FILTERS
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          {FILTER_PANEL_PERMISSIONS.map((f) => {
-                            const active = form.permissions.includes(f.id);
-                            const isInventory = f.id === "product_table_filters:inventory";
-                            const hasDrrDoh = form.permissions.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
-                            const disabled = isInventory && !hasDrrDoh;
-
-                            return (
-                              <Tooltip
-                                key={f.id}
-                                title={disabled ? "Requires DRR or DOH column access" : ""}
-                                arrow
-                              >
-                                <span>
-                                  <Chip
-                                    label={f.label}
-                                    onClick={() => {
-                                      if (disabled) return;
-                                      const next = active
-                                        ? form.permissions.filter(p => p !== f.id)
-                                        : [...form.permissions, f.id];
-                                      handleFormChange("permissions", next);
-                                    }}
-                                    disabled={disabled}
-                                    color={active ? "primary" : "default"}
-                                    variant={active ? "filled" : "outlined"}
-                                    size="small"
-                                    sx={{ borderRadius: '8px', opacity: disabled ? 0.5 : 1 }}
-                                  />
-                                </span>
-                              </Tooltip>
-                            );
-                          })}
-                        </Box>
-                      </Box>
-                    )}
                   </>
                 )}
               </>
@@ -2644,132 +2456,20 @@ export default function AccessControlCard() {
                         managed by the assigned custom role.
                       </Typography>
                       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                        {(roles.find((r) => r._id === form.custom_role_id)?.permissions || []).map((p) => (
-                          <GlassChip key={p} label={p} isDark={isDark} />
-                        ))}
+                        <PermissionChips
+                          permissions={roles.find((r) => r._id === form.custom_role_id)?.permissions || []}
+                          isDark={isDark}
+                        />
                       </Box>
                     </Box>
                   </>
                 ) : (
                   <>
-                    <Autocomplete
-                      multiple
-                      options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                      value={form.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                      onChange={(_, val) => {
-                        const nestedPerms = form.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
-                        handleFormChange("permissions", [...val, ...nestedPerms]);
-                      }}
-                      slotProps={{
-                        popper: {
-                          sx: { zIndex: 1400 },
-                          placement: "bottom-start",
-                          modifiers: [{ name: "flip", enabled: false }],
-                        },
-                      }}
-                      ListboxProps={{
-                        sx: { maxHeight: 250 },
-                      }}
-                      renderTags={(value, getTagProps) =>
-                        value.map((option, index) => (
-                          <Chip
-                            variant="outlined"
-                            label={option}
-                            {...getTagProps({ index })}
-                          />
-                        ))
-                      }
-                      renderInput={(params) => (
-                        <TextField {...params} label="General Permissions" fullWidth />
-                      )}
+                    <PermissionPicker
+                      label="Permissions"
+                      permissions={form.permissions}
+                      onChange={(next) => handleFormChange("permissions", next)}
                     />
-                    {form.permissions.includes("product_conversion") && (
-                      <Box sx={{
-                        p: 2,
-                        borderRadius: "12px",
-                        bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
-                        border: "1px dashed",
-                        borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
-                      }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
-                          PRODUCT TABLE COLUMNS
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          {COLUMN_PERMISSIONS.map((col) => {
-                            const active = form.permissions.includes(col.id);
-                            return (
-                              <Chip
-                                key={col.id}
-                                label={col.label}
-                                onClick={() => {
-                                  let next = active
-                                    ? form.permissions.filter(p => p !== col.id)
-                                    : [...form.permissions, col.id];
-
-                                  const hasDrrDoh = next.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
-                                  if (!hasDrrDoh) {
-                                    next = next.filter(p => p !== "product_table_filters:inventory");
-                                  }
-
-                                  handleFormChange("permissions", next);
-                                }}
-                                color={active ? "primary" : "default"}
-                                variant={active ? "filled" : "outlined"}
-                                size="small"
-                                sx={{ borderRadius: '8px' }}
-                              />
-                            );
-                          })}
-                        </Box>
-                      </Box>
-                    )}
-                    {form.permissions.includes("product_table_filters") && (
-                      <Box sx={{
-                        p: 2,
-                        borderRadius: "12px",
-                        bgcolor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
-                        border: "1px dashed",
-                        borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"
-                      }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, mb: 1, display: 'block', opacity: 0.7 }}>
-                          PRODUCT TABLE FILTERS
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          {FILTER_PANEL_PERMISSIONS.map((f) => {
-                            const active = form.permissions.includes(f.id);
-                            const isInventory = f.id === "product_table_filters:inventory";
-                            const hasDrrDoh = form.permissions.some(p => p === "product_conversion:drr" || p === "product_conversion:doh");
-                            const disabled = isInventory && !hasDrrDoh;
-
-                            return (
-                              <Tooltip
-                                key={f.id}
-                                title={disabled ? "Requires DRR or DOH column access" : ""}
-                                arrow
-                              >
-                                <span>
-                                  <Chip
-                                    label={f.label}
-                                    onClick={() => {
-                                      if (disabled) return;
-                                      const next = active
-                                        ? form.permissions.filter(p => p !== f.id)
-                                        : [...form.permissions, f.id];
-                                      handleFormChange("permissions", next);
-                                    }}
-                                    disabled={disabled}
-                                    color={active ? "primary" : "default"}
-                                    variant={active ? "filled" : "outlined"}
-                                    size="small"
-                                    sx={{ borderRadius: '8px', opacity: disabled ? 0.5 : 1 }}
-                                  />
-                                </span>
-                              </Tooltip>
-                            );
-                          })}
-                        </Box>
-                      </Box>
-                    )}
                   </>
                 )}
               </Stack>
@@ -2953,45 +2653,13 @@ export default function AccessControlCard() {
               </>
             )}
             {domainForm.role === "viewer" && (
-                <Autocomplete
-                  multiple
-                  options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                  value={domainForm.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                  onChange={(_, val) => {
-                    const nestedPerms = domainForm.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
-                    setDomainForm((prev) => ({
-                      ...prev,
-                      permissions: normalizePermissionSelection([...val, ...nestedPerms]),
-                    }));
-                  }}
-                slotProps={{
-                  popper: {
-                    sx: { zIndex: 1400 },
-                    placement: "bottom-start",
-                    modifiers: [
-                      {
-                        name: "flip",
-                        enabled: false,
-                      },
-                    ],
-                  },
-                }}
-                ListboxProps={{
-                  sx: { maxHeight: 250 },
-                }}
-                renderTags={(value, getTagProps) =>
-                  value.map((option, index) => (
-                    <Chip
-                      variant="outlined"
-                      label={option}
-                      {...getTagProps({ index })}
-                    />
-                  ))
-                }
-                renderInput={(params) => (
-                  <TextField {...params} label="Permissions" fullWidth />
-                )}
-              />
+                <PermissionPicker
+                  label="Permissions"
+                  permissions={domainForm.permissions}
+                  onChange={(next) =>
+                    setDomainForm((prev) => ({ ...prev, permissions: normalizePermissionSelection(next) }))
+                  }
+                />
             )}
             {domainForm.role === "brand_user" && (
               <>
@@ -3017,39 +2685,12 @@ export default function AccessControlCard() {
                     ))}
                   </Select>
                 </FormControl>
-                <Autocomplete
-                  multiple
-                  options={PERMISSION_OPTIONS.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                  value={domainForm.permissions.filter(p => !p.startsWith("product_conversion:") && !p.startsWith("product_table_filters:"))}
-                  onChange={(_, val) => {
-                    const nestedPerms = domainForm.permissions.filter(p => p.startsWith("product_conversion:") || p.startsWith("product_table_filters:"));
-                    setDomainForm((prev) => ({
-                      ...prev,
-                      permissions: normalizePermissionSelection([...val, ...nestedPerms]),
-                    }));
-                  }}
-                  slotProps={{
-                    popper: {
-                      sx: { zIndex: 1400 },
-                      placement: "bottom-start",
-                      modifiers: [{ name: "flip", enabled: false }],
-                    },
-                  }}
-                  ListboxProps={{
-                    sx: { maxHeight: 250 },
-                  }}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip
-                        variant="outlined"
-                        label={option}
-                        {...getTagProps({ index })}
-                      />
-                    ))
+                <PermissionPicker
+                  label="Permissions"
+                  permissions={domainForm.permissions}
+                  onChange={(next) =>
+                    setDomainForm((prev) => ({ ...prev, permissions: normalizePermissionSelection(next) }))
                   }
-                  renderInput={(params) => (
-                    <TextField {...params} label="Permissions" fullWidth />
-                  )}
                 />
               </>
             )}
@@ -3145,7 +2786,7 @@ export default function AccessControlCard() {
             )}
 
             <Stack spacing={2}>
-              {PERMISSION_CATEGORIES.map((category) => (
+              {CATEGORIES.map((category) => (
                 <Box key={category.label}>
                   <Typography
                     variant="caption"
@@ -3159,21 +2800,28 @@ export default function AccessControlCard() {
                     {category.label}
                   </Typography>
                   <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 0.75 }}>
-                    {category.permissions.map((permissionId) => {
-                      const columnMeta = COLUMN_PERMISSIONS.find((p) => p.id === permissionId);
-                      const filterMeta = FILTER_PANEL_PERMISSIONS.find((p) => p.id === permissionId);
-                      const label = columnMeta?.label || filterMeta?.label || permissionId;
-                      const active = roleForm.permissions.includes(permissionId);
-                      return (
+                    {[
+                      ...category.options,
+                      // a retired permission is shown only to a role that already has it
+                      ...(category.label === "Other" ? RETIRED.filter((id) => roleForm.permissions.includes(id)) : []),
+                    ].map((option) => {
+                      const state = optionState(option, roleForm.permissions);
+                      const chip = (
                         <Chip
-                          key={permissionId}
-                          label={label}
+                          label={optionLabel(option, roleForm.permissions)}
                           size="small"
-                          color={active ? "primary" : "default"}
-                          variant={active ? "filled" : "outlined"}
-                          onClick={() => toggleRolePermission(permissionId)}
+                          color={state === "off" ? "default" : "primary"}
+                          variant={state === "full" ? "filled" : "outlined"}
+                          onClick={() => toggleRolePermission(option)}
                           sx={{ cursor: "pointer" }}
                         />
+                      );
+                      return isGroup(option) ? (
+                        <Tooltip key={option} title={optionHint(option, roleForm.permissions)} arrow>
+                          {chip}
+                        </Tooltip>
+                      ) : (
+                        <span key={option}>{chip}</span>
                       );
                     })}
                   </Box>

@@ -1,5 +1,5 @@
-// Display metadata for the sidebar. This mirrors TODAY's navigation exactly
-// (2 groups, same items, same order, same labels). It carries NO permission data:
+// Display metadata for the sidebar: five headed buckets.
+// It carries NO permission data:
 // authorization stays with `allowedTabs` (derived from `accessibleTabs` in App.jsx).
 // `icon` is a lucide-react icon NAME; Sidebar.jsx maps it to the component.
 // Keep this file free of imports so `node --test` can load it.
@@ -7,18 +7,37 @@
 
 export const NAV_GROUPS = [
   {
-    group: "main",
+    group: "overview",
+    label: "Overview",
     items: [
       { id: "overall-snapshot", label: "Overall Snapshot", icon: "LayoutGrid" },
       { id: "dashboard", label: "Dashboard", icon: "LayoutGrid" },
+    ],
+  },
+  {
+    group: "funnels",
+    label: "Funnels",
+    items: [
       { id: "product-conversion", label: "Product Funnel", icon: "Filter" },
       { id: "daily-funnel", label: "Conversion Funnel", icon: "Table2" },
       { id: "intent-funnel", label: "Intent Funnel", icon: "Target" },
+    ],
+  },
+  {
+    group: "commerce",
+    label: "Commerce",
+    items: [
       { id: "bundles", label: "Bundles", icon: "Table2" },
       { id: "inventory", label: "Inventory", icon: "Package" },
-      { id: "web-vitals", label: "Web Vitals", icon: "Gauge" },
       { id: "pnl", label: "P&L", icon: "Wallet" },
       { id: "ads", label: "Ads", icon: "Megaphone" },
+    ],
+  },
+  {
+    group: "performance-ops",
+    label: "Performance & Ops",
+    items: [
+      { id: "web-vitals", label: "Web Vitals", icon: "Gauge" },
       { id: "requests", label: "Requests", icon: "ClipboardList" },
       { id: "weekly-reports", label: "Weekly Reports", icon: "Presentation" },
       { id: "ndd-sla", label: "NDD / SLA", icon: "Truck" },
@@ -26,6 +45,7 @@ export const NAV_GROUPS = [
   },
   {
     group: "admin",
+    label: "Admin",
     items: [
       { id: "access", label: "Access Control", icon: "ShieldCheck" },
       { id: "session-analytics", label: "Dashboard Sessions", icon: "Activity" },

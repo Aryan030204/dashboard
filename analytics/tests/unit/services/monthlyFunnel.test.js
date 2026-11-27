@@ -86,7 +86,7 @@ describe("average performance column", () => {
 });
 
 describe("monthly funnel request validation", () => {
-  function run(start, end, query) {
+  function run(start, end, query, user = { isAuthor: true }) {
     const getDailyFunnel = jest.fn(async () => ({ ok: true }));
     jest.resetModules();
     jest.doMock("../../../modules/metrics/requestNormalizer", () => ({
@@ -95,8 +95,16 @@ describe("monthly funnel request validation", () => {
     const { buildTrendController } = require("../../../modules/metrics/trendController");
     const controller = buildTrendController({ metricsService: { getDailyFunnel } });
     const res = { statusCode: 200, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
-    return controller.dailyFunnel({ query, user: { isAuthor: true } }, res).then(() => ({ res, getDailyFunnel }));
+    return controller.dailyFunnel({ query, user }, res).then(() => ({ res, getDailyFunnel }));
   }
+
+  test("only admins are sent the performance column, whatever permissions others hold", async () => {
+    const asked = async (user) => (await run("2026-11-01", "2026-11-26", {}, user)).getDailyFunnel.mock.calls[0][0].includePerformance;
+    expect(await asked({ isAuthor: true })).toBe(true);
+    for (const permissions of [["all"], ["web_vitals"], ["web_vitals_panel"], []]) {
+      expect(await asked({ isAuthor: false, permissions })).toBe(false);
+    }
+  });
 
   test("6 months is accepted and never reads the UTM tables", async () => {
     const { res, getDailyFunnel } = await run("2026-06-01", "2026-11-26", { granularity: "monthly", include_daily: "false", include_utm: "true" });

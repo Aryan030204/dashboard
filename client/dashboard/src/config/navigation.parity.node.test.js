@@ -8,21 +8,37 @@ import assert from "node:assert/strict";
 import { NAV_GROUPS, filterNavGroups, getPageTitle } from "./navigation.js";
 
 const BASELINE = [
-  { group: "main", items: [
-    ["overall-snapshot", "Overall Snapshot", "LayoutGrid"], ["dashboard", "Dashboard", "LayoutGrid"],
-    ["product-conversion", "Product Funnel", "Filter"], ["daily-funnel", "Conversion Funnel", "Table2"],
-    ["intent-funnel", "Intent Funnel", "Target"], ["bundles", "Bundles", "Table2"],
-    ["inventory", "Inventory", "Package"], ["web-vitals", "Web Vitals", "Gauge"], ["pnl", "P&L", "Wallet"],
-    ["ads", "Ads", "Megaphone"], ["requests", "Requests", "ClipboardList"],
-    ["weekly-reports", "Weekly Reports", "Presentation"], ["ndd-sla", "NDD / SLA", "Truck"],
+  { group: "overview", title: "Overview", items: [
+    ["overall-snapshot", "Overall Snapshot", "LayoutGrid"],
+    ["dashboard", "Dashboard", "LayoutGrid"],
   ] },
-  { group: "admin", items: [
-    ["access", "Access Control", "ShieldCheck"], ["session-analytics", "Dashboard Sessions", "Activity"],
-    ["health-monitor", "Health Monitor", "HeartPulse"], ["alerts", "Alerts", "Bell"],
-    ["traffic-split-config", "Configurations", "SlidersHorizontal"], ["tenant-setup", "Tenant Setup", "Store"],
+  { group: "funnels", title: "Funnels", items: [
+    ["product-conversion", "Product Funnel", "Filter"],
+    ["daily-funnel", "Conversion Funnel", "Table2"],
+    ["intent-funnel", "Intent Funnel", "Target"],
+  ] },
+  { group: "commerce", title: "Commerce", items: [
+    ["bundles", "Bundles", "Table2"],
+    ["inventory", "Inventory", "Package"],
+    ["pnl", "P&L", "Wallet"],
+    ["ads", "Ads", "Megaphone"],
+  ] },
+  { group: "performance-ops", title: "Performance & Ops", items: [
+    ["web-vitals", "Web Vitals", "Gauge"],
+    ["requests", "Requests", "ClipboardList"],
+    ["weekly-reports", "Weekly Reports", "Presentation"],
+    ["ndd-sla", "NDD / SLA", "Truck"],
+  ] },
+  { group: "admin", title: "Admin", items: [
+    ["access", "Access Control", "ShieldCheck"],
+    ["session-analytics", "Dashboard Sessions", "Activity"],
+    ["health-monitor", "Health Monitor", "HeartPulse"],
+    ["alerts", "Alerts", "Bell"],
+    ["traffic-split-config", "Configurations", "SlidersHorizontal"],
+    ["tenant-setup", "Tenant Setup", "Store"],
     ["client-settings", "Client Side Settings", "Settings"],
   ] },
-].map((g) => ({ group: g.group, items: g.items.map(([id, label, icon]) => ({ id, label, icon })) }));
+].map((g) => ({ group: g.group, label: g.title, items: g.items.map(([id, label, icon]) => ({ id, label, icon })) }));
 
 // Verbatim original logic from Sidebar.jsx (filteredNavItems).
 function ORIGINAL_FILTER(NAV_ITEMS, allowedTabs, isMobile) {
@@ -41,11 +57,13 @@ function ORIGINAL_FILTER(NAV_ITEMS, allowedTabs, isMobile) {
   return base;
 }
 
-test("exactly 2 groups, same names and order", () => {
-  assert.deepEqual(NAV_GROUPS.map((g) => g.group), ["main", "admin"]);
+test("five headed buckets, in order", () => {
+  assert.deepEqual(NAV_GROUPS.map((g) => g.label), [
+    "Overview", "Funnels", "Commerce", "Performance & Ops", "Admin",
+  ]);
 });
 
-test("items, order, labels and icons are identical to the original sidebar", () => {
+test("items, order, labels and icons per bucket", () => {
   assert.deepEqual(NAV_GROUPS, BASELINE);
 });
 

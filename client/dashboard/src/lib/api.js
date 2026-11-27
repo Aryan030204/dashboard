@@ -713,6 +713,26 @@ export async function getInventoryOosOptions(args, options = {}) {
   return { available: true, truncated: !!json.truncated, products: Array.isArray(json.products) ? json.products : [] };
 }
 
+// Per-SKU DRR of two months plus daily units of the later one. `months` is ["YYYY-MM", "YYYY-MM"].
+// Returns { available, months, detail_month, days, rows } or { error } / { aborted }.
+export async function getInventorySnapshot(args, options = {}) {
+  const params = appendBrandKey({ months: (args.months || []).join(",") || undefined }, args);
+  const res = await doGet("/metrics/product-conversion/inventory-snapshot", params, { signal: options.signal });
+  if (res.aborted) return { error: true, aborted: true };
+  if (res.error) return { error: true };
+  const json = res.data || {};
+  if (json.available === false) return { available: false };
+  // an older backend would answer this path with something else entirely
+  if (!Array.isArray(json.months) || !Array.isArray(json.rows)) return { error: true };
+  return {
+    available: true,
+    months: json.months,
+    detail_month: json.detail_month,
+    days: Array.isArray(json.days) ? json.days : [],
+    rows: json.rows,
+  };
+}
+
 export async function getProductConversion(args, options = {}) {
   const params = appendBrandKey(
     {

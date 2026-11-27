@@ -3,6 +3,7 @@ import { Stack } from "@mui/material";
 import { EmptyStateCard, SectionFallback } from "./shared/RouteUi.jsx";
 import { PageHeader } from "../components/datum/index.js";
 
+const InventorySnapshot = lazy(() => import("../components/InventorySnapshot.jsx"));
 const InventoryTable = lazy(() => import("../components/InventoryTable.jsx"));
 const InventoryOosTrend = lazy(() => import("../components/InventoryOosTrend.jsx"));
 
@@ -39,6 +40,9 @@ export default function InventoryRouteContainer({
         title="Inventory"
         description="Stock-outs, sales velocity and days on hand per SKU"
       />
+      <Suspense fallback={<SectionFallback count={1} height={320} />}>
+        <InventorySnapshot key={activeBrandKey} brandKey={activeBrandKey} />
+      </Suspense>
       <Suspense fallback={<SectionFallback count={1} height={280} />}>
         <InventoryTable
           brandKey={activeBrandKey}
