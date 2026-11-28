@@ -33,7 +33,8 @@
     { "source": "/unauthorized", "destination": "/" },
     { "source": "/pnl", "destination": "/" },
     { "source": "/pnl/(.*)", "destination": "/" },
-    { "source": "/ads", "destination": "/" }
+    { "source": "/ads", "destination": "/" },
+    { "source": "/marketplace-history", "destination": "/" }
   ],
 
   "headers": [

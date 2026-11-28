@@ -28,6 +28,7 @@ import {
   Megaphone,
   Presentation,
   Truck,
+  Tags,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -66,6 +67,7 @@ const ICONS = {
   Megaphone,
   Presentation,
   Truck,
+  Tags,
 };
 const NAV_ITEMS = NAV_GROUPS.map((group) => ({
   ...group,

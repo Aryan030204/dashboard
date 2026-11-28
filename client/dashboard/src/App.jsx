@@ -52,6 +52,7 @@ import {
   Megaphone,
   Presentation,
   Truck,
+  Tags,
 } from "lucide-react";
 
 const MOBILE_NAV_ITEMS = [
@@ -66,6 +67,7 @@ const MOBILE_NAV_ITEMS = [
   { id: "web-vitals", label: "Web Vitals", icon: Gauge },
   { id: "pnl", label: "P&L", icon: Wallet },
   { id: "ads", label: "Ads", icon: Megaphone },
+  { id: "marketplace-history", label: "Marketplace history", icon: Tags },
   { id: "health-monitor", label: "Health Monitor", icon: HeartPulse },
   { id: "alerts", label: "Alerts", icon: Bell },
   { id: "requests", label: "Requests", icon: ClipboardList },
@@ -91,6 +93,7 @@ const TAB_ROUTE_MAP = {
   "web-vitals": "/web-vitals",
   pnl: "/pnl",
   ads: "/ads",
+  "marketplace-history": "/marketplace-history",
   "health-monitor": "/health-monitor",
   alerts: "/alerts",
   requests: "/requests",
@@ -203,6 +206,7 @@ import PnlRouteContainer from "./routes/PnlRouteContainer.jsx";
 import AdsRouteContainer from "./routes/AdsRouteContainer.jsx";
 import WeeklyReportsRouteContainer from "./routes/WeeklyReportsRouteContainer.jsx";
 import NddSlaRouteContainer from "./routes/NddSlaRouteContainer.jsx";
+import MarketplaceHistoryRouteContainer from "./routes/MarketplaceHistoryRouteContainer.jsx";
 const MobileFilterDrawer = lazy(
   () => import("./components/MobileFilterDrawer.jsx"),
 );
@@ -676,6 +680,11 @@ export default function App() {
     return hasPermission("ads_panel");
   }, [hasPermission, isAuthor]);
 
+  const canAccessMarketplacePanel = useMemo(() => {
+    if (isAuthor) return true;
+    return hasPermission("marketplace_panel");
+  }, [hasPermission, isAuthor]);
+
   // Managing (upload/publish/delete) is backend-enforced to elevated roles;
   // everyone else with this permission only gets the viewer.
   const canAccessWeeklyReportsPanel = useMemo(() => {
@@ -716,6 +725,7 @@ export default function App() {
     if (canAccessHealthMonitorPanel) tabs.push("health-monitor");
     if (canAccessWeeklyReportsPanel) tabs.push("weekly-reports");
     if (canAccessNddSlaPanel) tabs.push("ndd-sla");
+    if (canAccessMarketplacePanel) tabs.push("marketplace-history");
     return tabs;
   }, [
     canAccessOverallSnapshotPanel,
@@ -731,6 +741,7 @@ export default function App() {
     canAccessHealthMonitorPanel,
     canAccessWeeklyReportsPanel,
     canAccessNddSlaPanel,
+    canAccessMarketplacePanel,
     isAuthor,
   ]);
 
@@ -856,6 +867,16 @@ export default function App() {
       );
       return;
     }
+    if (authorTab === "marketplace-history" && !canAccessMarketplacePanel) {
+      navigate(
+        {
+          pathname: TAB_ROUTE_MAP[defaultLandingTab],
+          search: sanitizedSearch,
+        },
+        { replace: true },
+      );
+      return;
+    }
     if (authorTab === "health-monitor" && !canAccessHealthMonitorPanel) {
       navigate(
         {
@@ -881,6 +902,7 @@ export default function App() {
     canAccessHealthMonitorPanel,
     canAccessWeeklyReportsPanel,
     canAccessNddSlaPanel,
+    canAccessMarketplacePanel,
     initialized,
     location.search,
     sanitizedSearch,
@@ -1376,7 +1398,8 @@ export default function App() {
       authorTab === "ads" ||
       authorTab === "health-monitor" ||
       authorTab === "weekly-reports" ||
-      authorTab === "ndd-sla"
+      authorTab === "ndd-sla" ||
+      authorTab === "marketplace-history"
     ) {
       setProductOptions([DEFAULT_PRODUCT_OPTION]);
       setProductSelection(DEFAULT_PRODUCT_OPTION);
@@ -1948,7 +1971,8 @@ export default function App() {
       authorTab === "ads" ||
       authorTab === "health-monitor" ||
       authorTab === "weekly-reports" ||
-      authorTab === "ndd-sla"
+      authorTab === "ndd-sla" ||
+      authorTab === "marketplace-history"
     ) {
       return;
     }
@@ -2310,6 +2334,10 @@ export default function App() {
             isManager={isAuthor}
             canUpload={canUploadNddSla}
           />
+        );
+      case "marketplace-history":
+        return (
+          <MarketplaceHistoryRouteContainer hasBrand={hasBrand} activeBrandKey={activeBrandKey} />
         );
       case "session-analytics":
         return (

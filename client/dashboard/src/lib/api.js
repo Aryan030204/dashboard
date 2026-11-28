@@ -2578,3 +2578,12 @@ export async function triggerAdsSync({ brand_key }) {
   const brandKey = normalizeBrandKey(brand_key);
   return doPost(`/pnl/ads/sync${qs({ brand_key: brandKey })}`, { brand_key: brandKey });
 }
+
+// ---------------- Marketplace history ----------------
+export async function getMarketplaceOverview({ brandKey, start, end, range, pincode, signal } = {}) {
+  return doGet("/marketplace/overview", { brand_key: normalizeBrandKey(brandKey), start, end, range, pincode }, { signal });
+}
+
+export async function getMarketplaceProduct({ brandKey, variantId, start, end, range, pincode, signal } = {}) {
+  return doGet("/marketplace/product", { brand_key: normalizeBrandKey(brandKey), variant_id: String(variantId), start, end, range, pincode }, { signal });
+}

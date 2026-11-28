@@ -55,6 +55,7 @@ const ALL_PERMISSIONS = Object.freeze([
   "web_vitals_panel",
   "pnl_panel",
   "ads_panel",
+  "marketplace_panel",
 ]);
 
 module.exports = { ALL_PERMISSIONS };

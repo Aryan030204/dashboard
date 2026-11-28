@@ -31,6 +31,7 @@ export const NAV_GROUPS = [
       { id: "inventory", label: "Inventory", icon: "Package" },
       { id: "pnl", label: "P&L", icon: "Wallet" },
       { id: "ads", label: "Ads", icon: "Megaphone" },
+      { id: "marketplace-history", label: "Marketplace history", icon: "Tags" },
     ],
   },
   {
