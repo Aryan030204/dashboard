@@ -22,6 +22,7 @@ const BASELINE = [
     ["inventory", "Inventory", "Package"],
     ["pnl", "P&L", "Wallet"],
     ["ads", "Ads", "Megaphone"],
+    ["marketplace-history", "Marketplace history", "Tags"],
   ] },
   { group: "performance-ops", title: "Performance & Ops", items: [
     ["web-vitals", "Web Vitals", "Gauge"],

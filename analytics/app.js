@@ -26,6 +26,7 @@ const { buildSessionAnalyticsRouter } = require("./routes/sessionAnalytics.route
 const { buildWebVitalsRouter } = require("./routes/webVitals.routes");
 const { buildPnlRouter } = require("./routes/pnl.routes");
 const { buildAdsRouter } = require("./routes/ads.routes");
+const { buildMarketplaceRouter } = require("./modules/marketplace");
 const {
   collectRoutes,
   createHealthMonitorReporter,
@@ -78,6 +79,7 @@ const sessionAnalyticsRouter = buildSessionAnalyticsRouter();
 const webVitalsRouter = buildWebVitalsRouter();
 const pnlRouter = buildPnlRouter();
 const adsRouter = buildAdsRouter();
+const marketplaceRouter = buildMarketplaceRouter();
 const externalRouter = buildExternalRouter();
 const uploadsRouter = buildUploadsRouter();
 const apiKeysRouter = buildApiKeysRouter(sequelize);
@@ -94,6 +96,7 @@ app.use("/web-vitals", webVitalsRouter);
 // Before /pnl: the P&L router gates everything under it on pnl_panel.
 app.use("/pnl/ads", adsRouter);
 app.use("/pnl", pnlRouter);
+app.use("/marketplace", marketplaceRouter);
 app.use("/external", externalRouter);
 app.use("/", uploadsRouter);
 app.use("/", apiKeysRouter);
